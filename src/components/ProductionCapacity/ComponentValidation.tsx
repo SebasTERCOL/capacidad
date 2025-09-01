@@ -55,13 +55,37 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
       for (const item of data) {
         // Buscar BOM para esta referencia
           const ref = item.referencia.trim();
-          // Allow matches even if product_id in DB has extra spaces or minor variations
+          // Construir patrones de búsqueda tolerantes a variaciones
           const escapedRef = ref.replace(/[%_]/g, '\\$&');
-          const pattern = `%${escapedRef}%`;
-          const { data: bomData, error: bomError } = await supabase
+          const loosePattern = `%${escapedRef}%`; // contiene la referencia tal cual
+          const fuzzyPattern = `%${escapedRef.split('').join('%')}%`; // permite espacios/guiones entre caracteres
+          console.info('[BOM] Buscando referencia', { ref, loosePattern, fuzzyPattern });
+
+          // Intento 1: coincidencia "contains"
+          let { data: bomData, error: bomError } = await supabase
             .from('bom')
             .select('component_id, amount, product_id')
-            .ilike('product_id', pattern);
+            .ilike('product_id', loosePattern);
+
+          // Intento 2: si no hay resultados, usar patrón difuso
+          if ((!bomData || bomData.length === 0) && !bomError) {
+            const resp2 = await supabase
+              .from('bom')
+              .select('component_id, amount, product_id')
+              .ilike('product_id', fuzzyPattern);
+            bomData = resp2.data;
+            bomError = resp2.error;
+          }
+
+          // Intento 3: si aún no hay resultados, prueba coincidencia exacta
+          if ((!bomData || bomData.length === 0) && !bomError) {
+            const resp3 = await supabase
+              .from('bom')
+              .select('component_id, amount, product_id')
+              .eq('product_id', ref);
+            bomData = resp3.data;
+            bomError = resp3.error;
+          }
         
         if (bomError) {
           console.error('Error fetching BOM:', bomError);
@@ -94,7 +118,7 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
             .from('products')
             .select('reference, quantity, minimum_unit, maximum_unit')
             .eq('reference', bomItem.component_id)
-            .single();
+            .maybeSingle();
           
           if (productError || !productData) {
             componentValidation.push({
