@@ -23,24 +23,92 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  const parseCSV = (content: string): ProductionRequest[] => {
-    const lines = content.split('\n').filter(line => line.trim());
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
     
-    const refIndex = headers.findIndex(h => h.includes('referencia') || h.includes('ref'));
-    const quantityIndex = headers.findIndex(h => h.includes('cantidad') || h.includes('qty') || h.includes('quantity'));
-    
-    if (refIndex === -1 || quantityIndex === -1) {
-      throw new Error('El archivo debe contener columnas "Referencia" y "Cantidad"');
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+      
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          current += '"';
+          i++; // Skip next quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
     }
     
-    return lines.slice(1).map(line => {
-      const values = line.split(',');
-      return {
-        referencia: values[refIndex]?.trim() || '',
-        cantidad: parseFloat(values[quantityIndex]?.trim() || '0') || 0
-      };
-    }).filter(item => item.referencia && item.cantidad > 0);
+    result.push(current.trim());
+    return result;
+  };
+
+  const parseCSV = (content: string): ProductionRequest[] => {
+    console.log('Contenido del archivo:', content.substring(0, 200) + '...');
+    
+    const lines = content.split(/\r?\n/).filter(line => line.trim());
+    if (lines.length < 2) {
+      throw new Error('El archivo debe contener al menos una fila de encabezados y una fila de datos');
+    }
+    
+    const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/["']/g, ''));
+    console.log('Encabezados detectados:', headers);
+    
+    const refIndex = headers.findIndex(h => 
+      h.includes('referencia') || 
+      h.includes('ref') || 
+      h.includes('codigo') || 
+      h.includes('code') ||
+      h === 'referencia' ||
+      h === 'ref'
+    );
+    
+    const quantityIndex = headers.findIndex(h => 
+      h.includes('cantidad') || 
+      h.includes('qty') || 
+      h.includes('quantity') ||
+      h.includes('cant') ||
+      h === 'cantidad' ||
+      h === 'qty'
+    );
+    
+    console.log('Índices encontrados - Referencia:', refIndex, 'Cantidad:', quantityIndex);
+    
+    if (refIndex === -1 || quantityIndex === -1) {
+      throw new Error(`No se pudieron identificar las columnas necesarias. 
+        Encontradas: ${headers.join(', ')}
+        Se requieren columnas que contengan "referencia" y "cantidad"`);
+    }
+    
+    const parsed = lines.slice(1).map((line, index) => {
+      try {
+        const values = parseCSVLine(line);
+        const referencia = values[refIndex]?.trim().replace(/["']/g, '') || '';
+        const cantidadStr = values[quantityIndex]?.trim().replace(/["']/g, '') || '0';
+        const cantidad = parseFloat(cantidadStr.replace(/[,]/g, '.')) || 0;
+        
+        return {
+          referencia,
+          cantidad
+        };
+      } catch (error) {
+        console.warn(`Error procesando línea ${index + 2}:`, line);
+        return null;
+      }
+    }).filter((item): item is ProductionRequest => 
+      item !== null && item.referencia !== '' && item.cantidad > 0
+    );
+    
+    console.log('Datos procesados:', parsed);
+    return parsed;
   };
 
   const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
