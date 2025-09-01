@@ -49,67 +49,64 @@ export const ProductionProjection: React.FC<ProductionProjectionProps> = ({
       const results: ProjectionInfo[] = [];
       
       for (const item of data) {
-        // Buscar información de máquina y proceso
-        const { data: machineProcessData, error: mpError } = await supabase
-          .from('machines_processes')
-          .select(`
-            sam,
-            frequency,
-            id_machine,
-            id_process,
-            machines!inner(name, status),
-            processes!inner(name)
-          `)
-          .eq('ref', item.referencia);
-        
-        if (mpError) {
-          console.error('Error fetching machine process:', mpError);
-          results.push({
-            referencia: item.referencia,
-            cantidadRequerida: item.cantidad,
-            sam: 0,
-            tiempoTotal: 0,
-            maquina: 'N/A',
-            estadoMaquina: 'N/A',
-            proceso: 'N/A',
-            alerta: 'No se encontró configuración de máquina/proceso'
-          });
-          continue;
-        }
-        
-        if (!machineProcessData || machineProcessData.length === 0) {
-          results.push({
-            referencia: item.referencia,
-            cantidadRequerida: item.cantidad,
-            sam: 0,
-            tiempoTotal: 0,
-            maquina: 'N/A',
-            estadoMaquina: 'N/A',
-            proceso: 'N/A',
-            alerta: 'No se encontró configuración para esta referencia'
-          });
-          continue;
-        }
-        
-        // Tomar el primer resultado (podríamos manejar múltiples máquinas)
-        const mp = machineProcessData[0];
-        const sam = mp.sam || 0;
-        const tiempoTotal = (item.cantidad * sam) / 60; // Convertir a minutos
-        
+        // Obtener tiempo por unidad desde products y (opcional) info de máquina/proceso
+        const [prodResp, mpResp] = await Promise.all([
+          supabase
+            .from('products')
+            .select('time')
+            .eq('reference', item.referencia)
+            .limit(1),
+          supabase
+            .from('machines_processes')
+            .select(`
+              sam,
+              frequency,
+              id_machine,
+              id_process,
+              machines!inner(name, status),
+              processes!inner(name)
+            `)
+            .eq('ref', item.referencia)
+        ]);
+
+        // Tiempo por unidad (segundos) ahora proviene de products.time
+        const productRow = prodResp.data && prodResp.data[0] ? prodResp.data[0] as { time?: number | string } : null;
+        const parsedTime = productRow?.time !== undefined && productRow?.time !== null
+          ? Number(productRow.time)
+          : 0;
+        const sam = isNaN(parsedTime) ? 0 : parsedTime; // segundos por unidad
+        const tiempoTotal = (item.cantidad * sam) / 60; // minutos
+
+        // Preparar info de máquina/proceso si existe en machines_processes
+        let maquina = 'N/A';
+        let estadoMaquina = 'N/A';
+        let proceso = 'N/A';
         let alerta: string | null = null;
-        if (mp.machines.status !== 'ENCENDIDO') {
-          alerta = `Máquina en estado: ${mp.machines.status}`;
+
+        if (mpResp.error) {
+          console.error('Error fetching machine process:', mpResp.error);
+          alerta = 'No se pudo obtener información de máquina/proceso';
+        } else if (mpResp.data && mpResp.data.length > 0) {
+          const mp: any = mpResp.data[0];
+          maquina = mp.machines?.name ?? 'N/A';
+          estadoMaquina = mp.machines?.status ?? 'N/A';
+          proceso = mp.processes?.name ?? 'N/A';
+          if (estadoMaquina !== 'ENCENDIDO') {
+            alerta = `Máquina en estado: ${estadoMaquina}`;
+          }
+        } else {
+          alerta = 'No se encontró configuración de máquina/proceso';
         }
-        
+
         results.push({
           referencia: item.referencia,
           cantidadRequerida: item.cantidad,
           sam,
           tiempoTotal,
-          maquina: mp.machines.name,
-          estadoMaquina: mp.machines.status,
-          proceso: mp.processes.name,
-          alerta
+          maquina,
+          estadoMaquina,
+          proceso,
+          alerta,
         });
       }
       
