@@ -55,10 +55,13 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
       for (const item of data) {
         // Buscar BOM para esta referencia
           const ref = item.referencia.trim();
+          // Allow matches even if product_id in DB has extra spaces or minor variations
+          const escapedRef = ref.replace(/[%_]/g, '\\$&');
+          const pattern = `%${escapedRef}%`;
           const { data: bomData, error: bomError } = await supabase
             .from('bom')
             .select('component_id, amount, product_id')
-            .ilike('product_id', ref);
+            .ilike('product_id', pattern);
         
         if (bomError) {
           console.error('Error fetching BOM:', bomError);
