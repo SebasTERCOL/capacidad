@@ -1,11 +1,136 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import React, { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Factory, ArrowRight } from "lucide-react";
+import { FileUpload, ProductionRequest } from "@/components/ProductionCapacity/FileUpload";
+import { ComponentValidation } from "@/components/ProductionCapacity/ComponentValidation";
+import { ProductionProjection } from "@/components/ProductionCapacity/ProductionProjection";
+import { FinalReport } from "@/components/ProductionCapacity/FinalReport";
+
+type Step = 1 | 2 | 3 | 4;
 
 const Index = () => {
+  const [currentStep, setCurrentStep] = useState<Step>(1);
+  const [productionData, setProductionData] = useState<ProductionRequest[]>([]);
+  const [componentValidation, setComponentValidation] = useState<any[]>([]);
+  const [projectionData, setProjectionData] = useState<any[]>([]);
+
+  const steps = [
+    { id: 1, title: 'Carga de Archivo', description: 'Subir CSV con referencias' },
+    { id: 2, title: 'Validación Componentes', description: 'Verificar disponibilidad' },
+    { id: 3, title: 'Proyección Producción', description: 'Calcular tiempos' },
+    { id: 4, title: 'Reporte Final', description: 'Resumen consolidado' }
+  ];
+
+  const handleDataProcessed = (data: ProductionRequest[]) => {
+    setProductionData(data);
+  };
+
+  const handleValidationComplete = (validation: any[]) => {
+    setComponentValidation(validation);
+  };
+
+  const handleProjectionComplete = (projection: any[]) => {
+    setProjectionData(projection);
+  };
+
+  const handleStartOver = () => {
+    setCurrentStep(1);
+    setProductionData([]);
+    setComponentValidation([]);
+    setProjectionData([]);
+  };
+
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <FileUpload
+            onDataProcessed={handleDataProcessed}
+            onNext={() => setCurrentStep(2)}
+          />
+        );
+      case 2:
+        return (
+          <ComponentValidation
+            data={productionData}
+            onNext={() => setCurrentStep(3)}
+            onBack={() => setCurrentStep(1)}
+            onValidationComplete={handleValidationComplete}
+          />
+        );
+      case 3:
+        return (
+          <ProductionProjection
+            data={productionData}
+            onNext={() => setCurrentStep(4)}
+            onBack={() => setCurrentStep(2)}
+            onProjectionComplete={handleProjectionComplete}
+          />
+        );
+      case 4:
+        return (
+          <FinalReport
+            productionData={productionData}
+            componentValidation={componentValidation}
+            projectionData={projectionData}
+            onBack={() => setCurrentStep(3)}
+            onStartOver={handleStartOver}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <div className="border-b bg-card">
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex items-center gap-3 mb-6">
+            <Factory className="h-8 w-8 text-primary" />
+            <div>
+              <h1 className="text-2xl font-bold">Capacidad de Producción</h1>
+              <p className="text-muted-foreground">
+                Análisis de capacidad y disponibilidad de componentes
+              </p>
+            </div>
+          </div>
+
+          {/* Progress Steps */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-2">
+            {steps.map((step, index) => (
+              <React.Fragment key={step.id}>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg whitespace-nowrap ${
+                  currentStep === step.id 
+                    ? 'bg-primary text-primary-foreground' 
+                    : currentStep > step.id 
+                      ? 'bg-secondary text-secondary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                }`}>
+                  <Badge variant={currentStep >= step.id ? "default" : "secondary"} className="rounded-full w-6 h-6 p-0 text-xs">
+                    {step.id}
+                  </Badge>
+                  <div className="text-sm">
+                    <div className="font-medium">{step.title}</div>
+                    <div className="text-xs opacity-80">{step.description}</div>
+                  </div>
+                </div>
+                {index < steps.length - 1 && (
+                  <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="container mx-auto px-4 py-6">
+        <div className="max-w-6xl mx-auto">
+          {renderStepContent()}
+        </div>
       </div>
     </div>
   );
