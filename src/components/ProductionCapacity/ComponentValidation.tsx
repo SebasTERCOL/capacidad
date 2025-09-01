@@ -53,46 +53,55 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
       const results: ComponentInfo[] = [];
       
       for (const item of data) {
-        // Buscar BOM para esta referencia
-          const ref = item.referencia.trim();
-          // Construir patrones de búsqueda tolerantes a variaciones
-          const escapedRef = ref.replace(/[%_]/g, '\\$&');
-          const loosePattern = `%${escapedRef}%`; // contiene la referencia tal cual
-          const fuzzyPattern = `%${escapedRef.split('').join('%')}%`; // permite espacios/guiones entre caracteres
-          console.info('[BOM] Buscando referencia', { ref, loosePattern, fuzzyPattern });
-
-          // Intento 1: coincidencia "contains"
-          let { data: bomData, error: bomError } = await supabase
+        const ref = item.referencia.trim().toUpperCase();
+        console.log(`🔍 Validando referencia: ${ref} (cantidad: ${item.cantidad})`);
+        
+        // Buscar BOM para esta referencia con múltiples estrategias
+        let bomData: any[] = [];
+        let bomError: any = null;
+        
+        // Estrategia 1: Coincidencia exacta
+        const { data: exactData, error: exactError } = await supabase
+          .from('bom')
+          .select('component_id, amount, product_id')
+          .eq('product_id', ref);
+        
+        if (exactData && exactData.length > 0) {
+          bomData = exactData;
+          console.log(`✅ Encontrado con coincidencia exacta: ${bomData.length} componentes`);
+        } else {
+          // Estrategia 2: Búsqueda con ILIKE (contiene)
+          const { data: ilikeData, error: ilikeError } = await supabase
             .from('bom')
             .select('component_id, amount, product_id')
-            .ilike('product_id', loosePattern);
-
-          // Intento 2: si no hay resultados, usar patrón difuso
-          if ((!bomData || bomData.length === 0) && !bomError) {
-            const resp2 = await supabase
+            .ilike('product_id', `%${ref}%`);
+          
+          if (ilikeData && ilikeData.length > 0) {
+            bomData = ilikeData;
+            console.log(`✅ Encontrado con ILIKE: ${bomData.length} componentes`);
+          } else {
+            // Estrategia 3: Búsqueda case-insensitive con trim
+            const { data: allBomData, error: allBomError } = await supabase
               .from('bom')
-              .select('component_id, amount, product_id')
-              .ilike('product_id', fuzzyPattern);
-            bomData = resp2.data;
-            bomError = resp2.error;
+              .select('component_id, amount, product_id');
+            
+            if (allBomData) {
+              bomData = allBomData.filter(bom => 
+                bom.product_id?.trim().toUpperCase() === ref
+              );
+              console.log(`✅ Encontrado con búsqueda manual: ${bomData.length} componentes`);
+            }
+            bomError = allBomError;
           }
-
-          // Intento 3: si aún no hay resultados, prueba coincidencia exacta
-          if ((!bomData || bomData.length === 0) && !bomError) {
-            const resp3 = await supabase
-              .from('bom')
-              .select('component_id, amount, product_id')
-              .eq('product_id', ref);
-            bomData = resp3.data;
-            bomError = resp3.error;
-          }
+        }
         
         if (bomError) {
-          console.error('Error fetching BOM:', bomError);
+          console.error('❌ Error fetching BOM:', bomError);
           continue;
         }
         
         if (!bomData || bomData.length === 0) {
+          console.warn(`⚠️ No se encontró BOM para referencia: ${ref}`);
           results.push({
             referencia: item.referencia,
             cantidadRequerida: item.cantidad,
@@ -110,22 +119,35 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           continue;
         }
         
+        console.log(`📋 BOM encontrado para ${ref}:`, bomData);
         const componentValidation = [];
         
+        // Obtener todos los productos de una vez para mejor performance
+        const componentIds = bomData.map(bom => bom.component_id);
+        const { data: productsData, error: productsError } = await supabase
+          .from('products')
+          .select('reference, quantity, minimum_unit, maximum_unit')
+          .in('reference', componentIds);
+        
+        if (productsError) {
+          console.error('❌ Error fetching products:', productsError);
+          continue;
+        }
+        
+        const productsMap = new Map(
+          productsData?.map(p => [p.reference, p]) || []
+        );
+        
         for (const bomItem of bomData) {
-          // Buscar información del componente
-          const { data: productData, error: productError } = await supabase
-            .from('products')
-            .select('reference, quantity, minimum_unit, maximum_unit')
-            .eq('reference', bomItem.component_id)
-            .maybeSingle();
+          const productData = productsMap.get(bomItem.component_id);
           
-          if (productError || !productData) {
+          if (!productData) {
+            console.warn(`⚠️ Componente no encontrado en productos: ${bomItem.component_id}`);
             componentValidation.push({
               component_id: bomItem.component_id,
               amount: bomItem.amount,
               cantidadDisponible: 0,
-              cantidadNecesaria: item.cantidad * bomItem.amount,
+              cantidadNecesaria: Math.ceil(item.cantidad * bomItem.amount),
               minimum_unit: null,
               maximum_unit: null,
               alerta: 'error' as const,
@@ -134,21 +156,23 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
             continue;
           }
           
-          const cantidadNecesaria = item.cantidad * bomItem.amount;
-          const cantidadDisponible = productData.quantity;
+          const cantidadNecesaria = Math.ceil(item.cantidad * bomItem.amount);
+          const cantidadDisponible = productData.quantity || 0;
           
           let alerta: 'ok' | 'warning' | 'error' = 'ok';
           let mensaje = 'Stock suficiente';
           
+          console.log(`📊 ${bomItem.component_id}: necesario=${cantidadNecesaria}, disponible=${cantidadDisponible}`);
+          
           if (cantidadNecesaria > cantidadDisponible) {
             alerta = 'error';
-            mensaje = `Falta stock: ${cantidadNecesaria - cantidadDisponible} unidades`;
-          } else if (productData.minimum_unit && cantidadDisponible - cantidadNecesaria < productData.minimum_unit) {
+            mensaje = `Falta stock: ${(cantidadNecesaria - cantidadDisponible).toLocaleString()} unidades`;
+          } else if (productData.minimum_unit && (cantidadDisponible - cantidadNecesaria) < productData.minimum_unit) {
             alerta = 'warning';
-            mensaje = `Quedará por debajo del mínimo (${productData.minimum_unit})`;
+            mensaje = `Quedará por debajo del mínimo (${productData.minimum_unit.toLocaleString()})`;
           } else if (productData.maximum_unit && cantidadDisponible > productData.maximum_unit) {
             alerta = 'warning';
-            mensaje = `Stock actual supera el máximo (${productData.maximum_unit})`;
+            mensaje = `Stock actual supera el máximo (${productData.maximum_unit.toLocaleString()})`;
           }
           
           componentValidation.push({
@@ -168,12 +192,16 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           cantidadRequerida: item.cantidad,
           componentes: componentValidation
         });
+        
+        console.log(`✅ Validación completada para ${ref}: ${componentValidation.length} componentes`);
       }
       
+      console.log(`🎉 Validación completa: ${results.length} referencias procesadas`);
       setValidation(results);
       onValidationComplete(results);
+      
     } catch (error) {
-      console.error('Error validating components:', error);
+      console.error('💥 Error validating components:', error);
       setError('Error al validar componentes. Verifique la conexión a la base de datos.');
     }
     
