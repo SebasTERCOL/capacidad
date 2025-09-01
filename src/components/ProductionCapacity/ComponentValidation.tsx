@@ -54,10 +54,11 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
       
       for (const item of data) {
         // Buscar BOM para esta referencia
-        const { data: bomData, error: bomError } = await supabase
-          .from('bom')
-          .select('component_id, amount')
-          .eq('product_id', item.referencia);
+          const ref = item.referencia.trim();
+          const { data: bomData, error: bomError } = await supabase
+            .from('bom')
+            .select('component_id, amount, product_id')
+            .ilike('product_id', ref);
         
         if (bomError) {
           console.error('Error fetching BOM:', bomError);
