@@ -23,7 +23,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  const parseCSVLine = (line: string): string[] => {
+  const detectSeparator = (content: string): string => {
+    const firstLine = content.split(/\r?\n/)[0];
+    if (firstLine.includes(';')) return ';';
+    if (firstLine.includes(',')) return ',';
+    return ','; // default
+  };
+
+  const parseCSVLine = (line: string, separator: string): string[] => {
     const result: string[] = [];
     let current = '';
     let inQuotes = false;
@@ -39,7 +46,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
         } else {
           inQuotes = !inQuotes;
         }
-      } else if (char === ',' && !inQuotes) {
+      } else if (char === separator && !inQuotes) {
         result.push(current.trim());
         current = '';
       } else {
@@ -54,12 +61,34 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
   const parseCSV = (content: string): ProductionRequest[] => {
     console.log('Contenido del archivo:', content.substring(0, 200) + '...');
     
+    const separator = detectSeparator(content);
+    console.log('Separador detectado:', separator);
+    
     const lines = content.split(/\r?\n/).filter(line => line.trim());
-    if (lines.length < 2) {
-      throw new Error('El archivo debe contener al menos una fila de encabezados y una fila de datos');
+    if (lines.length < 1) {
+      throw new Error('El archivo está vacío');
     }
     
-    const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/["']/g, ''));
+    // If no headers are detected, assume first two columns are referencia and cantidad
+    const firstLine = parseCSVLine(lines[0], separator);
+    let headers: string[];
+    let dataStartIndex = 0;
+    
+    // Check if first line looks like headers or data
+    const firstColLooksLikeHeader = isNaN(parseFloat(firstLine[0])) && 
+      (firstLine[0].toLowerCase().includes('ref') || 
+       firstLine[0].toLowerCase().includes('codigo') ||
+       firstLine[0].toLowerCase() === 'referencia');
+    
+    if (firstColLooksLikeHeader && firstLine.length >= 2) {
+      headers = firstLine.map(h => h.trim().toLowerCase().replace(/["']/g, ''));
+      dataStartIndex = 1;
+    } else {
+      // No headers, assume first column is referencia, second is cantidad
+      headers = ['referencia', 'cantidad'];
+      dataStartIndex = 0;
+    }
+    
     console.log('Encabezados detectados:', headers);
     
     const refIndex = headers.findIndex(h => 
@@ -80,19 +109,26 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
       h === 'qty'
     );
     
-    console.log('Índices encontrados - Referencia:', refIndex, 'Cantidad:', quantityIndex);
+    // If no headers found, assume first two columns
+    const finalRefIndex = refIndex !== -1 ? refIndex : 0;
+    const finalQuantityIndex = quantityIndex !== -1 ? quantityIndex : 1;
     
-    if (refIndex === -1 || quantityIndex === -1) {
-      throw new Error(`No se pudieron identificar las columnas necesarias. 
-        Encontradas: ${headers.join(', ')}
-        Se requieren columnas que contengan "referencia" y "cantidad"`);
+    console.log('Índices encontrados - Referencia:', finalRefIndex, 'Cantidad:', finalQuantityIndex);
+    
+    if (lines.length <= dataStartIndex) {
+      throw new Error('No hay datos para procesar en el archivo');
     }
     
-    const parsed = lines.slice(1).map((line, index) => {
+    const parsed = lines.slice(dataStartIndex).map((line, index) => {
       try {
-        const values = parseCSVLine(line);
-        const referencia = values[refIndex]?.trim().replace(/["']/g, '') || '';
-        const cantidadStr = values[quantityIndex]?.trim().replace(/["']/g, '') || '0';
+        const values = parseCSVLine(line, separator);
+        if (values.length < 2) {
+          console.warn(`Línea ${index + dataStartIndex + 1} no tiene suficientes columnas:`, line);
+          return null;
+        }
+        
+        const referencia = values[finalRefIndex]?.trim().replace(/["']/g, '') || '';
+        const cantidadStr = values[finalQuantityIndex]?.trim().replace(/["']/g, '') || '0';
         const cantidad = parseFloat(cantidadStr.replace(/[,]/g, '.')) || 0;
         
         return {
@@ -100,7 +136,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
           cantidad
         };
       } catch (error) {
-        console.warn(`Error procesando línea ${index + 2}:`, line);
+        console.warn(`Error procesando línea ${index + dataStartIndex + 1}:`, line);
         return null;
       }
     }).filter((item): item is ProductionRequest => 
