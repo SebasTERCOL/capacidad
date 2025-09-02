@@ -41,15 +41,49 @@ export const ProductionProjection: React.FC<ProductionProjectionProps> = ({
     }
   }, [data]);
 
+  // Trackear tiempo acumulado por máquina para distribución inteligente
+  const machineWorkload = new Map<string, number>();
+
+  // Función para seleccionar la mejor máquina disponible
+  const selectBestMachine = (availableMachines: any[], workTime: number) => {
+    // Filtrar máquinas por estado y ordenar por prioridad
+    const workingMachines = availableMachines.filter((m: any) => m.machines.status === 'ENCENDIDO');
+    const idleMachines = availableMachines.filter((m: any) => m.machines.status === 'APAGADO');
+    const maintenanceMachines = availableMachines.filter((m: any) => m.machines.status === 'MANTENIMIENTO');
+    
+    // Prioridad: máquinas encendidas con menor carga
+    if (workingMachines.length > 0) {
+      return workingMachines.reduce((best, current) => {
+        const bestLoad = machineWorkload.get(best.machines.name) || 0;
+        const currentLoad = machineWorkload.get(current.machines.name) || 0;
+        return currentLoad < bestLoad ? current : best;
+      });
+    }
+    
+    // Si no hay máquinas encendidas, usar apagadas con menor carga
+    if (idleMachines.length > 0) {
+      return idleMachines.reduce((best, current) => {
+        const bestLoad = machineWorkload.get(best.machines.name) || 0;
+        const currentLoad = machineWorkload.get(current.machines.name) || 0;
+        return currentLoad < bestLoad ? current : best;
+      });
+    }
+    
+    // Como último recurso, usar máquinas en mantenimiento
+    return maintenanceMachines[0] || availableMachines[0];
+  };
+
   const calculateProjection = async () => {
     setLoading(true);
     setError(null);
     
     try {
       const results: ProjectionInfo[] = [];
+      // Resetear carga de máquinas al iniciar cálculo
+      machineWorkload.clear();
       
       for (const item of data) {
-        // Obtener tiempo por unidad desde products y (opcional) info de máquina/proceso
+        // Obtener tiempo por unidad desde products y TODAS las máquinas disponibles para esta referencia
         const [prodResp, mpResp] = await Promise.all([
           supabase
             .from('products')
@@ -67,6 +101,7 @@ export const ProductionProjection: React.FC<ProductionProjectionProps> = ({
               processes!inner(name)
             `)
             .eq('ref', item.referencia)
+            .order('machines(status)', { ascending: false }) // Priorizar máquinas ENCENDIDO
         ]);
 
         // Tiempo por unidad (minutos) proviene de products.time
@@ -77,7 +112,7 @@ export const ProductionProjection: React.FC<ProductionProjectionProps> = ({
         const sam = isNaN(parsedTime) ? 0 : parsedTime; // minutos por unidad
         const tiempoTotal = item.cantidad * sam; // minutos
 
-        // Preparar info de máquina/proceso si existe en machines_processes
+        // Lógica inteligente de asignación de máquinas
         let maquina = 'N/A';
         let estadoMaquina = 'N/A';
         let proceso = 'N/A';
@@ -87,12 +122,33 @@ export const ProductionProjection: React.FC<ProductionProjectionProps> = ({
           console.error('Error fetching machine process:', mpResp.error);
           alerta = 'No se pudo obtener información de máquina/proceso';
         } else if (mpResp.data && mpResp.data.length > 0) {
-          const mp: any = mpResp.data[0];
-          maquina = mp.machines?.name ?? 'N/A';
-          estadoMaquina = mp.machines?.status ?? 'N/A';
-          proceso = mp.processes?.name ?? 'N/A';
-          if (estadoMaquina !== 'ENCENDIDO') {
-            alerta = `Máquina en estado: ${estadoMaquina}`;
+          // Filtrar y ordenar máquinas por prioridad
+          const availableMachines = mpResp.data.filter((mp: any) => mp.machines?.name);
+          
+          if (availableMachines.length > 0) {
+            // Seleccionar la mejor máquina disponible
+            const selectedMachine = selectBestMachine(availableMachines, tiempoTotal);
+            
+            maquina = selectedMachine.machines.name;
+            estadoMaquina = selectedMachine.machines.status;
+            proceso = selectedMachine.processes.name;
+            
+            // Actualizar carga de trabajo de la máquina seleccionada
+            const currentLoad = machineWorkload.get(maquina) || 0;
+            machineWorkload.set(maquina, currentLoad + tiempoTotal);
+            
+            // Generar alertas según el estado
+            if (estadoMaquina !== 'ENCENDIDO') {
+              alerta = `Máquina asignada en estado: ${estadoMaquina}`;
+            } else if (availableMachines.length > 1) {
+              // Informar si se distribuyó la carga
+              const totalMachines = availableMachines.filter((m: any) => m.machines.status === 'ENCENDIDO').length;
+              if (totalMachines > 1) {
+                alerta = `Distribuido entre ${totalMachines} máquinas disponibles`;
+              }
+            }
+          } else {
+            alerta = 'No se encontraron máquinas disponibles';
           }
         } else {
           alerta = 'No se encontró configuración de máquina/proceso';
