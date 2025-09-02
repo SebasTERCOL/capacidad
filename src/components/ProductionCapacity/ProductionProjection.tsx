@@ -69,13 +69,13 @@ export const ProductionProjection: React.FC<ProductionProjectionProps> = ({
             .eq('ref', item.referencia)
         ]);
 
-        // Tiempo por unidad (segundos) ahora proviene de products.time
+        // Tiempo por unidad (minutos) proviene de products.time
         const productRow = prodResp.data && prodResp.data[0] ? prodResp.data[0] as { time?: number | string } : null;
         const parsedTime = productRow?.time !== undefined && productRow?.time !== null
           ? Number(productRow.time)
           : 0;
-        const sam = isNaN(parsedTime) ? 0 : parsedTime; // segundos por unidad
-        const tiempoTotal = (item.cantidad * sam) / 60; // minutos
+        const sam = isNaN(parsedTime) ? 0 : parsedTime; // minutos por unidad
+        const tiempoTotal = item.cantidad * sam; // minutos
 
         // Preparar info de máquina/proceso si existe en machines_processes
         let maquina = 'N/A';
@@ -208,7 +208,7 @@ export const ProductionProjection: React.FC<ProductionProjectionProps> = ({
               <TableRow>
                 <TableHead>Referencia</TableHead>
                 <TableHead className="text-right">Cantidad</TableHead>
-                <TableHead className="text-right">SAM (seg/un)</TableHead>
+                <TableHead className="text-right">SAM (min/un)</TableHead>
                 <TableHead className="text-right">Tiempo Total</TableHead>
                 <TableHead>Máquina</TableHead>
                 <TableHead>Estado</TableHead>
