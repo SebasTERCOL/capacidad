@@ -38,6 +38,8 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
   const [validation, setValidation] = useState<ComponentInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugMode, setDebugMode] = useState(true); // Enable debug mode by default
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   useEffect(() => {
     if (data.length > 0) {
@@ -45,21 +47,44 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
     }
   }, [data]);
 
+  const addDebugLog = (message: string) => {
+    if (debugMode) {
+      setDebugLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+      console.log(message);
+    }
+  };
+
   const validateComponents = async () => {
     setLoading(true);
     setError(null);
+    setDebugLogs([]);
+    
+    addDebugLog(`🚀 Iniciando validación de ${data.length} referencias`);
+    addDebugLog(`📄 Datos de entrada: ${JSON.stringify(data)}`);
     
     try {
       const results: ComponentInfo[] = [];
       
       for (const item of data) {
         const ref = item.referencia.trim().toUpperCase();
-        console.log(`🔍 Validando referencia: ${ref} (cantidad: ${item.cantidad})`);
+        addDebugLog(`🔍 Procesando referencia: ${ref} (cantidad: ${item.cantidad})`);
+        
+        // Validar datos de entrada
+        if (!item.referencia || item.referencia.trim() === '') {
+          addDebugLog(`❌ Referencia vacía detectada`);
+          continue;
+        }
+        
+        if (!item.cantidad || item.cantidad <= 0) {
+          addDebugLog(`❌ Cantidad inválida para ${ref}: ${item.cantidad}`);
+          continue;
+        }
         
         // Buscar BOM para esta referencia con múltiples estrategias
         let bomData: any[] = [];
         let bomError: any = null;
         
+        addDebugLog(`🔎 Búsqueda 1: Coincidencia exacta para "${ref}"`);
         // Estrategia 1: Coincidencia exacta
         const { data: exactData, error: exactError } = await supabase
           .from('bom')
@@ -68,8 +93,9 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
         
         if (exactData && exactData.length > 0) {
           bomData = exactData;
-          console.log(`✅ Encontrado con coincidencia exacta: ${bomData.length} componentes`);
+          addDebugLog(`✅ Estrategia 1 exitosa: ${bomData.length} componentes encontrados`);
         } else {
+          addDebugLog(`⚠️ Estrategia 1 sin resultados, probando ILIKE`);
           // Estrategia 2: Búsqueda con ILIKE (contiene)
           const { data: ilikeData, error: ilikeError } = await supabase
             .from('bom')
@@ -78,30 +104,32 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           
           if (ilikeData && ilikeData.length > 0) {
             bomData = ilikeData;
-            console.log(`✅ Encontrado con ILIKE: ${bomData.length} componentes`);
+            addDebugLog(`✅ Estrategia 2 exitosa: ${bomData.length} componentes encontrados`);
           } else {
+            addDebugLog(`⚠️ Estrategia 2 sin resultados, probando búsqueda manual`);
             // Estrategia 3: Búsqueda case-insensitive con trim
             const { data: allBomData, error: allBomError } = await supabase
               .from('bom')
               .select('component_id, amount, product_id');
             
             if (allBomData) {
-              bomData = allBomData.filter(bom => 
+              const filteredData = allBomData.filter(bom => 
                 bom.product_id?.trim().toUpperCase() === ref
               );
-              console.log(`✅ Encontrado con búsqueda manual: ${bomData.length} componentes`);
+              bomData = filteredData;
+              addDebugLog(`🔧 Estrategia 3: ${filteredData.length} componentes tras filtro manual de ${allBomData.length} registros`);
             }
             bomError = allBomError;
           }
         }
         
         if (bomError) {
-          console.error('❌ Error fetching BOM:', bomError);
+          addDebugLog(`❌ Error en consulta BOM: ${JSON.stringify(bomError)}`);
           continue;
         }
         
         if (!bomData || bomData.length === 0) {
-          console.warn(`⚠️ No se encontró BOM para referencia: ${ref}`);
+          addDebugLog(`❌ BOM no encontrado para ${ref} - agregando componente N/A`);
           results.push({
             referencia: item.referencia,
             cantidadRequerida: item.cantidad,
@@ -119,20 +147,24 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           continue;
         }
         
-        console.log(`📋 BOM encontrado para ${ref}:`, bomData);
+        addDebugLog(`📋 BOM encontrado para ${ref}: ${JSON.stringify(bomData)}`);
         const componentValidation = [];
         
         // Obtener todos los productos de una vez para mejor performance
         const componentIds = bomData.map(bom => bom.component_id);
+        addDebugLog(`🔍 Buscando productos para componentes: ${componentIds.join(', ')}`);
+        
         const { data: productsData, error: productsError } = await supabase
           .from('products')
           .select('reference, quantity, minimum_unit, maximum_unit')
           .in('reference', componentIds);
         
         if (productsError) {
-          console.error('❌ Error fetching products:', productsError);
+          addDebugLog(`❌ Error consultando productos: ${JSON.stringify(productsError)}`);
           continue;
         }
+        
+        addDebugLog(`📦 Productos encontrados: ${productsData?.length || 0} de ${componentIds.length}`);
         
         const productsMap = new Map(
           productsData?.map(p => [p.reference, p]) || []
@@ -142,7 +174,7 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           const productData = productsMap.get(bomItem.component_id);
           
           if (!productData) {
-            console.warn(`⚠️ Componente no encontrado en productos: ${bomItem.component_id}`);
+            addDebugLog(`⚠️ Producto ${bomItem.component_id} no encontrado en inventario`);
             componentValidation.push({
               component_id: bomItem.component_id,
               amount: bomItem.amount,
@@ -159,20 +191,25 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           const cantidadNecesaria = Math.ceil(item.cantidad * bomItem.amount);
           const cantidadDisponible = productData.quantity || 0;
           
+          addDebugLog(`📊 ${bomItem.component_id}: necesario=${cantidadNecesaria}, disponible=${cantidadDisponible}, min=${productData.minimum_unit}, max=${productData.maximum_unit}`);
+          
           let alerta: 'ok' | 'warning' | 'error' = 'ok';
           let mensaje = 'Stock suficiente';
-          
-          console.log(`📊 ${bomItem.component_id}: necesario=${cantidadNecesaria}, disponible=${cantidadDisponible}`);
           
           if (cantidadNecesaria > cantidadDisponible) {
             alerta = 'error';
             mensaje = `Falta stock: ${(cantidadNecesaria - cantidadDisponible).toLocaleString()} unidades`;
+            addDebugLog(`❌ ${bomItem.component_id}: Stock insuficiente`);
           } else if (productData.minimum_unit && (cantidadDisponible - cantidadNecesaria) < productData.minimum_unit) {
             alerta = 'warning';
             mensaje = `Quedará por debajo del mínimo (${productData.minimum_unit.toLocaleString()})`;
+            addDebugLog(`⚠️ ${bomItem.component_id}: Quedará por debajo del mínimo`);
           } else if (productData.maximum_unit && cantidadDisponible > productData.maximum_unit) {
             alerta = 'warning';
             mensaje = `Stock actual supera el máximo (${productData.maximum_unit.toLocaleString()})`;
+            addDebugLog(`⚠️ ${bomItem.component_id}: Stock supera el máximo`);
+          } else {
+            addDebugLog(`✅ ${bomItem.component_id}: Stock OK`);
           }
           
           componentValidation.push({
@@ -193,10 +230,10 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           componentes: componentValidation
         });
         
-        console.log(`✅ Validación completada para ${ref}: ${componentValidation.length} componentes`);
+        addDebugLog(`✅ Validación completada para ${ref}: ${componentValidation.length} componentes procesados`);
       }
       
-      console.log(`🎉 Validación completa: ${results.length} referencias procesadas`);
+      addDebugLog(`🎉 Proceso completo: ${results.length} referencias validadas`);
       setValidation(results);
       onValidationComplete(results);
       
@@ -251,6 +288,32 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
 
   return (
     <div className="space-y-6">
+      {debugMode && debugLogs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-sm">
+              🔧 Panel de Depuración
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setDebugLogs([])}
+              >
+                Limpiar
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="max-h-60 overflow-y-auto">
+            <div className="text-xs font-mono space-y-1 bg-muted p-3 rounded">
+              {debugLogs.map((log, index) => (
+                <div key={index} className="text-muted-foreground">
+                  {log}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
