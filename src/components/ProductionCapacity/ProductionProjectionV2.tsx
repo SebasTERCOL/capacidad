@@ -19,6 +19,8 @@ interface ProjectionInfo {
   operadoresRequeridos: number;
   operadoresDisponibles: number;
   capacidadPorcentaje: number;
+  ocupacionMaquina: number;
+  ocupacionProceso: number;
   alerta: string | null;
   especial?: boolean;
 }
@@ -48,8 +50,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
   }, [data, operatorConfig]);
 
-  // Trackear tiempo acumulado por proceso para distribución inteligente
+  // Trackear tiempo acumulado por proceso y por máquina para distribución inteligente
   const processWorkload = new Map<string, number>();
+  const machineWorkload = new Map<string, number>();
 
   const calculateProjection = async () => {
     setLoading(true);
@@ -58,6 +61,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     try {
       const results: ProjectionInfo[] = [];
       processWorkload.clear();
+      machineWorkload.clear();
       
       for (const item of data) {
         // Obtener información de machines_processes para esta referencia
@@ -91,6 +95,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             operadoresRequeridos: 0,
             operadoresDisponibles: 0,
             capacidadPorcentaje: 0,
+            ocupacionMaquina: 0,
+            ocupacionProceso: 0,
             alerta: 'No se encontró configuración de máquina/proceso'
           });
           continue;
@@ -124,6 +130,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             operadoresRequeridos: 1,
             operadoresDisponibles,
             capacidadPorcentaje: 0,
+            ocupacionMaquina: 0,
+            ocupacionProceso: 0,
             alerta,
             especial: true
           });
@@ -142,12 +150,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const horasRequeridas = tiempoTotal / 60; // convertir minutos a horas
           const horasDisponibles = operatorConfig.availableHours * operadoresDisponibles;
           
-          // Agregar tiempo acumulado del proceso
-          const tiempoAcumulado = processWorkload.get(proceso) || 0;
-          const nuevoTiempoAcumulado = tiempoAcumulado + horasRequeridas;
-          processWorkload.set(proceso, nuevoTiempoAcumulado);
+          // Agregar tiempo acumulado del proceso y máquina
+          const tiempoAcumuladoProceso = processWorkload.get(proceso) || 0;
+          const nuevoTiempoAcumuladoProceso = tiempoAcumuladoProceso + horasRequeridas;
+          processWorkload.set(proceso, nuevoTiempoAcumuladoProceso);
           
-          capacidadPorcentaje = (nuevoTiempoAcumulado / horasDisponibles) * 100;
+          const tiempoAcumuladoMaquina = machineWorkload.get(maquina) || 0;
+          const nuevoTiempoAcumuladoMaquina = tiempoAcumuladoMaquina + horasRequeridas;
+          machineWorkload.set(maquina, nuevoTiempoAcumuladoMaquina);
+          
+          capacidadPorcentaje = (nuevoTiempoAcumuladoProceso / horasDisponibles) * 100;
           
           if (capacidadPorcentaje > 100) {
             alerta = `Sobrecarga del proceso: ${capacidadPorcentaje.toFixed(1)}%`;
@@ -157,6 +169,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             alerta = `Máquina en estado: ${estadoMaquina}`;
           }
         }
+
+        // Calcular ocupación de máquina y proceso
+        const horasRequeridas = tiempoTotal / 60;
+        const horasDisponiblesPorMaquina = operatorConfig.availableHours;
+        const horasDisponiblesPorProceso = operatorConfig.availableHours * operadoresDisponibles;
+        
+        const ocupacionMaquina = ((machineWorkload.get(maquina) || horasRequeridas) / horasDisponiblesPorMaquina) * 100;
+        const ocupacionProceso = ((processWorkload.get(proceso) || horasRequeridas) / horasDisponiblesPorProceso) * 100;
 
         results.push({
           referencia: item.referencia,
@@ -169,6 +189,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           operadoresRequeridos,
           operadoresDisponibles,
           capacidadPorcentaje,
+          ocupacionMaquina,
+          ocupacionProceso,
           alerta
         });
       }
@@ -341,6 +363,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-center">Operarios</TableHead>
                 <TableHead className="text-center">Capacidad</TableHead>
+                <TableHead className="text-center">Ocupación Máq.</TableHead>
+                <TableHead className="text-center">Ocupación Proc.</TableHead>
                 <TableHead>Alertas</TableHead>
               </TableRow>
             </TableHeader>
@@ -380,6 +404,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
                     {!item.especial && (
                       <Badge variant={getCapacityVariant(item.capacidadPorcentaje)}>
                         {item.capacidadPorcentaje.toFixed(1)}%
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {!item.especial && (
+                      <Badge variant={getCapacityVariant(item.ocupacionMaquina)}>
+                        {item.ocupacionMaquina.toFixed(1)}%
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {!item.especial && (
+                      <Badge variant={getCapacityVariant(item.ocupacionProceso)}>
+                        {item.ocupacionProceso.toFixed(1)}%
                       </Badge>
                     )}
                   </TableCell>
