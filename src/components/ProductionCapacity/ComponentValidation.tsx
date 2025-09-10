@@ -19,6 +19,8 @@ interface ComponentInfo {
     maximum_unit: number | null;
     alerta: 'ok' | 'warning' | 'error';
     mensaje: string;
+    machineOccupancy?: number;
+    processOccupancy?: number;
   }[];
 }
 
@@ -44,12 +46,64 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
     }
   }, [data]);
 
+  // Calcular horas disponibles del mes actual
+  const calculateMonthlyHours = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    
+    let weekdays = 0;
+    let saturdays = 0;
+    
+    for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+      const dayOfWeek = d.getDay();
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        weekdays++;
+      } else if (dayOfWeek === 6) {
+        saturdays++;
+      }
+    }
+    
+    const weekdayHours = weekdays * ((7.584 - 0.4167) + (7.617 - 0.4167) + (8.8 - 0.4167));
+    const saturdayHours = saturdays * ((6.0834 - 0.4167) + (5.917 - 0.4167));
+    
+    return weekdayHours + saturdayHours;
+  };
+
+  const monthlyHours = calculateMonthlyHours();
+
   const validateComponents = async () => {
     setLoading(true);
     setError(null);
     
     try {
       const results: ComponentInfo[] = [];
+      
+      // Obtener datos de machines_processes para cálculos de ocupación
+      const { data: machineProcessData } = await supabase
+        .from('machines_processes')
+        .select(`
+          ref, 
+          sam, 
+          id_machine, 
+          id_process,
+          machines!inner(id, name, status),
+          processes!inner(id, name)
+        `);
+      
+      // Crear mapas para búsqueda eficiente
+      const machineProcessMap = new Map();
+      if (machineProcessData) {
+        machineProcessData.forEach(mp => {
+          if (!machineProcessMap.has(mp.ref)) {
+            machineProcessMap.set(mp.ref, []);
+          }
+          machineProcessMap.get(mp.ref).push(mp);
+        });
+      }
       
       for (const item of data) {
         const ref = item.referencia.trim().toUpperCase();
@@ -116,7 +170,9 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
               minimum_unit: null,
               maximum_unit: null,
               alerta: 'warning',
-              mensaje: 'No se encontró BOM para esta referencia'
+              mensaje: 'No se encontró BOM para esta referencia',
+              machineOccupancy: 0,
+              processOccupancy: 0
             }]
           });
           continue;
@@ -152,7 +208,9 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
               minimum_unit: null,
               maximum_unit: null,
               alerta: 'error' as const,
-              mensaje: 'Componente no encontrado en inventario'
+              mensaje: 'Componente no encontrado en inventario',
+              machineOccupancy: 0,
+              processOccupancy: 0
             });
             continue;
           }
@@ -173,6 +231,23 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
             alerta = 'warning';
             mensaje = `Stock actual supera el máximo (${productData.maximum_unit.toLocaleString()})`;
           }
+
+          // Calcular porcentajes de ocupación para el componente
+          let machineOccupancy = 0;
+          let processOccupancy = 0;
+
+          const componentMachineProcesses = machineProcessMap.get(bomItem.component_id);
+          if (componentMachineProcesses && componentMachineProcesses.length > 0) {
+            // Usar el primer proceso encontrado para el cálculo
+            const mp = componentMachineProcesses[0];
+            if (mp.sam > 0 && mp.machines?.status === 'ENCENDIDO') {
+              const timeRequiredMinutes = cantidadNecesaria / mp.sam;
+              const timeRequiredHours = timeRequiredMinutes / 60;
+              
+              machineOccupancy = Math.min((timeRequiredHours / monthlyHours) * 100, 100);
+              processOccupancy = machineOccupancy; // Por simplicidad, usar el mismo valor
+            }
+          }
           
           componentValidation.push({
             component_id: bomItem.component_id,
@@ -182,7 +257,9 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
             minimum_unit: productData.minimum_unit,
             maximum_unit: productData.maximum_unit,
             alerta,
-            mensaje
+            mensaje,
+            machineOccupancy,
+            processOccupancy
           });
         }
         
@@ -274,6 +351,8 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
                   <TableHead className="text-right">Total Necesario</TableHead>
                   <TableHead className="text-right">Disponible</TableHead>
                   <TableHead className="text-right">Min/Max</TableHead>
+                  <TableHead className="text-right">Ocupación Máq.</TableHead>
+                  <TableHead className="text-right">Ocupación Proc.</TableHead>
                   <TableHead>Estado</TableHead>
                 </TableRow>
               </TableHeader>
@@ -289,6 +368,16 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
                         `${comp.minimum_unit || 0} / ${comp.maximum_unit || '∞'}` : 
                         'N/A'
                       }
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge variant={comp.machineOccupancy > 80 ? 'destructive' : comp.machineOccupancy > 60 ? 'secondary' : 'default'}>
+                        {comp.machineOccupancy?.toFixed(1) || '0.0'}%
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge variant={comp.processOccupancy > 80 ? 'destructive' : comp.processOccupancy > 60 ? 'secondary' : 'default'}>
+                        {comp.processOccupancy?.toFixed(1) || '0.0'}%
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant={getAlertVariant(comp.alerta)} className="flex items-center gap-1 w-fit">
