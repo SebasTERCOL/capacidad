@@ -68,12 +68,22 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
       }
     }
     
-    // Horas por turno (ya incluyen descanso de 0.4167 horas)
-    const weekdayHours = 7.584 + 7.617 + 8.8; // Mañana + Tarde + Noche
-    const saturdayHours = 6.0834 + 5.917; // Mañana + Tarde
+    // Horas brutas por turno (sin descanso)
+    const weekdayHours = 8 + 8 + 8; // Mañana + Tarde + Noche (8h cada uno)
+    const saturdayHours = 6.5 + 6; // Mañana + Tarde
     
-    const totalHours = (weekdays * weekdayHours) + (saturdays * saturdayHours);
-    return Math.round(totalHours * 10000) / 10000; // Redondear a 4 decimales
+    const totalBruteHours = (weekdays * weekdayHours) + (saturdays * saturdayHours);
+    
+    // Calcular turnos totales en el mes
+    const weekdayShifts = weekdays * 3; // 3 turnos por día de semana
+    const saturdayShifts = saturdays * 2; // 2 turnos por sábado
+    const totalShifts = weekdayShifts + saturdayShifts;
+    
+    // Restar 25 minutos (0.4167 horas) de descanso por cada turno
+    const totalBreakTime = totalShifts * (25/60); // 25 minutos en horas
+    const netHours = totalBruteHours - totalBreakTime;
+    
+    return Math.round(netHours * 10) / 10; // Redondear a 1 decimal
   };
 
   const availableHours = calculateAvailableHours(workMonth, workYear);
