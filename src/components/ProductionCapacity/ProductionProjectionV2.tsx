@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Cog, AlertCircle, Users, Calendar, Activity } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Activity, Calendar, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { ProductionRequest } from "./FileUpload";
 import { OperatorConfig } from "./OperatorConfiguration";
 
-interface ProjectionInfo {
+export interface ProjectionInfo {
   referencia: string;
   cantidadRequerida: number;
   sam: number;
@@ -21,16 +20,16 @@ interface ProjectionInfo {
   capacidadPorcentaje: number;
   ocupacionMaquina: number;
   ocupacionProceso: number;
-  alerta: string | null;
+  alerta?: string | null;
   especial?: boolean;
 }
 
 interface ProductionProjectionV2Props {
-  data: ProductionRequest[];
+  data: { referencia: string; cantidad: number }[];
   operatorConfig: OperatorConfig;
   onNext: () => void;
   onBack: () => void;
-  onProjectionComplete: (projection: ProjectionInfo[]) => void;
+  onProjectionComplete: (projectionData: ProjectionInfo[]) => void;
 }
 
 export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({ 
@@ -50,75 +49,136 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
   }, [data, operatorConfig]);
 
-  // Trackear tiempo acumulado por proceso y por máquina para distribución inteligente
-  const processWorkload = new Map<string, number>();
-  const machineWorkload = new Map<string, number>();
-
   const calculateProjection = async () => {
+    if (!data || data.length === 0) {
+      setProjection([]);
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const results: ProjectionInfo[] = [];
-      processWorkload.clear();
-      machineWorkload.clear();
-      
+      const processWorkload = new Map<string, number>();
+      const machineWorkload = new Map<string, number>();
+
+      // Inicializar carga de trabajo para todas las máquinas operativas
+      operatorConfig.machines
+        .filter(m => m.isOperational && m.hasOperator)
+        .forEach(machine => {
+          machineWorkload.set(machine.name, 0);
+        });
+
       for (const item of data) {
-        // Obtener información de machines_processes para esta referencia
-        const { data: mpData, error: mpError } = await supabase
+        // Obtener todos los procesos de máquinas disponibles para esta referencia
+        const { data: machinesProcesses, error: machineError } = await supabase
           .from('machines_processes')
           .select(`
-            sam,
-            frequency,
-            id_machine,
-            id_process,
-            machines!inner(name, status),
-            processes!inner(name)
+            sam, frequency, ref, id_machine, id_process,
+            machines!inner(id, name, status),
+            processes!inner(id, name)
           `)
-          .eq('ref', item.referencia)
-          .order('machines(status)', { ascending: false });
+          .eq('ref', item.referencia);
 
-        if (mpError) {
-          console.error('Error fetching machine process:', mpError);
-          continue;
-        }
+        if (machineError) throw machineError;
 
-        if (!mpData || mpData.length === 0) {
+        if (!machinesProcesses || machinesProcesses.length === 0) {
+          // Referencia sin tiempo definido - crear alerta
           results.push({
             referencia: item.referencia,
             cantidadRequerida: item.cantidad,
             sam: 0,
             tiempoTotal: 0,
-            maquina: 'N/A',
-            estadoMaquina: 'N/A',
-            proceso: 'N/A',
+            maquina: 'Sin definir',
+            estadoMaquina: 'Sin definir',
+            proceso: 'Sin definir',
             operadoresRequeridos: 0,
             operadoresDisponibles: 0,
             capacidadPorcentaje: 0,
             ocupacionMaquina: 0,
             ocupacionProceso: 0,
-            alerta: 'No se encontró configuración de máquina/proceso'
+            alerta: '⚠️ Falta definir tiempos para esta referencia'
           });
           continue;
         }
 
-        // Tomar el primer resultado (mejor máquina disponible)
-        const machineProcess = mpData[0];
-        const proceso = machineProcess.processes.name;
-        const maquina = machineProcess.machines.name;
-        const estadoMaquina = machineProcess.machines.status;
-        const sam = machineProcess.sam || 0; // unidades/minuto desde machines_processes
+        // Filtrar solo las máquinas que están operativas y con operario asignado
+        const availableMachineProcesses = machinesProcesses.filter((mp: any) => {
+          const machine = operatorConfig.machines.find(m => m.id === mp.id_machine);
+          return machine && machine.isOperational && machine.hasOperator;
+        });
+
+        if (availableMachineProcesses.length === 0) {
+          // No hay máquinas disponibles para esta referencia
+          const firstProcess = machinesProcesses[0] as any;
+          results.push({
+            referencia: item.referencia,
+            cantidadRequerida: item.cantidad,
+            sam: firstProcess.sam || 0,
+            tiempoTotal: 0,
+            maquina: firstProcess.machines.name,
+            estadoMaquina: firstProcess.machines.status,
+            proceso: firstProcess.processes.name,
+            operadoresRequeridos: 1,
+            operadoresDisponibles: 0,
+            capacidadPorcentaje: 0,
+            ocupacionMaquina: 0,
+            ocupacionProceso: 0,
+            alerta: '❌ No hay máquinas operativas disponibles'
+          });
+          continue;
+        }
+
+        // Determinar prioridad: referencias que pueden hacerse en pocas máquinas tienen prioridad
+        const totalMachinesForRef = machinesProcesses.length;
+        const availableMachinesCount = availableMachineProcesses.length;
+        const scarcityFactor = totalMachinesForRef === 1 ? 1 : (1 / availableMachinesCount);
+
+        // Elegir la mejor máquina considerando carga actual y scarcidad
+        let bestMachine: any = null;
+        let minWorkload = Infinity;
+
+        for (const mp of availableMachineProcesses) {
+          const machine = operatorConfig.machines.find(m => m.id === mp.id_machine);
+          if (!machine) continue;
+
+          const currentWorkload = machineWorkload.get(machine.name) || 0;
+          const adjustedWorkload = currentWorkload * (scarcityFactor > 0.5 ? 0.5 : 1); // Penalizar menos a máquinas escasas
+
+          if (adjustedWorkload < minWorkload) {
+            minWorkload = adjustedWorkload;
+            bestMachine = {
+              ...mp,
+              machine: machine
+            };
+          }
+        }
+
+        if (!bestMachine) continue;
+
+        const sam = bestMachine.sam || 0;
         const tiempoTotal = item.cantidad * sam; // minutos totales
+        const tiempoTotalHoras = tiempoTotal / 60;
+        
+        const maquina = bestMachine.machines.name;
+        const estadoMaquina = bestMachine.machines.status;
+        const proceso = bestMachine.processes.name;
 
         // Verificar si es proceso especial (Lavado/Pintura)
         const isSpecialProcess = proceso === 'Lavado' || proceso === 'Pintura';
         
         let alerta: string | null = null;
         let capacidadPorcentaje = 0;
-        const operadoresDisponibles = operatorConfig.availableOperators[proceso] || 0;
+        
+        // Obtener máquinas disponibles para este proceso (operativas y con operario)
+        const availableMachinesForProcess = operatorConfig.machines.filter(m => 
+          m.processName === proceso && m.isOperational && m.hasOperator
+        );
+        const operadoresDisponibles = availableMachinesForProcess.length;
         
         if (isSpecialProcess) {
-          alerta = 'Proceso evaluado por peso - pendiente cálculo específico';
+          alerta = '⚖️ Proceso evaluado por peso - pendiente cálculo específico';
           results.push({
             referencia: item.referencia,
             cantidadRequerida: item.cantidad,
@@ -142,41 +202,55 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const processRequirements = getProcessRequirements(proceso);
         const operadoresRequeridos = processRequirements.minOperators;
 
-        if (operadoresDisponibles < operadoresRequeridos) {
-          alerta = `Insuficientes operarios: ${operadoresDisponibles}/${operadoresRequeridos}`;
-          capacidadPorcentaje = (operadoresDisponibles / operadoresRequeridos) * 100;
-        } else {
-          // Calcular capacidad basada en horas disponibles
-          const horasRequeridas = tiempoTotal / 60; // convertir minutos a horas
-          const horasDisponibles = operatorConfig.availableHours * operadoresDisponibles;
-          
-          // Agregar tiempo acumulado del proceso y máquina
-          const tiempoAcumuladoProceso = processWorkload.get(proceso) || 0;
-          const nuevoTiempoAcumuladoProceso = tiempoAcumuladoProceso + horasRequeridas;
-          processWorkload.set(proceso, nuevoTiempoAcumuladoProceso);
-          
-          const tiempoAcumuladoMaquina = machineWorkload.get(maquina) || 0;
-          const nuevoTiempoAcumuladoMaquina = tiempoAcumuladoMaquina + horasRequeridas;
-          machineWorkload.set(maquina, nuevoTiempoAcumuladoMaquina);
-          
-          capacidadPorcentaje = (nuevoTiempoAcumuladoProceso / horasDisponibles) * 100;
-          
-          if (capacidadPorcentaje > 100) {
-            alerta = `Sobrecarga del proceso: ${capacidadPorcentaje.toFixed(1)}%`;
-          } else if (capacidadPorcentaje > 85) {
-            alerta = `Capacidad alta: ${capacidadPorcentaje.toFixed(1)}%`;
-          } else if (estadoMaquina !== 'ENCENDIDO') {
-            alerta = `Máquina en estado: ${estadoMaquina}`;
-          }
-        }
+        // Actualizar carga de trabajo
+        const currentMachineWorkload = machineWorkload.get(maquina) || 0;
+        const newMachineWorkload = currentMachineWorkload + tiempoTotalHoras;
+        machineWorkload.set(maquina, newMachineWorkload);
+
+        const currentProcessWorkload = processWorkload.get(proceso) || 0;
+        const newProcessWorkload = currentProcessWorkload + tiempoTotalHoras;
+        processWorkload.set(proceso, newProcessWorkload);
 
         // Calcular ocupación de máquina y proceso
-        const horasRequeridas = tiempoTotal / 60;
         const horasDisponiblesPorMaquina = operatorConfig.availableHours;
         const horasDisponiblesPorProceso = operatorConfig.availableHours * operadoresDisponibles;
         
-        const ocupacionMaquina = ((machineWorkload.get(maquina) || horasRequeridas) / horasDisponiblesPorMaquina) * 100;
-        const ocupacionProceso = ((processWorkload.get(proceso) || horasRequeridas) / horasDisponiblesPorProceso) * 100;
+        const ocupacionMaquina = (newMachineWorkload / horasDisponiblesPorMaquina) * 100;
+        const ocupacionProceso = (newProcessWorkload / horasDisponiblesPorProceso) * 100;
+
+        // Determinar alertas basadas en ocupación
+        if (operadoresDisponibles < operadoresRequeridos) {
+          alerta = `⚠️ Insuficientes operarios: ${operadoresDisponibles}/${operadoresRequeridos}`;
+          capacidadPorcentaje = (operadoresDisponibles / operadoresRequeridos) * 100;
+        } else if (ocupacionMaquina > 100) {
+          alerta = `🔴 Sobrecarga de máquina: ${ocupacionMaquina.toFixed(1)}%`;
+          capacidadPorcentaje = ocupacionMaquina;
+        } else if (ocupacionProceso > 100) {
+          alerta = `🟡 Sobrecarga de proceso: ${ocupacionProceso.toFixed(1)}%`;
+          capacidadPorcentaje = ocupacionProceso;
+        } else if (ocupacionMaquina > 85) {
+          alerta = `⚠️ Capacidad alta en máquina: ${ocupacionMaquina.toFixed(1)}%`;
+          capacidadPorcentaje = ocupacionMaquina;
+        } else if (ocupacionProceso > 85) {
+          alerta = `⚠️ Capacidad alta en proceso: ${ocupacionProceso.toFixed(1)}%`;
+          capacidadPorcentaje = ocupacionProceso;
+        } else if (estadoMaquina !== 'ENCENDIDO') {
+          alerta = `⚙️ Máquina en estado: ${estadoMaquina}`;
+          capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
+        } else {
+          capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
+        }
+
+        // Agregar información sobre distribución inteligente
+        if (availableMachinesCount > 1 && scarcityFactor < 0.5) {
+          if (!alerta) {
+            alerta = `📊 Distribuible en ${availableMachinesCount} máquinas`;
+          }
+        } else if (availableMachinesCount === 1) {
+          if (!alerta) {
+            alerta = `🎯 Máquina exclusiva para esta referencia`;
+          }
+        }
 
         results.push({
           referencia: item.referencia,
@@ -252,7 +326,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       <Card>
         <CardContent className="p-8 text-center">
           <div className="animate-spin h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>Calculando proyección de producción con operarios...</p>
+          <p>Calculando proyección de producción con distribución inteligente...</p>
         </CardContent>
       </Card>
     );
@@ -276,10 +350,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
-            Proyección de Producción con Operarios
+            Proyección de Producción con Distribución Inteligente
           </CardTitle>
           <CardDescription>
-            Análisis realista considerando operarios disponibles y capacidad temporal
+            Análisis realista con asignación optimizada de máquinas y operarios
           </CardDescription>
         </CardHeader>
       </Card>
@@ -304,13 +378,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
               <div className="text-xl font-bold text-primary">
-                {Object.values(operatorConfig.availableOperators).reduce((sum, count) => sum + count, 0)}
+                {operatorConfig.machines.filter(m => m.hasOperator).length}
               </div>
               <div className="text-sm text-muted-foreground">Total Operarios</div>
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
               <div className="text-xl font-bold text-primary">
-                {(Object.values(operatorConfig.availableOperators).reduce((sum, count) => sum + count, 0) * operatorConfig.availableHours).toFixed(0)}h
+                {(operatorConfig.machines.filter(m => m.hasOperator).length * operatorConfig.availableHours).toFixed(0)}h
               </div>
               <div className="text-sm text-muted-foreground">Capacidad Total</div>
             </div>
@@ -321,7 +395,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       {/* Resumen General */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Resumen de Proyección</CardTitle>
+          <CardTitle className="text-lg">Resumen de la Proyección</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -348,91 +422,77 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       {/* Tabla de Proyección */}
       <Card>
         <CardHeader>
-          <CardTitle>Detalle por Referencia</CardTitle>
+          <CardTitle>Proyección Detallada por Referencia</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Referencia</TableHead>
-                <TableHead className="text-right">Cantidad</TableHead>
-                <TableHead className="text-right">SAM (min/un)</TableHead>
-                <TableHead className="text-right">Tiempo Total</TableHead>
-                <TableHead>Proceso</TableHead>
-                <TableHead>Máquina</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-center">Operarios</TableHead>
-                <TableHead className="text-center">Capacidad</TableHead>
-                <TableHead className="text-center">Ocupación Máq.</TableHead>
-                <TableHead className="text-center">Ocupación Proc.</TableHead>
-                <TableHead>Alertas</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {projection.map((item, index) => (
-                <TableRow key={index} className={item.especial ? 'bg-orange-50' : ''}>
-                  <TableCell className="font-medium">{item.referencia}</TableCell>
-                  <TableCell className="text-right">{item.cantidadRequerida.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">{item.sam}</TableCell>
-                  <TableCell className="text-right font-medium">{formatTime(item.tiempoTotal)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      {item.especial && <span className="text-orange-500">⚠️</span>}
-                      {item.proceso}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Cog className="h-4 w-4" />
-                      {item.maquina}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusVariant(item.estadoMaquina)}>
-                      {item.estadoMaquina}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <div className="flex items-center gap-1 justify-center">
-                      <Users className="h-4 w-4" />
-                      <span className={item.operadoresDisponibles < item.operadoresRequeridos ? 'text-red-600 font-medium' : ''}>
+          <div className="rounded-md border overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Referencia</TableHead>
+                  <TableHead>Cantidad</TableHead>
+                  <TableHead>SAM</TableHead>
+                  <TableHead>Tiempo Total</TableHead>
+                  <TableHead>Proceso</TableHead>
+                  <TableHead>Máquina</TableHead>
+                  <TableHead>Estado Máq.</TableHead>
+                  <TableHead>Operarios</TableHead>
+                  <TableHead>Capacidad</TableHead>
+                  <TableHead>Ocupación Máq.</TableHead>
+                  <TableHead>Ocupación Proc.</TableHead>
+                  <TableHead>Alertas</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {projection.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell className="font-medium">{item.referencia}</TableCell>
+                    <TableCell>{item.cantidadRequerida}</TableCell>
+                    <TableCell>{item.sam}</TableCell>
+                    <TableCell>{formatTime(item.tiempoTotal)}</TableCell>
+                    <TableCell>{item.proceso}</TableCell>
+                    <TableCell>{item.maquina}</TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusVariant(item.estadoMaquina)}>
+                        {item.estadoMaquina}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className={
+                        item.operadoresDisponibles < item.operadoresRequeridos 
+                          ? 'text-red-600' 
+                          : 'text-green-600'
+                      }>
                         {item.operadoresDisponibles}/{item.operadoresRequeridos}
                       </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {!item.especial && (
+                    </TableCell>
+                    <TableCell>
                       <Badge variant={getCapacityVariant(item.capacidadPorcentaje)}>
                         {item.capacidadPorcentaje.toFixed(1)}%
                       </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {!item.especial && (
+                    </TableCell>
+                    <TableCell>
                       <Badge variant={getCapacityVariant(item.ocupacionMaquina)}>
                         {item.ocupacionMaquina.toFixed(1)}%
                       </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {!item.especial && (
+                    </TableCell>
+                    <TableCell>
                       <Badge variant={getCapacityVariant(item.ocupacionProceso)}>
                         {item.ocupacionProceso.toFixed(1)}%
                       </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {item.alerta && (
-                      <Badge variant="destructive" className="flex items-center gap-1 w-fit">
-                        <AlertCircle className="h-3 w-3" />
-                        {item.alerta}
-                      </Badge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                    </TableCell>
+                    <TableCell>
+                      {item.alerta && (
+                        <div className="text-sm text-muted-foreground max-w-[200px] truncate" title={item.alerta}>
+                          {item.alerta}
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
