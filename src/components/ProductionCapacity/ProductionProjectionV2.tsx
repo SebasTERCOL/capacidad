@@ -71,202 +71,236 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         });
 
       for (const item of data) {
-        // Obtener todos los procesos de máquinas disponibles para esta referencia
-        const { data: machinesProcesses, error: machineError } = await supabase
-          .from('machines_processes')
-          .select(`
-            sam, frequency, ref, id_machine, id_process,
-            machines!inner(id, name, status),
-            processes!inner(id, name)
-          `)
-          .eq('ref', item.referencia);
+        // 1. Obtener BOM de la referencia principal
+        const { data: bomData, error: bomError } = await supabase
+          .from('bom')
+          .select('component_id, amount')
+          .eq('product_id', item.referencia);
 
-        if (machineError) throw machineError;
+        if (bomError) throw bomError;
 
-        if (!machinesProcesses || machinesProcesses.length === 0) {
-          // Referencia sin tiempo definido - crear alerta
-          results.push({
-            referencia: item.referencia,
-            cantidadRequerida: item.cantidad,
-            sam: 0,
-            tiempoTotal: 0,
-            maquina: 'Sin definir',
-            estadoMaquina: 'Sin definir',
-            proceso: 'Sin definir',
-            operadoresRequeridos: 0,
-            operadoresDisponibles: 0,
-            capacidadPorcentaje: 0,
-            ocupacionMaquina: 0,
-            ocupacionProceso: 0,
-            alerta: '⚠️ Falta definir tiempos para esta referencia'
-          });
-          continue;
-        }
+        // 2. Crear lista de todas las referencias a procesar (principal + componentes)
+        const referencesToProcess: {
+          ref: string;
+          cantidad: number;
+          isMain: boolean;
+          parentRef?: string;
+        }[] = [
+          { ref: item.referencia, cantidad: item.cantidad, isMain: true },
+          ...(bomData || []).map(bom => ({
+            ref: bom.component_id,
+            cantidad: bom.amount * item.cantidad,
+            isMain: false,
+            parentRef: item.referencia
+          }))
+        ];
 
-        // Filtrar solo las máquinas que están operativas y con operario asignado
-        const availableMachineProcesses = machinesProcesses.filter((mp: any) => {
-          const machine = operatorConfig.machines.find(m => m.id === mp.id_machine);
-          return machine && machine.isOperational && machine.hasOperator;
-        });
+        // 3. Procesar cada referencia (principal y componentes)
+        for (const refToProcess of referencesToProcess) {
+          // Obtener todos los procesos de máquinas disponibles para esta referencia
+          const { data: machinesProcesses, error: machineError } = await supabase
+            .from('machines_processes')
+            .select(`
+              sam, frequency, ref, id_machine, id_process,
+              machines!inner(id, name, status),
+              processes!inner(id, name)
+            `)
+            .eq('ref', refToProcess.ref);
 
-        if (availableMachineProcesses.length === 0) {
-          // No hay máquinas disponibles para esta referencia
-          const firstProcess = machinesProcesses[0] as any;
-          results.push({
-            referencia: item.referencia,
-            cantidadRequerida: item.cantidad,
-            sam: firstProcess.sam || 0,
-            tiempoTotal: 0,
-            maquina: firstProcess.machines.name,
-            estadoMaquina: firstProcess.machines.status,
-            proceso: firstProcess.processes.name,
-            operadoresRequeridos: 1,
-            operadoresDisponibles: 0,
-            capacidadPorcentaje: 0,
-            ocupacionMaquina: 0,
-            ocupacionProceso: 0,
-            alerta: '❌ No hay máquinas operativas disponibles'
-          });
-          continue;
-        }
+          if (machineError) throw machineError;
 
-        // Determinar prioridad: referencias que pueden hacerse en pocas máquinas tienen prioridad
-        const totalMachinesForRef = machinesProcesses.length;
-        const availableMachinesCount = availableMachineProcesses.length;
-        const scarcityFactor = totalMachinesForRef === 1 ? 1 : (1 / availableMachinesCount);
-
-        // Elegir la mejor máquina considerando carga actual y scarcidad
-        let bestMachine: any = null;
-        let minWorkload = Infinity;
-
-        for (const mp of availableMachineProcesses) {
-          const machine = operatorConfig.machines.find(m => m.id === mp.id_machine);
-          if (!machine) continue;
-
-          const currentWorkload = machineWorkload.get(machine.name) || 0;
-          const adjustedWorkload = currentWorkload * (scarcityFactor > 0.5 ? 0.5 : 1); // Penalizar menos a máquinas escasas
-
-          if (adjustedWorkload < minWorkload) {
-            minWorkload = adjustedWorkload;
-            bestMachine = {
-              ...mp,
-              machine: machine
-            };
+          if (!machinesProcesses || machinesProcesses.length === 0) {
+            // Componente sin tiempo definido
+            if (refToProcess.isMain || bomData?.length === 0) {
+              // Solo mostrar alerta si es referencia principal o no tiene BOM
+              results.push({
+                referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+                cantidadRequerida: refToProcess.cantidad,
+                sam: 0,
+                tiempoTotal: 0,
+                maquina: 'Sin definir',
+                estadoMaquina: 'Sin definir',
+                proceso: 'Sin definir',
+                operadoresRequeridos: 0,
+                operadoresDisponibles: 0,
+                capacidadPorcentaje: 0,
+                ocupacionMaquina: 0,
+                ocupacionProceso: 0,
+                alerta: `⚠️ Falta definir tiempos para ${refToProcess.ref}`
+              });
+            }
+            continue;
           }
-        }
 
-        if (!bestMachine) continue;
+          // Filtrar solo las máquinas que están operativas y con operario asignado
+          const availableMachineProcesses = machinesProcesses.filter((mp: any) => {
+            const machine = operatorConfig.machines.find(m => m.id === mp.id_machine);
+            return machine && machine.isOperational && machine.hasOperator;
+          });
 
-        const sam = bestMachine.sam || 0;
-        const tiempoTotal = item.cantidad * sam; // minutos totales
-        const tiempoTotalHoras = tiempoTotal / 60;
-        
-        const maquina = bestMachine.machines.name;
-        const estadoMaquina = bestMachine.machines.status;
-        const proceso = bestMachine.processes.name;
+          if (availableMachineProcesses.length === 0) {
+            // No hay máquinas disponibles para esta referencia/componente
+            const firstProcess = machinesProcesses[0] as any;
+            results.push({
+              referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+              cantidadRequerida: refToProcess.cantidad,
+              sam: firstProcess.sam || 0,
+              tiempoTotal: 0,
+              maquina: firstProcess.machines.name,
+              estadoMaquina: firstProcess.machines.status,
+              proceso: firstProcess.processes.name,
+              operadoresRequeridos: 1,
+              operadoresDisponibles: 0,
+              capacidadPorcentaje: 0,
+              ocupacionMaquina: 0,
+              ocupacionProceso: 0,
+              alerta: '❌ No hay máquinas operativas disponibles'
+            });
+            continue;
+          }
 
-        // Verificar si es proceso especial (Lavado/Pintura)
-        const isSpecialProcess = proceso === 'Lavado' || proceso === 'Pintura';
-        
-        let alerta: string | null = null;
-        let capacidadPorcentaje = 0;
-        
-        // Obtener máquinas disponibles para este proceso (operativas y con operario)
-        const availableMachinesForProcess = operatorConfig.machines.filter(m => 
-          m.processName === proceso && m.isOperational && m.hasOperator
-        );
-        const operadoresDisponibles = availableMachinesForProcess.length;
-        
-        if (isSpecialProcess) {
-          alerta = '⚖️ Proceso evaluado por peso - pendiente cálculo específico';
+          // Determinar prioridad: referencias que pueden hacerse en pocas máquinas tienen prioridad
+          const totalMachinesForRef = machinesProcesses.length;
+          const availableMachinesCount = availableMachineProcesses.length;
+          const scarcityFactor = totalMachinesForRef === 1 ? 1 : (1 / availableMachinesCount);
+
+          // Elegir la mejor máquina considerando carga actual y scarcidad
+          let bestMachine: any = null;
+          let minWorkload = Infinity;
+
+          for (const mp of availableMachineProcesses) {
+            const machine = operatorConfig.machines.find(m => m.id === mp.id_machine);
+            if (!machine) continue;
+
+            const currentWorkload = machineWorkload.get(machine.name) || 0;
+            const adjustedWorkload = currentWorkload * (scarcityFactor > 0.5 ? 0.5 : 1); // Penalizar menos a máquinas escasas
+
+            if (adjustedWorkload < minWorkload) {
+              minWorkload = adjustedWorkload;
+              bestMachine = {
+                ...mp,
+                machine: machine
+              };
+            }
+          }
+
+          if (!bestMachine) continue;
+
+          const sam = bestMachine.sam || 0;
+          const tiempoTotal = refToProcess.cantidad * sam; // minutos totales (considerando cantidad del BOM)
+          const tiempoTotalHoras = tiempoTotal / 60;
+          
+          const maquina = bestMachine.machines.name;
+          const estadoMaquina = bestMachine.machines.status;
+          const proceso = bestMachine.processes.name;
+
+          // Verificar si es proceso especial (Lavado/Pintura)
+          const isSpecialProcess = proceso === 'Lavado' || proceso === 'Pintura';
+          
+          let alerta: string | null = null;
+          let capacidadPorcentaje = 0;
+          
+          // Obtener máquinas disponibles para este proceso (operativas y con operario)
+          const availableMachinesForProcess = operatorConfig.machines.filter(m => 
+            m.processName === proceso && m.isOperational && m.hasOperator
+          );
+          const operadoresDisponibles = availableMachinesForProcess.length;
+          
+          if (isSpecialProcess) {
+            alerta = '⚖️ Proceso evaluado por peso - pendiente cálculo específico';
+            results.push({
+              referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+              cantidadRequerida: refToProcess.cantidad,
+              sam,
+              tiempoTotal,
+              maquina,
+              estadoMaquina,
+              proceso,
+              operadoresRequeridos: 1,
+              operadoresDisponibles,
+              capacidadPorcentaje: 0,
+              ocupacionMaquina: 0,
+              ocupacionProceso: 0,
+              alerta,
+              especial: true
+            });
+            continue;
+          }
+
+          // Calcular requerimientos de operarios según el proceso
+          const processRequirements = getProcessRequirements(proceso);
+          const operadoresRequeridos = processRequirements.minOperators;
+
+          // Actualizar carga de trabajo
+          const currentMachineWorkload = machineWorkload.get(maquina) || 0;
+          const newMachineWorkload = currentMachineWorkload + tiempoTotalHoras;
+          machineWorkload.set(maquina, newMachineWorkload);
+
+          const currentProcessWorkload = processWorkload.get(proceso) || 0;
+          const newProcessWorkload = currentProcessWorkload + tiempoTotalHoras;
+          processWorkload.set(proceso, newProcessWorkload);
+
+          // Calcular ocupación de máquina y proceso
+          const horasDisponiblesPorMaquina = operatorConfig.availableHours;
+          const horasDisponiblesPorProceso = operatorConfig.availableHours * operadoresDisponibles;
+          
+          const ocupacionMaquina = (newMachineWorkload / horasDisponiblesPorMaquina) * 100;
+          const ocupacionProceso = (newProcessWorkload / horasDisponiblesPorProceso) * 100;
+
+          // Determinar alertas basadas en ocupación
+          if (operadoresDisponibles < operadoresRequeridos) {
+            alerta = `⚠️ Insuficientes operarios: ${operadoresDisponibles}/${operadoresRequeridos}`;
+            capacidadPorcentaje = (operadoresDisponibles / operadoresRequeridos) * 100;
+          } else if (ocupacionMaquina > 100) {
+            alerta = `🔴 Sobrecarga de máquina: ${ocupacionMaquina.toFixed(1)}%`;
+            capacidadPorcentaje = ocupacionMaquina;
+          } else if (ocupacionProceso > 100) {
+            alerta = `🟡 Sobrecarga de proceso: ${ocupacionProceso.toFixed(1)}%`;
+            capacidadPorcentaje = ocupacionProceso;
+          } else if (ocupacionMaquina > 85) {
+            alerta = `⚠️ Capacidad alta en máquina: ${ocupacionMaquina.toFixed(1)}%`;
+            capacidadPorcentaje = ocupacionMaquina;
+          } else if (ocupacionProceso > 85) {
+            alerta = `⚠️ Capacidad alta en proceso: ${ocupacionProceso.toFixed(1)}%`;
+            capacidadPorcentaje = ocupacionProceso;
+          } else if (estadoMaquina !== 'ENCENDIDO') {
+            alerta = `⚙️ Máquina en estado: ${estadoMaquina}`;
+            capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
+          } else {
+            capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
+          }
+
+          // Agregar información sobre distribución inteligente y BOM
+          if (!refToProcess.isMain) {
+            if (!alerta) {
+              alerta = `🔧 Componente de ${refToProcess.parentRef}`;
+            }
+          } else if (availableMachinesCount > 1 && scarcityFactor < 0.5) {
+            if (!alerta) {
+              alerta = `📊 Distribuible en ${availableMachinesCount} máquinas`;
+            }
+          } else if (availableMachinesCount === 1) {
+            if (!alerta) {
+              alerta = `🎯 Máquina exclusiva para esta referencia`;
+            }
+          }
+
           results.push({
-            referencia: item.referencia,
-            cantidadRequerida: item.cantidad,
+            referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+            cantidadRequerida: refToProcess.cantidad,
             sam,
             tiempoTotal,
             maquina,
             estadoMaquina,
             proceso,
-            operadoresRequeridos: 1,
+            operadoresRequeridos,
             operadoresDisponibles,
-            capacidadPorcentaje: 0,
-            ocupacionMaquina: 0,
-            ocupacionProceso: 0,
-            alerta,
-            especial: true
+            capacidadPorcentaje,
+            ocupacionMaquina,
+            ocupacionProceso,
+            alerta
           });
-          continue;
         }
-
-        // Calcular requerimientos de operarios según el proceso
-        const processRequirements = getProcessRequirements(proceso);
-        const operadoresRequeridos = processRequirements.minOperators;
-
-        // Actualizar carga de trabajo
-        const currentMachineWorkload = machineWorkload.get(maquina) || 0;
-        const newMachineWorkload = currentMachineWorkload + tiempoTotalHoras;
-        machineWorkload.set(maquina, newMachineWorkload);
-
-        const currentProcessWorkload = processWorkload.get(proceso) || 0;
-        const newProcessWorkload = currentProcessWorkload + tiempoTotalHoras;
-        processWorkload.set(proceso, newProcessWorkload);
-
-        // Calcular ocupación de máquina y proceso
-        const horasDisponiblesPorMaquina = operatorConfig.availableHours;
-        const horasDisponiblesPorProceso = operatorConfig.availableHours * operadoresDisponibles;
-        
-        const ocupacionMaquina = (newMachineWorkload / horasDisponiblesPorMaquina) * 100;
-        const ocupacionProceso = (newProcessWorkload / horasDisponiblesPorProceso) * 100;
-
-        // Determinar alertas basadas en ocupación
-        if (operadoresDisponibles < operadoresRequeridos) {
-          alerta = `⚠️ Insuficientes operarios: ${operadoresDisponibles}/${operadoresRequeridos}`;
-          capacidadPorcentaje = (operadoresDisponibles / operadoresRequeridos) * 100;
-        } else if (ocupacionMaquina > 100) {
-          alerta = `🔴 Sobrecarga de máquina: ${ocupacionMaquina.toFixed(1)}%`;
-          capacidadPorcentaje = ocupacionMaquina;
-        } else if (ocupacionProceso > 100) {
-          alerta = `🟡 Sobrecarga de proceso: ${ocupacionProceso.toFixed(1)}%`;
-          capacidadPorcentaje = ocupacionProceso;
-        } else if (ocupacionMaquina > 85) {
-          alerta = `⚠️ Capacidad alta en máquina: ${ocupacionMaquina.toFixed(1)}%`;
-          capacidadPorcentaje = ocupacionMaquina;
-        } else if (ocupacionProceso > 85) {
-          alerta = `⚠️ Capacidad alta en proceso: ${ocupacionProceso.toFixed(1)}%`;
-          capacidadPorcentaje = ocupacionProceso;
-        } else if (estadoMaquina !== 'ENCENDIDO') {
-          alerta = `⚙️ Máquina en estado: ${estadoMaquina}`;
-          capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
-        } else {
-          capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
-        }
-
-        // Agregar información sobre distribución inteligente
-        if (availableMachinesCount > 1 && scarcityFactor < 0.5) {
-          if (!alerta) {
-            alerta = `📊 Distribuible en ${availableMachinesCount} máquinas`;
-          }
-        } else if (availableMachinesCount === 1) {
-          if (!alerta) {
-            alerta = `🎯 Máquina exclusiva para esta referencia`;
-          }
-        }
-
-        results.push({
-          referencia: item.referencia,
-          cantidadRequerida: item.cantidad,
-          sam,
-          tiempoTotal,
-          maquina,
-          estadoMaquina,
-          proceso,
-          operadoresRequeridos,
-          operadoresDisponibles,
-          capacidadPorcentaje,
-          ocupacionMaquina,
-          ocupacionProceso,
-          alerta
-        });
       }
       
       setProjection(results);
