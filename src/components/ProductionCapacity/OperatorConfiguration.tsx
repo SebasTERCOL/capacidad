@@ -120,49 +120,62 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           machineProcesses: machineProcessData?.length
         });
 
-        // Crear el mapa de máquinas por proceso
-        const machinesByProcessMap = new Map<number, Set<number>>();
-        machineProcessData?.forEach(mp => {
-          if (!machinesByProcessMap.has(mp.id_process)) {
-            machinesByProcessMap.set(mp.id_process, new Set());
-          }
-          machinesByProcessMap.get(mp.id_process)?.add(mp.id_machine);
-        });
-
+        // Crear configuración para TODOS los procesos y TODAS las máquinas
         const processConfigs: ProcessConfig[] = [];
 
-        // Para cada proceso que tiene máquinas asignadas
-        machinesByProcessMap.forEach((machineIds, processId) => {
-          const process = processesData?.find(p => p.id === processId);
-          if (!process) return;
-
-          const processMachines: MachineConfig[] = [];
-          machineIds.forEach(machineId => {
-            const machine = machinesData?.find(m => m.id === machineId);
-            if (!machine) return;
-
-            processMachines.push({
-              id: machine.id,
-              name: machine.name,
-              processName: process.name,
-              processId: processId,
-              isOperational: machine.status === 'ENCENDIDO',
-              status: machine.status
-            });
+        // Para cada proceso existente (no solo los que tienen máquinas asignadas)
+        processesData?.forEach(process => {
+          // Encontrar todas las máquinas que pueden hacer este proceso
+          const machineIdsForProcess = new Set<number>();
+          machineProcessData?.forEach(mp => {
+            if (mp.id_process === process.id) {
+              machineIdsForProcess.add(mp.id_machine);
+            }
           });
 
-          if (processMachines.length > 0) {
-            processConfigs.push({
-              processId: processId,
-              processName: process.name,
-              operatorCount: 1, // Por defecto 1 operario
-              machines: processMachines.sort((a, b) => a.name.localeCompare(b.name))
+          const processMachines: MachineConfig[] = [];
+
+          // Si hay máquinas específicas para este proceso, usarlas
+          if (machineIdsForProcess.size > 0) {
+            machineIdsForProcess.forEach(machineId => {
+              const machine = machinesData?.find(m => m.id === machineId);
+              if (machine) {
+                processMachines.push({
+                  id: machine.id,
+                  name: machine.name,
+                  processName: process.name,
+                  processId: process.id,
+                  isOperational: machine.status === 'ENCENDIDO',
+                  status: machine.status
+                });
+              }
+            });
+          } else {
+            // Si no hay máquinas específicas, mostrar todas las máquinas como potencialmente disponibles
+            machinesData?.forEach(machine => {
+              processMachines.push({
+                id: machine.id,
+                name: machine.name,
+                processName: process.name,
+                processId: process.id,
+                isOperational: machine.status === 'ENCENDIDO',
+                status: machine.status
+              });
             });
           }
+
+          // Crear configuración para este proceso (incluso si no tiene máquinas)
+          processConfigs.push({
+            processId: process.id,
+            processName: process.name,
+            operatorCount: 1, // Por defecto 1 operario
+            machines: processMachines.sort((a, b) => a.name.localeCompare(b.name))
+          });
         });
 
         console.log('🏭 Procesos configurados:', processConfigs.length);
-        console.log('📋 Procesos encontrados:', processConfigs.map(p => p.processName));
+        console.log('📋 Procesos encontrados:', processConfigs.map(p => `${p.processName} (${p.machines.length} máqs)`));
+        console.log('🔧 Máquinas totales procesadas:', processConfigs.reduce((sum, p) => sum + p.machines.length, 0));
 
         setProcesses(processConfigs.sort((a, b) => 
           a.processName.localeCompare(b.processName)
