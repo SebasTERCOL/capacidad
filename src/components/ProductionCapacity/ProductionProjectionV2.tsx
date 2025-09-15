@@ -317,6 +317,28 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return 'default';
   };
 
+  // Capacidad por proceso basada en configuración y proyección actual
+  const processesInfo = operatorConfig.machines.reduce((acc, m) => {
+    const key = m.processName;
+    if (!acc[key]) acc[key] = { total: 0, available: 0 };
+    acc[key].total += 1;
+    if (m.isOperational && m.hasOperator) acc[key].available += 1;
+    return acc;
+  }, {} as Record<string, { total: number; available: number }>);
+
+  const workloadByProcess: Record<string, number> = {};
+  projection.forEach(p => {
+    const hours = p.tiempoTotal / 60;
+    workloadByProcess[p.proceso] = (workloadByProcess[p.proceso] || 0) + hours;
+  });
+
+  const processesOverview = Object.entries(processesInfo).map(([name, info]) => {
+    const availableHours = info.available * operatorConfig.availableHours;
+    const workloadHours = workloadByProcess[name] || 0;
+    const occupancy = availableHours > 0 ? (workloadHours / availableHours) * 100 : 0;
+    return { name, total: info.total, available: info.available, availableHours, workloadHours, occupancy };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
   const totalTime = projection.reduce((sum, item) => sum + item.tiempoTotal, 0);
   const processesWithProblems = projection.filter(p => p.alerta && !p.especial).length;
   const specialProcesses = projection.filter(p => p.especial).length;
@@ -415,6 +437,43 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               <div className="text-2xl font-bold text-red-600">{processesWithProblems}</div>
               <div className="text-sm text-muted-foreground">Con Alertas</div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Capacidad por Proceso */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Capacidad por Proceso</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Proceso</TableHead>
+                  <TableHead>Máquinas</TableHead>
+                  <TableHead>Horas Disponibles</TableHead>
+                  <TableHead>Trabajo Asignado</TableHead>
+                  <TableHead>Ocupación</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {processesOverview.map((p) => (
+                  <TableRow key={p.name}>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell>{p.available}/{p.total}</TableCell>
+                    <TableCell>{p.availableHours.toFixed(1)}h</TableCell>
+                    <TableCell>{p.workloadHours.toFixed(1)}h</TableCell>
+                    <TableCell>
+                      <Badge variant={getCapacityVariant(p.occupancy)}>
+                        {p.occupancy.toFixed(1)}%
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
