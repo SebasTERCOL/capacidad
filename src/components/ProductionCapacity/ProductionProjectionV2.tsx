@@ -64,11 +64,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const machineWorkload = new Map<string, number>();
 
       // Inicializar carga de trabajo para todas las máquinas operativas
-      operatorConfig.machines
-        .filter(m => m.isOperational && m.hasOperator)
-        .forEach(machine => {
-          machineWorkload.set(machine.name, 0);
-        });
+      const allMachines: any[] = [];
+      operatorConfig.processes.forEach(process => {
+        process.machines
+          .filter(m => m.isOperational)
+          .forEach(machine => {
+            allMachines.push({ ...machine, processName: process.processName });
+            machineWorkload.set(machine.name, 0);
+          });
+      });
 
       for (const item of data) {
         // 1. Obtener BOM de la referencia principal
@@ -132,10 +136,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             continue;
           }
 
-          // Filtrar solo las máquinas que están operativas y con operario asignado
+          // Filtrar solo las máquinas que están operativas
           const availableMachineProcesses = machinesProcesses.filter((mp: any) => {
-            const machine = operatorConfig.machines.find(m => m.id === mp.id_machine);
-            return machine && machine.isOperational && machine.hasOperator;
+            const processConfig = operatorConfig.processes.find(p => p.processName === mp.processes.name);
+            if (!processConfig) return false;
+            
+            const machine = processConfig.machines.find(m => m.id === mp.id_machine);
+            return machine && machine.isOperational;
           });
 
           if (availableMachineProcesses.length === 0) {
@@ -169,7 +176,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           let minWorkload = Infinity;
 
           for (const mp of availableMachineProcesses) {
-            const machine = operatorConfig.machines.find(m => m.id === mp.id_machine);
+            const processConfig = operatorConfig.processes.find(p => p.processName === mp.processes.name);
+            if (!processConfig) continue;
+            
+            const machine = processConfig.machines.find(m => m.id === mp.id_machine);
             if (!machine) continue;
 
             const currentWorkload = machineWorkload.get(machine.name) || 0;
@@ -200,11 +210,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           let alerta: string | null = null;
           let capacidadPorcentaje = 0;
           
-          // Obtener máquinas disponibles para este proceso (operativas y con operario)
-          const availableMachinesForProcess = operatorConfig.machines.filter(m => 
-            m.processName === proceso && m.isOperational && m.hasOperator
-          );
-          const operadoresDisponibles = availableMachinesForProcess.length;
+          // Obtener configuración del proceso y operarios disponibles
+          const processConfig = operatorConfig.processes.find(p => p.processName === proceso);
+          const operadoresDisponibles = processConfig ? processConfig.operatorCount : 0;
           
           if (isSpecialProcess) {
             alerta = '⚖️ Proceso evaluado por peso - pendiente cálculo específico';
@@ -352,13 +360,18 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   };
 
   // Capacidad por proceso basada en configuración y proyección actual
-  const processesInfo = operatorConfig.machines.reduce((acc, m) => {
-    const key = m.processName;
-    if (!acc[key]) acc[key] = { total: 0, available: 0 };
-    acc[key].total += 1;
-    if (m.isOperational && m.hasOperator) acc[key].available += 1;
+  const processesInfo = operatorConfig.processes.reduce((acc, process) => {
+    const operationalCount = process.machines.filter(m => m.isOperational).length;
+    const effectiveCapacity = Math.min(operationalCount, process.operatorCount);
+    
+    acc[process.processName] = {
+      total: process.machines.length,
+      available: operationalCount,
+      operators: process.operatorCount,
+      effective: effectiveCapacity
+    };
     return acc;
-  }, {} as Record<string, { total: number; available: number }>);
+  }, {} as Record<string, { total: number; available: number; operators: number; effective: number }>);
 
   const workloadByProcess: Record<string, number> = {};
   projection.forEach(p => {
@@ -367,10 +380,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   });
 
   const processesOverview = Object.entries(processesInfo).map(([name, info]) => {
-    const availableHours = info.available * operatorConfig.availableHours;
+    const availableHours = info.effective * operatorConfig.availableHours;
     const workloadHours = workloadByProcess[name] || 0;
     const occupancy = availableHours > 0 ? (workloadHours / availableHours) * 100 : 0;
-    return { name, total: info.total, available: info.available, availableHours, workloadHours, occupancy };
+    return { 
+      name, 
+      total: info.total, 
+      available: info.available, 
+      operators: info.operators,
+      effective: info.effective,
+      availableHours, 
+      workloadHours, 
+      occupancy 
+    };
   }).sort((a, b) => a.name.localeCompare(b.name));
 
   const totalTime = projection.reduce((sum, item) => sum + item.tiempoTotal, 0);
@@ -434,13 +456,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
               <div className="text-xl font-bold text-primary">
-                {operatorConfig.machines.filter(m => m.hasOperator).length}
+                {operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0)}
               </div>
               <div className="text-sm text-muted-foreground">Total Operarios</div>
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
               <div className="text-xl font-bold text-primary">
-                {(operatorConfig.machines.filter(m => m.hasOperator).length * operatorConfig.availableHours).toFixed(0)}h
+                {(operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0) * operatorConfig.availableHours).toFixed(0)}h
               </div>
               <div className="text-sm text-muted-foreground">Capacidad Total</div>
             </div>
@@ -487,6 +509,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
                 <TableRow>
                   <TableHead>Proceso</TableHead>
                   <TableHead>Máquinas</TableHead>
+                  <TableHead>Operarios</TableHead>
+                  <TableHead>Capacidad Efectiva</TableHead>
                   <TableHead>Horas Disponibles</TableHead>
                   <TableHead>Trabajo Asignado</TableHead>
                   <TableHead>Ocupación</TableHead>
@@ -496,7 +520,17 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
                 {processesOverview.map((p) => (
                   <TableRow key={p.name}>
                     <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell>{p.available}/{p.total}</TableCell>
+                    <TableCell>
+                      <span className="text-green-600 font-medium">{p.available}</span>
+                      <span className="text-muted-foreground">/{p.total}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-blue-600 font-medium">{p.operators}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-primary font-medium">{p.effective}</span>
+                      <span className="text-xs text-muted-foreground ml-1">estaciones</span>
+                    </TableCell>
                     <TableCell>{p.availableHours.toFixed(1)}h</TableCell>
                     <TableCell>{p.workloadHours.toFixed(1)}h</TableCell>
                     <TableCell>

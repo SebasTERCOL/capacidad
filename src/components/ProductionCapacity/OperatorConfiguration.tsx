@@ -14,12 +14,18 @@ export interface MachineConfig {
   processName: string;
   processId: number;
   isOperational: boolean;
-  hasOperator: boolean;
   status: string;
 }
 
-export interface OperatorConfig {
+export interface ProcessConfig {
+  processId: number;
+  processName: string;
+  operatorCount: number;
   machines: MachineConfig[];
+}
+
+export interface OperatorConfig {
+  processes: ProcessConfig[];
   workMonth: number;
   workYear: number;
   availableHours: number;
@@ -36,7 +42,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   onBack,
   onConfigComplete
 }) => {
-  const [machines, setMachines] = useState<MachineConfig[]>([]);
+  const [processes, setProcesses] = useState<ProcessConfig[]>([]);
   const [workMonth, setWorkMonth] = useState(new Date().getMonth() + 1);
   const [workYear, setWorkYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(true);
@@ -123,34 +129,43 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           machinesByProcessMap.get(mp.id_process)?.add(mp.id_machine);
         });
 
-        const allMachines: MachineConfig[] = [];
+        const processConfigs: ProcessConfig[] = [];
 
         // Para cada proceso que tiene máquinas asignadas
         machinesByProcessMap.forEach((machineIds, processId) => {
           const process = processesData?.find(p => p.id === processId);
           if (!process) return;
 
+          const processMachines: MachineConfig[] = [];
           machineIds.forEach(machineId => {
             const machine = machinesData?.find(m => m.id === machineId);
             if (!machine) return;
 
-            allMachines.push({
+            processMachines.push({
               id: machine.id,
               name: machine.name,
               processName: process.name,
               processId: processId,
               isOperational: machine.status === 'ENCENDIDO',
-              hasOperator: false, // Por defecto sin operador
               status: machine.status
             });
           });
+
+          if (processMachines.length > 0) {
+            processConfigs.push({
+              processId: processId,
+              processName: process.name,
+              operatorCount: 1, // Por defecto 1 operario
+              machines: processMachines.sort((a, b) => a.name.localeCompare(b.name))
+            });
+          }
         });
 
-        console.log('🏭 Máquinas procesadas:', allMachines.length);
-        console.log('📋 Procesos encontrados:', [...new Set(allMachines.map(m => m.processName))]);
+        console.log('🏭 Procesos configurados:', processConfigs.length);
+        console.log('📋 Procesos encontrados:', processConfigs.map(p => p.processName));
 
-        setMachines(allMachines.sort((a, b) => 
-          a.processName.localeCompare(b.processName) || a.name.localeCompare(b.name)
+        setProcesses(processConfigs.sort((a, b) => 
+          a.processName.localeCompare(b.processName)
         ));
       } catch (err) {
         console.error('Error fetching machines:', err);
@@ -163,17 +178,32 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
     fetchMachines();
   }, []);
 
-  const handleMachineConfigChange = (machineId: number, field: 'isOperational' | 'hasOperator', value: boolean) => {
-    setMachines(prev => prev.map(machine => 
-      machine.id === machineId 
-        ? { ...machine, [field]: value }
-        : machine
+  const handleMachineConfigChange = (processId: number, machineId: number, isOperational: boolean) => {
+    setProcesses(prev => prev.map(process => 
+      process.processId === processId 
+        ? {
+            ...process,
+            machines: process.machines.map(machine =>
+              machine.id === machineId 
+                ? { ...machine, isOperational }
+                : machine
+            )
+          }
+        : process
+    ));
+  };
+
+  const handleOperatorCountChange = (processId: number, operatorCount: number) => {
+    setProcesses(prev => prev.map(process => 
+      process.processId === processId 
+        ? { ...process, operatorCount: Math.max(0, operatorCount) }
+        : process
     ));
   };
 
   const handleContinue = () => {
     const config: OperatorConfig = {
-      machines,
+      processes,
       workMonth,
       workYear,
       availableHours
@@ -182,20 +212,15 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
     onNext();
   };
 
-  // Agrupar máquinas por proceso
-  const machinesByProcess = machines.reduce((acc, machine) => {
-    if (!acc[machine.processName]) {
-      acc[machine.processName] = [];
-    }
-    acc[machine.processName].push(machine);
-    return acc;
-  }, {} as { [process: string]: MachineConfig[] });
-
   // Estadísticas
-  const totalMachines = machines.length;
-  const operationalMachines = machines.filter(m => m.isOperational).length;
-  const machinesWithOperators = machines.filter(m => m.hasOperator).length;
-  const readyMachines = machines.filter(m => m.isOperational && m.hasOperator).length;
+  const totalMachines = processes.reduce((sum, process) => sum + process.machines.length, 0);
+  const operationalMachines = processes.reduce((sum, process) => 
+    sum + process.machines.filter(m => m.isOperational).length, 0);
+  const totalOperators = processes.reduce((sum, process) => sum + process.operatorCount, 0);
+  const effectiveCapacity = processes.reduce((sum, process) => {
+    const operationalCount = process.machines.filter(m => m.isOperational).length;
+    return sum + Math.min(operationalCount, process.operatorCount);
+  }, 0);
 
   if (loading) {
     return (
@@ -301,87 +326,126 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl font-bold text-green-600">{operationalMachines}</div>
-              <div className="text-sm text-muted-foreground">Operativas</div>
+              <div className="text-sm text-muted-foreground">Máq. Operativas</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{machinesWithOperators}</div>
-              <div className="text-sm text-muted-foreground">Con Operario</div>
+              <div className="text-2xl font-bold text-blue-600">{totalOperators}</div>
+              <div className="text-sm text-muted-foreground">Total Operarios</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
-              <div className="text-2xl font-bold text-primary">{readyMachines}</div>
-              <div className="text-sm text-muted-foreground">Listas</div>
+              <div className="text-2xl font-bold text-primary">{effectiveCapacity}</div>
+              <div className="text-sm text-muted-foreground">Capacidad Real</div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Configuración de Máquinas por Proceso */}
+      {/* Configuración de Procesos y Máquinas */}
       <div className="space-y-4">
-        {Object.entries(machinesByProcess).map(([processName, processMachines]) => (
-          <Card key={processName}>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                {processName}
-                <Badge variant="outline">
-                  {processMachines.length} máquina{processMachines.length !== 1 ? 's' : ''}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {processMachines.map((machine) => (
-                  <div key={machine.id} className="border rounded-lg p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium">{machine.name}</div>
-                      <Badge variant={machine.status === 'ENCENDIDO' ? 'default' : 'secondary'}>
-                        {machine.status}
-                      </Badge>
+        {processes.map((process) => {
+          const operationalCount = process.machines.filter(m => m.isOperational).length;
+          const effectiveStations = Math.min(operationalCount, process.operatorCount);
+          const capacityMinutes = effectiveStations * availableHours * 60;
+          const utilizationRate = operationalCount > 0 ? (process.operatorCount / operationalCount * 100) : 0;
+          
+          return (
+            <Card key={process.processId}>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    {process.processName}
+                    <Badge variant="outline">
+                      {process.machines.length} máquina{process.machines.length !== 1 ? 's' : ''}
+                    </Badge>
+                  </CardTitle>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <Label htmlFor={`operators-${process.processId}`} className="text-sm font-medium">
+                        Operarios en zona
+                      </Label>
+                      <Input
+                        id={`operators-${process.processId}`}
+                        type="number"
+                        min="0"
+                        max={process.machines.length}
+                        value={process.operatorCount}
+                        onChange={(e) => handleOperatorCountChange(process.processId, parseInt(e.target.value) || 0)}
+                        className="w-20 text-center"
+                      />
                     </div>
-                    
-                    <div className="space-y-2">
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <div className="text-lg font-bold text-green-600">{operationalCount}</div>
+                    <div className="text-xs text-muted-foreground">Máq. Operativas</div>
+                  </div>
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <div className="text-lg font-bold text-blue-600">{process.operatorCount}</div>
+                    <div className="text-xs text-muted-foreground">Operarios</div>
+                  </div>
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <div className="text-lg font-bold text-primary">{effectiveStations}</div>
+                    <div className="text-xs text-muted-foreground">Estaciones Activas</div>
+                  </div>
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <div className="text-lg font-bold">{(capacityMinutes/60).toFixed(1)}h</div>
+                    <div className="text-xs text-muted-foreground">Capacidad Total</div>
+                  </div>
+                </div>
+                {operationalCount !== process.operatorCount && (
+                  <div className="mt-2">
+                    {operationalCount > process.operatorCount ? (
+                      <div className="text-sm text-amber-600 flex items-center gap-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        {operationalCount - process.operatorCount} máquina(s) sin operario asignado
+                      </div>
+                    ) : (
+                      <div className="text-sm text-blue-600 flex items-center gap-1">
+                        <Users className="h-4 w-4" />
+                        {process.operatorCount - operationalCount} operario(s) adicional(es) disponible(s)
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {process.machines.map((machine) => (
+                    <div key={machine.id} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium">{machine.name}</div>
+                        <Badge variant={machine.status === 'ENCENDIDO' ? 'default' : 'secondary'}>
+                          {machine.status}
+                        </Badge>
+                      </div>
+                      
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id={`operational-${machine.id}`}
                           checked={machine.isOperational}
                           onCheckedChange={(checked) => 
-                            handleMachineConfigChange(machine.id, 'isOperational', !!checked)
+                            handleMachineConfigChange(process.processId, machine.id, !!checked)
                           }
                         />
                         <Label htmlFor={`operational-${machine.id}`} className="text-sm">
-                          Máquina operativa
+                          Máquina disponible para producción
                         </Label>
                       </div>
                       
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`operator-${machine.id}`}
-                          checked={machine.hasOperator}
-                          onCheckedChange={(checked) => 
-                            handleMachineConfigChange(machine.id, 'hasOperator', !!checked)
-                          }
-                          disabled={!machine.isOperational}
-                        />
-                        <Label 
-                          htmlFor={`operator-${machine.id}`} 
-                          className={`text-sm ${!machine.isOperational ? 'text-muted-foreground' : ''}`}
-                        >
-                          Operario asignado
-                        </Label>
-                      </div>
+                      {machine.isOperational && (
+                        <div className="text-xs text-green-600 font-medium">
+                          ✓ Disponible
+                        </div>
+                      )}
                     </div>
-                    
-                    {machine.isOperational && machine.hasOperator && (
-                      <div className="text-xs text-green-600 font-medium">
-                        ✓ Lista para producir
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <div className="flex gap-2">
