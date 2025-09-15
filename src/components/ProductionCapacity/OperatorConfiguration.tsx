@@ -87,36 +87,69 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
       try {
         setLoading(true);
         
+        // Obtener todas las máquinas únicas primero
         const { data: machinesData, error: machinesError } = await supabase
-          .from('machines_processes')
-          .select(`
-            id_machine,
-            id_process,
-            machines!inner(id, name, status),
-            processes!inner(id, name)
-          `);
+          .from('machines')
+          .select('id, name, status');
 
         if (machinesError) throw machinesError;
 
-        // Crear un mapa único de máquinas
-        const machineMap = new Map<number, MachineConfig>();
-        
-        machinesData?.forEach((item: any) => {
-          const machineId = item.id_machine;
-          if (!machineMap.has(machineId)) {
-            machineMap.set(machineId, {
-              id: machineId,
-              name: item.machines.name,
-              processName: item.processes.name,
-              processId: item.id_process,
-              isOperational: item.machines.status === 'ENCENDIDO',
-              hasOperator: false, // Por defecto sin operador
-              status: item.machines.status
-            });
-          }
+        // Obtener todos los procesos
+        const { data: processesData, error: processesError } = await supabase
+          .from('processes')
+          .select('id, name');
+
+        if (processesError) throw processesError;
+
+        // Obtener la relación máquinas-procesos
+        const { data: machineProcessData, error: mpError } = await supabase
+          .from('machines_processes')
+          .select('id_machine, id_process');
+
+        if (mpError) throw mpError;
+
+        console.log('📊 Datos obtenidos:', {
+          machines: machinesData?.length,
+          processes: processesData?.length,
+          machineProcesses: machineProcessData?.length
         });
 
-        setMachines(Array.from(machineMap.values()).sort((a, b) => 
+        // Crear el mapa de máquinas por proceso
+        const machinesByProcessMap = new Map<number, Set<number>>();
+        machineProcessData?.forEach(mp => {
+          if (!machinesByProcessMap.has(mp.id_process)) {
+            machinesByProcessMap.set(mp.id_process, new Set());
+          }
+          machinesByProcessMap.get(mp.id_process)?.add(mp.id_machine);
+        });
+
+        const allMachines: MachineConfig[] = [];
+
+        // Para cada proceso que tiene máquinas asignadas
+        machinesByProcessMap.forEach((machineIds, processId) => {
+          const process = processesData?.find(p => p.id === processId);
+          if (!process) return;
+
+          machineIds.forEach(machineId => {
+            const machine = machinesData?.find(m => m.id === machineId);
+            if (!machine) return;
+
+            allMachines.push({
+              id: machine.id,
+              name: machine.name,
+              processName: process.name,
+              processId: processId,
+              isOperational: machine.status === 'ENCENDIDO',
+              hasOperator: false, // Por defecto sin operador
+              status: machine.status
+            });
+          });
+        });
+
+        console.log('🏭 Máquinas procesadas:', allMachines.length);
+        console.log('📋 Procesos encontrados:', [...new Set(allMachines.map(m => m.processName))]);
+
+        setMachines(allMachines.sort((a, b) => 
           a.processName.localeCompare(b.processName) || a.name.localeCompare(b.name)
         ));
       } catch (err) {
