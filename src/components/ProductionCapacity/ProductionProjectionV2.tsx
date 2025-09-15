@@ -464,6 +464,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               <div className="text-xl font-bold text-primary">
                 {(operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0) * operatorConfig.availableHours).toFixed(0)}h
               </div>
+              <div className="text-lg font-medium text-primary">
+                {(() => {
+                  const currentOperators = operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0);
+                  const maxPossibleOperators = operatorConfig.processes.reduce((sum, p) => sum + p.machines.filter(m => m.isOperational).length, 0);
+                  const percentage = maxPossibleOperators > 0 ? (currentOperators / maxPossibleOperators) * 100 : 0;
+                  return `${percentage.toFixed(1)}%`;
+                })()}
+              </div>
               <div className="text-sm text-muted-foreground">Capacidad Total</div>
             </div>
           </div>
