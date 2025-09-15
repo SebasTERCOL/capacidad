@@ -236,17 +236,43 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           let machineOccupancy = 0;
           let processOccupancy = 0;
 
-          const componentMachineProcesses = machineProcessMap.get(bomItem.component_id);
+          // Buscar procesos tanto para el component_id como para la referencia principal
+          let componentMachineProcesses = machineProcessMap.get(bomItem.component_id);
+          
+          // Si no se encuentra por component_id, intentar con la referencia principal
+          if (!componentMachineProcesses || componentMachineProcesses.length === 0) {
+            componentMachineProcesses = machineProcessMap.get(ref);
+          }
+          
+          // También intentar búsquedas parciales para referencias similares
+          if (!componentMachineProcesses || componentMachineProcesses.length === 0) {
+            for (const [mapRef, processes] of machineProcessMap) {
+              if (mapRef.includes(bomItem.component_id) || mapRef.includes(ref) || bomItem.component_id.includes(mapRef)) {
+                componentMachineProcesses = processes;
+                console.log(`🔍 Encontrado proceso por búsqueda parcial: ${mapRef} para componente: ${bomItem.component_id}`);
+                break;
+              }
+            }
+          }
+
           if (componentMachineProcesses && componentMachineProcesses.length > 0) {
-            // Usar el primer proceso encontrado para el cálculo
-            const mp = componentMachineProcesses[0];
+            // Buscar el proceso con SAM > 0
+            const mp = componentMachineProcesses.find(p => p.sam > 0) || componentMachineProcesses[0];
+            console.log(`📊 Calculando ocupación para ${bomItem.component_id}: SAM=${mp.sam}, Cantidad=${cantidadNecesaria}, Máquina=${mp.machines?.name}`);
+            
             if (mp.sam > 0 && mp.machines?.status === 'ENCENDIDO') {
-              const timeRequiredMinutes = cantidadNecesaria / mp.sam;
+              const timeRequiredMinutes = cantidadNecesaria * mp.sam;
               const timeRequiredHours = timeRequiredMinutes / 60;
               
               machineOccupancy = Math.min((timeRequiredHours / monthlyHours) * 100, 100);
               processOccupancy = machineOccupancy; // Por simplicidad, usar el mismo valor
+              
+              console.log(`⏰ Ocupación calculada: ${machineOccupancy.toFixed(2)}% (${timeRequiredHours.toFixed(2)}h de ${monthlyHours.toFixed(2)}h)`);
+            } else {
+              console.log(`⚠️ No se pudo calcular ocupación: SAM=${mp.sam}, Status=${mp.machines?.status}`);
             }
+          } else {
+            console.log(`❌ No se encontraron procesos para componente: ${bomItem.component_id} ni para ref: ${ref}`);
           }
           
           componentValidation.push({
@@ -350,7 +376,6 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
                   <TableHead className="text-right">Req/Unidad</TableHead>
                   <TableHead className="text-right">Total Necesario</TableHead>
                   <TableHead className="text-right">Disponible</TableHead>
-                  <TableHead className="text-right">Min/Max</TableHead>
                   <TableHead className="text-right">Ocupación Máq.</TableHead>
                   <TableHead className="text-right">Ocupación Proc.</TableHead>
                   <TableHead>Estado</TableHead>
@@ -363,12 +388,6 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
                     <TableCell className="text-right">{comp.amount}</TableCell>
                     <TableCell className="text-right">{comp.cantidadNecesaria.toLocaleString()}</TableCell>
                     <TableCell className="text-right">{comp.cantidadDisponible.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">
-                      {comp.minimum_unit || comp.maximum_unit ? 
-                        `${comp.minimum_unit || 0} / ${comp.maximum_unit || '∞'}` : 
-                        'N/A'
-                      }
-                    </TableCell>
                     <TableCell className="text-right">
                       <Badge variant={comp.machineOccupancy > 80 ? 'destructive' : comp.machineOccupancy > 60 ? 'secondary' : 'default'}>
                         {comp.machineOccupancy?.toFixed(1) || '0.0'}%
