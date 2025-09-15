@@ -120,39 +120,38 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           machineProcesses: machineProcessData?.length
         });
 
-        // Crear configuración para TODOS los procesos y TODAS las máquinas
+        // Mapeo de procesos a máquinas basado en la información real de producción
+        const processMachineMapping: Record<string, string[]> = {
+          'Corte': ['CZ-01'],
+          'Troquelado': ['TQ-01', 'TQ-02', 'TQ-03', 'TQ-04', 'TQ-05', 'TQ-06', 'TQ-07', 'TQ-08', 'TQ-09', 'TQ-10', 'TQ-11'],
+          'Punzonado': ['PZ-01', 'PZ-02'],
+          'Doblez': ['DB-01', 'DB-02', 'DB-03', 'DB-04', 'DB-05', 'DB-06', 'RM-01'],
+          'Soldadura': ['SP-01', 'SP-02', 'SP-03'],
+          'Mig': ['SE-01', 'SE-02'],
+          'EnsambleInt': ['MESA', 'MESA2', 'MESA3', 'MESA4', 'MESA5'],
+          'Inyección': ['INY-01', 'INY-02', 'INY-03', 'INY-04', 'INY-05', 'INY-06', 'INY-07'],
+          'RoscadoConectores': ['RC-01'],
+          'Ensamble': [
+            'EN-01A', 'EN-02A', 'EN-03A', 'EN-04A', 'EN-05A', 'EN-06A', 'EN-07A', 'EN-08A', 'EN-09A',
+            'EN-01B', 'EN-02B', 'EN-03B', 'EN-04B', 'EN-05B', 'EN-06B', 'EN-07B', 'EN-08B', 'EN-09B'
+          ],
+          'Tapas': ['EN-10A', 'EN-10B']
+        };
+
+        // Crear configuración para TODOS los procesos usando el mapeo correcto
         const processConfigs: ProcessConfig[] = [];
 
-        // Para cada proceso existente (no solo los que tienen máquinas asignadas)
+        // Para cada proceso existente
         processesData?.forEach(process => {
-          // Encontrar todas las máquinas que pueden hacer este proceso
-          const machineIdsForProcess = new Set<number>();
-          machineProcessData?.forEach(mp => {
-            if (mp.id_process === process.id) {
-              machineIdsForProcess.add(mp.id_machine);
-            }
-          });
-
           const processMachines: MachineConfig[] = [];
-
-          // Si hay máquinas específicas para este proceso, usarlas
-          if (machineIdsForProcess.size > 0) {
-            machineIdsForProcess.forEach(machineId => {
-              const machine = machinesData?.find(m => m.id === machineId);
-              if (machine) {
-                processMachines.push({
-                  id: machine.id,
-                  name: machine.name,
-                  processName: process.name,
-                  processId: process.id,
-                  isOperational: machine.status === 'ENCENDIDO',
-                  status: machine.status
-                });
-              }
-            });
-          } else {
-            // Si no hay máquinas específicas, mostrar todas las máquinas como potencialmente disponibles
-            machinesData?.forEach(machine => {
+          
+          // Obtener los nombres de máquinas para este proceso
+          const machineNamesForProcess = processMachineMapping[process.name] || [];
+          
+          // Buscar las máquinas correspondientes en la base de datos
+          machineNamesForProcess.forEach(machineName => {
+            const machine = machinesData?.find(m => m.name === machineName);
+            if (machine) {
               processMachines.push({
                 id: machine.id,
                 name: machine.name,
@@ -161,8 +160,8 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                 isOperational: machine.status === 'ENCENDIDO',
                 status: machine.status
               });
-            });
-          }
+            }
+          });
 
           // Crear configuración para este proceso (incluso si no tiene máquinas)
           processConfigs.push({
