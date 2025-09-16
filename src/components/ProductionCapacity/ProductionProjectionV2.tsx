@@ -396,6 +396,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       workloadHours, 
       occupancy 
     };
+  });
+
   // Crear datos para la vista jerárquica
   const createHierarchicalData = () => {
     const processGroups = Object.entries(processesInfo).map(([processName, info]) => {
@@ -700,14 +702,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         </CardContent>
       </Card>
 
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onBack}>
-            Volver
-          </Button>
-          <Button onClick={onStartOver} className="flex-1">
-            Nuevo Análisis
-          </Button>
-        </div>
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={onBack}>
+          Volver
+        </Button>
+        <Button onClick={onStartOver} className="flex-1">
+          Nuevo Análisis
+        </Button>
+      </div>
     </div>
   );
 };
