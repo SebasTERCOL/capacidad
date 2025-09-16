@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Upload, FileSpreadsheet, Trash2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "@/components/ui/sonner";
 
 export interface ProductionRequest {
   referencia: string;
@@ -21,7 +21,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
   const [file, setFile] = useState<File | null>(null);
   const [data, setData] = useState<ProductionRequest[]>([]);
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
 
   const detectSeparator = (content: string): string => {
     const firstLine = content.split(/\r?\n/)[0];
@@ -169,15 +168,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
       
       setData(parsed);
       onDataProcessed(parsed);
-      toast({
-        title: "Archivo procesado",
+      toast.success("Archivo procesado", {
         description: `Se cargaron ${parsed.length} referencias correctamente`,
       });
     } catch (error) {
-      toast({
-        title: "Error al procesar archivo",
+      toast.error("Error al procesar archivo", {
         description: error instanceof Error ? error.message : "Error desconocido",
-        variant: "destructive",
       });
     }
     setLoading(false);
