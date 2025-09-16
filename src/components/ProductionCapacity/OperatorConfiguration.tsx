@@ -21,7 +21,10 @@ export interface ProcessConfig {
   processId: number;
   processName: string;
   operatorCount: number;
+  efficiency: number; // Nuevo: porcentaje de eficiencia (0-100)
+  missingOperators: number; // Nuevo: operarios faltantes
   machines: MachineConfig[];
+  effectivenessPercentage?: number; // Calculado: efectividad real
 }
 
 export interface OperatorConfig {
@@ -141,8 +144,16 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
         // Crear configuración para TODOS los procesos usando el mapeo correcto
         const processConfigs: ProcessConfig[] = [];
 
+        // Procesos a excluir según los requerimientos
+        const excludedProcesses = ['Pulido', 'RecepcionAlm', 'RecepcionPL', 'Reclasificación', 'Remachado', 'Reproceso'];
+
         // Para cada proceso existente
         processesData?.forEach(process => {
+          // Filtrar procesos excluidos
+          if (excludedProcesses.includes(process.name)) {
+            return;
+          }
+
           const processMachines: MachineConfig[] = [];
           
           // Obtener los nombres de máquinas para este proceso
@@ -168,6 +179,8 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
             processId: process.id,
             processName: process.name,
             operatorCount: 1, // Por defecto 1 operario
+            efficiency: 80, // Por defecto 80% de eficiencia
+            missingOperators: 0, // Por defecto sin operarios faltantes
             machines: processMachines.sort((a, b) => a.name.localeCompare(b.name))
           });
         });
@@ -211,6 +224,48 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
         ? { ...process, operatorCount: Math.max(0, operatorCount) }
         : process
     ));
+  };
+
+  const handleEfficiencyChange = (processId: number, efficiency: number) => {
+    setProcesses(prev => prev.map(process => 
+      process.processId === processId 
+        ? { ...process, efficiency: Math.max(1, Math.min(100, efficiency)) }
+        : process
+    ));
+  };
+
+  const handleMissingOperatorsChange = (processId: number, missingOperators: number) => {
+    setProcesses(prev => prev.map(process => 
+      process.processId === processId 
+        ? { ...process, missingOperators: Math.max(0, missingOperators) }
+        : process
+    ));
+  };
+
+  // Función para calcular la efectividad de un proceso
+  const calculateEffectiveness = (process: ProcessConfig) => {
+    const operationalMachines = process.machines.filter(m => m.isOperational).length;
+    if (operationalMachines === 0) return 0;
+    
+    const effectiveOperators = Math.max(0, process.operatorCount - process.missingOperators);
+    const utilizationRate = effectiveOperators / operationalMachines;
+    const effectiveness = Math.min(utilizationRate, 1) * (process.efficiency / 100) * 100;
+    
+    return effectiveness;
+  };
+
+  // Función para obtener la variante de color de la alerta
+  const getEffectivenessVariant = (effectiveness: number) => {
+    if (effectiveness < 50) return 'destructive';
+    if (effectiveness < 70) return 'secondary';
+    return 'default';
+  };
+
+  // Función para obtener el ícono de alerta
+  const getEffectivenessIcon = (effectiveness: number) => {
+    if (effectiveness < 50) return <AlertTriangle className="h-4 w-4" />;
+    if (effectiveness < 70) return <AlertTriangle className="h-4 w-4" />;
+    return null;
   };
 
   const handleContinue = () => {
@@ -358,7 +413,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           const operationalCount = process.machines.filter(m => m.isOperational).length;
           const effectiveStations = Math.min(operationalCount, process.operatorCount);
           const capacityMinutes = effectiveStations * availableHours * 60;
-          const utilizationRate = operationalCount > 0 ? (process.operatorCount / operationalCount * 100) : 0;
+          const effectiveness = calculateEffectiveness(process);
           
           return (
             <Card key={process.processId}>
@@ -370,53 +425,115 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                     <Badge variant="outline">
                       {process.machines.length} máquina{process.machines.length !== 1 ? 's' : ''}
                     </Badge>
+                    <Badge variant={getEffectivenessVariant(effectiveness)} className="flex items-center gap-1">
+                      {getEffectivenessIcon(effectiveness)}
+                      {effectiveness.toFixed(1)}% Efectividad
+                    </Badge>
                   </CardTitle>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <Label htmlFor={`operators-${process.processId}`} className="text-sm font-medium">
-                        Operarios en zona
-                      </Label>
-                      <Input
-                        id={`operators-${process.processId}`}
-                        type="number"
-                        min="0"
-                        max={process.machines.length}
-                        value={process.operatorCount}
-                        onChange={(e) => handleOperatorCountChange(process.processId, parseInt(e.target.value) || 0)}
-                        className="w-20 text-center"
-                      />
+                </div>
+                
+                {/* Controles de configuración */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor={`operators-${process.processId}`} className="text-sm font-medium">
+                      Operarios Asignados
+                    </Label>
+                    <Input
+                      id={`operators-${process.processId}`}
+                      type="number"
+                      min="0"
+                      max={process.machines.length}
+                      value={process.operatorCount}
+                      onChange={(e) => handleOperatorCountChange(process.processId, parseInt(e.target.value) || 0)}
+                      className="text-center"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor={`efficiency-${process.processId}`} className="text-sm font-medium">
+                      Eficiencia (%)
+                    </Label>
+                    <Input
+                      id={`efficiency-${process.processId}`}
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={process.efficiency}
+                      onChange={(e) => handleEfficiencyChange(process.processId, parseInt(e.target.value) || 80)}
+                      className="text-center"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor={`missing-${process.processId}`} className="text-sm font-medium">
+                      Operarios Faltantes
+                    </Label>
+                    <Input
+                      id={`missing-${process.processId}`}
+                      type="number"
+                      min="0"
+                      max={process.operatorCount}
+                      value={process.missingOperators}
+                      onChange={(e) => handleMissingOperatorsChange(process.processId, parseInt(e.target.value) || 0)}
+                      className="text-center"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-center p-2 bg-muted/50 rounded">
+                    <div className="text-center">
+                      <div className="text-lg font-bold">{(capacityMinutes/60).toFixed(1)}h</div>
+                      <div className="text-xs text-muted-foreground">Capacidad Total</div>
                     </div>
                   </div>
                 </div>
+
+                {/* Métricas del proceso */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-lg font-bold text-green-600">{operationalCount}</div>
                     <div className="text-xs text-muted-foreground">Máq. Operativas</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
-                    <div className="text-lg font-bold text-blue-600">{process.operatorCount}</div>
-                    <div className="text-xs text-muted-foreground">Operarios</div>
+                    <div className="text-lg font-bold text-blue-600">{Math.max(0, process.operatorCount - process.missingOperators)}</div>
+                    <div className="text-xs text-muted-foreground">Operarios Efectivos</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-lg font-bold text-primary">{effectiveStations}</div>
                     <div className="text-xs text-muted-foreground">Estaciones Activas</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
-                    <div className="text-lg font-bold">{(capacityMinutes/60).toFixed(1)}h</div>
-                    <div className="text-xs text-muted-foreground">Capacidad Total</div>
+                    <div className={`text-lg font-bold ${effectiveness < 50 ? 'text-red-600' : effectiveness < 70 ? 'text-yellow-600' : 'text-green-600'}`}>
+                      {effectiveness.toFixed(1)}%
+                    </div>
+                    <div className="text-xs text-muted-foreground">Efectividad Real</div>
                   </div>
                 </div>
-                {operationalCount !== process.operatorCount && (
-                  <div className="mt-2">
-                    {operationalCount > process.operatorCount ? (
+
+                {/* Alertas de proceso */}
+                {(effectiveness < 50 || operationalCount !== process.operatorCount) && (
+                  <div className="mt-2 space-y-1">
+                    {effectiveness < 50 && (
+                      <div className="text-sm text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        ⚠️ Efectividad crítica - Se requiere atención urgente
+                      </div>
+                    )}
+                    {operationalCount > process.operatorCount && (
                       <div className="text-sm text-amber-600 flex items-center gap-1">
                         <AlertTriangle className="h-4 w-4" />
                         {operationalCount - process.operatorCount} máquina(s) sin operario asignado
                       </div>
-                    ) : (
+                    )}
+                    {process.operatorCount > operationalCount && (
                       <div className="text-sm text-blue-600 flex items-center gap-1">
                         <Users className="h-4 w-4" />
                         {process.operatorCount - operationalCount} operario(s) adicional(es) disponible(s)
+                      </div>
+                    )}
+                    {process.missingOperators > 0 && (
+                      <div className="text-sm text-orange-600 flex items-center gap-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        {process.missingOperators} operario(s) faltante(s) - Reduce la capacidad efectiva
                       </div>
                     )}
                   </div>
@@ -465,7 +582,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           Volver
         </Button>
         <Button onClick={handleContinue} className="flex-1">
-          Continuar a Validación de Componentes
+          Continuar a Capacidad por Proceso
         </Button>
       </div>
     </div>

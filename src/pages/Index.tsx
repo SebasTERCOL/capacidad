@@ -4,25 +4,20 @@ import { Badge } from "@/components/ui/badge";
 import { Factory, ArrowRight } from "lucide-react";
 import { FileUpload, ProductionRequest } from "@/components/ProductionCapacity/FileUpload";
 import { OperatorConfiguration, OperatorConfig } from "@/components/ProductionCapacity/OperatorConfiguration";
-import { ComponentValidation } from "@/components/ProductionCapacity/ComponentValidation";
 import { ProductionProjectionV2 } from "@/components/ProductionCapacity/ProductionProjectionV2";
-import { FinalReport } from "@/components/ProductionCapacity/FinalReport";
 
-type Step = 1 | 2 | 3 | 4 | 5;
+type Step = 1 | 2 | 3;
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [productionData, setProductionData] = useState<ProductionRequest[]>([]);
   const [operatorConfig, setOperatorConfig] = useState<OperatorConfig | null>(null);
-  const [componentValidation, setComponentValidation] = useState<any[]>([]);
   const [projectionData, setProjectionData] = useState<any[]>([]);
 
   const steps = [
     { id: 1, title: 'Carga de Archivo', description: 'Subir CSV con referencias' },
     { id: 2, title: 'Configurar Operarios', description: 'Definir personal disponible' },
-    { id: 3, title: 'Validación Componentes', description: 'Verificar disponibilidad' },
-    { id: 4, title: 'Proyección Producción', description: 'Calcular capacidad real' },
-    { id: 5, title: 'Reporte Final', description: 'Resumen consolidado' }
+    { id: 3, title: 'Capacidad por Proceso', description: 'Análisis detallado' }
   ];
 
   const handleDataProcessed = (data: ProductionRequest[]) => {
@@ -33,10 +28,6 @@ const Index = () => {
     setOperatorConfig(config);
   };
 
-  const handleValidationComplete = (validation: any[]) => {
-    setComponentValidation(validation);
-  };
-
   const handleProjectionComplete = (projection: any[]) => {
     setProjectionData(projection);
   };
@@ -45,7 +36,6 @@ const Index = () => {
     setCurrentStep(1);
     setProductionData([]);
     setOperatorConfig(null);
-    setComponentValidation([]);
     setProjectionData([]);
   };
 
@@ -67,34 +57,16 @@ const Index = () => {
           />
         );
       case 3:
-        return (
-          <ComponentValidation
-            data={productionData}
-            onNext={() => setCurrentStep(4)}
-            onBack={() => setCurrentStep(2)}
-            onValidationComplete={handleValidationComplete}
-          />
-        );
-      case 4:
         return operatorConfig ? (
           <ProductionProjectionV2
             data={productionData}
             operatorConfig={operatorConfig}
-            onNext={() => setCurrentStep(5)}
-            onBack={() => setCurrentStep(3)}
+            onNext={() => {}}
+            onBack={() => setCurrentStep(2)}
             onProjectionComplete={handleProjectionComplete}
-          />
-        ) : null;
-      case 5:
-        return (
-          <FinalReport
-            productionData={productionData}
-            componentValidation={componentValidation}
-            projectionData={projectionData}
-            onBack={() => setCurrentStep(4)}
             onStartOver={handleStartOver}
           />
-        );
+        ) : null;
       default:
         return null;
     }

@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Activity, Calendar, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { OperatorConfig } from "./OperatorConfiguration";
+import HierarchicalCapacityView from './HierarchicalCapacityView';
 
 export interface ProjectionInfo {
   referencia: string;
@@ -30,6 +31,7 @@ interface ProductionProjectionV2Props {
   onNext: () => void;
   onBack: () => void;
   onProjectionComplete: (projectionData: ProjectionInfo[]) => void;
+  onStartOver: () => void;
 }
 
 export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({ 
@@ -37,7 +39,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   operatorConfig,
   onNext, 
   onBack, 
-  onProjectionComplete 
+  onProjectionComplete,
+  onStartOver
 }) => {
   const [projection, setProjection] = useState<ProjectionInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -393,7 +396,62 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       workloadHours, 
       occupancy 
     };
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  // Crear datos para la vista jerárquica
+  const createHierarchicalData = () => {
+    const processGroups = Object.entries(processesInfo).map(([processName, info]) => {
+      const processProjections = projection.filter(p => p.proceso === processName);
+      const totalTimeMinutes = processProjections.reduce((sum, p) => sum + p.tiempoTotal, 0);
+      const availableHours = info.effective * operatorConfig.availableHours;
+      const occupancyPercent = availableHours > 0 ? (totalTimeMinutes / 60) / availableHours * 100 : 0;
+
+      // Agrupar por máquina
+      const machineGroups = new Map<string, any>();
+      
+      processProjections.forEach(p => {
+        const key = p.maquina;
+        if (!machineGroups.has(key)) {
+          machineGroups.set(key, {
+            machineId: key,
+            machineName: key,
+            totalTime: 0,
+            occupancy: 0,
+            capacity: 0,
+            references: []
+          });
+        }
+        
+        const machine = machineGroups.get(key);
+        machine.totalTime += p.tiempoTotal;
+        machine.references.push({
+          referencia: p.referencia,
+          cantidadRequerida: p.cantidadRequerida,
+          sam: p.sam,
+          tiempoTotal: p.tiempoTotal,
+          ocupacionPorcentaje: p.ocupacionMaquina,
+          alerta: p.alerta
+        });
+      });
+
+      // Calcular ocupación por máquina
+      Array.from(machineGroups.values()).forEach(machine => {
+        machine.occupancy = machine.totalTime > 0 ? (machine.totalTime / 60) / operatorConfig.availableHours * 100 : 0;
+      });
+
+      return {
+        processName,
+        totalOccupancy: occupancyPercent,
+        totalTime: totalTimeMinutes,
+        availableHours,
+        machines: Array.from(machineGroups.values()),
+        effectiveStations: info.effective,
+        operators: info.operators
+      };
+    }).filter(p => p.machines.length > 0 || p.totalTime > 0); // Solo procesos con trabajo asignado
+
+    return processGroups;
+  };
+
+  const [viewMode, setViewMode] = useState<'hierarchical' | 'table'>('hierarchical');
 
   const totalTime = projection.reduce((sum, item) => sum + item.tiempoTotal, 0);
   const processesWithProblems = projection.filter(p => p.alerta && !p.especial).length;
@@ -419,6 +477,17 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           <Button onClick={() => calculateProjection()}>Reintentar</Button>
         </CardContent>
       </Card>
+    );
+  }
+
+  // Renderizar vista jerárquica o tabla según el modo
+  if (viewMode === 'hierarchical') {
+    return (
+      <HierarchicalCapacityView
+        processGroups={createHierarchicalData()}
+        onBack={onBack}
+        onStartOver={onStartOver}
+      />
     );
   }
 
@@ -631,14 +700,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         </CardContent>
       </Card>
 
-      <div className="flex gap-2">
-        <Button variant="outline" onClick={onBack}>
-          Volver
-        </Button>
-        <Button onClick={onNext} className="flex-1">
-          Ver Reporte Final
-        </Button>
-      </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onBack}>
+            Volver
+          </Button>
+          <Button onClick={onStartOver} className="flex-1">
+            Nuevo Análisis
+          </Button>
+        </div>
     </div>
   );
 };
