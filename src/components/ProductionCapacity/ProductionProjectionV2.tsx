@@ -211,9 +211,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const estadoMaquina = bestMachine.machines.status;
           const proceso = bestMachine.processes.name;
 
-          // Manejo especial para proceso de Inyección: SAM está en minutos/unidad
-          const tiempoTotal = proceso === 'Inyección' 
-            ? (sam > 0 ? refToProcess.cantidad * sam : 0) // Para Inyección: tiempo = cantidad × SAM (minutos/unidad)
+          // Manejo especial para procesos donde SAM está en minutos/unidad
+          const isMinutesPerUnitProcess = proceso === 'Inyección' || proceso === 'RoscadoConectores';
+          const tiempoTotal = isMinutesPerUnitProcess
+            ? (sam > 0 ? refToProcess.cantidad * sam : 0) // Para Inyección/RoscadoConectores: tiempo = cantidad × SAM (minutos/unidad)
             : (sam > 0 ? refToProcess.cantidad / sam : 0); // Para otros: tiempo = cantidad ÷ SAM (unidades/minuto)
           const tiempoTotalHoras = tiempoTotal / 60;
 

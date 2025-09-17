@@ -135,6 +135,23 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
               </div>
               <div className="text-sm text-muted-foreground">Tiempo Total Requerido</div>
             </div>
+            <div className="text-center p-3 bg-muted rounded-lg">
+              <div className="text-2xl font-bold text-green-600">
+                {formatTime(processGroups.reduce((sum, p) => sum + (p.effectiveStations * p.availableHours * 60), 0))}
+              </div>
+              <div className="text-sm text-muted-foreground">Tiempo Total Disponible</div>
+            </div>
+            <div className="text-center p-3 bg-muted rounded-lg">
+              <div className="text-2xl font-bold text-amber-600">
+                {(() => {
+                  const totalRequired = processGroups.reduce((sum, p) => sum + p.totalTime, 0);
+                  const totalAvailable = processGroups.reduce((sum, p) => sum + (p.effectiveStations * p.availableHours * 60), 0);
+                  const occupancyPercentage = totalAvailable > 0 ? (totalRequired / totalAvailable) * 100 : 0;
+                  return `${occupancyPercentage.toFixed(1)}%`;
+                })()}
+              </div>
+              <div className="text-sm text-muted-foreground">Ocupación de Planta</div>
+            </div>
           </div>
         </CardContent>
       </Card>
