@@ -200,7 +200,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           if (!bestMachine) continue;
 
           const sam = bestMachine.sam || 0;
-          const tiempoTotal = refToProcess.cantidad * sam; // minutos totales (considerando cantidad del BOM)
+          const tiempoTotal = sam > 0 ? refToProcess.cantidad / sam : 0; // minutos totales (SAM = unidades/minuto, entonces tiempo = cantidad ÷ SAM)
           const tiempoTotalHoras = tiempoTotal / 60;
           
           const maquina = bestMachine.machines.name;
