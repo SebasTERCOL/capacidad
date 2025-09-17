@@ -179,7 +179,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
             processId: process.id,
             processName: process.name,
             operatorCount: 1, // Por defecto 1 operario
-            efficiency: 80, // Por defecto 80% de eficiencia
+            efficiency: 100, // Por defecto 100% de eficiencia
             missingOperators: 0, // Por defecto sin operarios faltantes
             machines: processMachines.sort((a, b) => a.name.localeCompare(b.name))
           });
@@ -412,7 +412,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
         {processes.map((process) => {
           const operationalCount = process.machines.filter(m => m.isOperational).length;
           const effectiveStations = Math.min(operationalCount, process.operatorCount);
-          const capacityMinutes = effectiveStations * availableHours * 60;
+          const capacityMinutes = effectiveStations * availableHours * 60 * (process.efficiency / 100);
           const effectiveness = calculateEffectiveness(process);
           
           return (

@@ -45,6 +45,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const [projection, setProjection] = useState<ProjectionInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [estimatedTime, setEstimatedTime] = useState<number>(0);
+  const [startTime, setStartTime] = useState<number>(0);
 
   useEffect(() => {
     if (data.length > 0) {
@@ -60,6 +62,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
     setLoading(true);
     setError(null);
+    
+    // Calcular tiempo estimado basado en cantidad de referencias
+    const estimatedSeconds = Math.max(3, data.length * 0.8 + 2);
+    setEstimatedTime(estimatedSeconds);
+    setStartTime(Date.now());
 
     try {
       const results: ProjectionInfo[] = [];
@@ -200,12 +207,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           if (!bestMachine) continue;
 
           const sam = bestMachine.sam || 0;
-          const tiempoTotal = sam > 0 ? refToProcess.cantidad / sam : 0; // minutos totales (SAM = unidades/minuto, entonces tiempo = cantidad ÷ SAM)
-          const tiempoTotalHoras = tiempoTotal / 60;
-          
           const maquina = bestMachine.machines.name;
           const estadoMaquina = bestMachine.machines.status;
           const proceso = bestMachine.processes.name;
+
+          // Manejo especial para proceso de Inyección: SAM está en minutos/unidad
+          const tiempoTotal = proceso === 'Inyección' 
+            ? (sam > 0 ? refToProcess.cantidad * sam : 0) // Para Inyección: tiempo = cantidad × SAM (minutos/unidad)
+            : (sam > 0 ? refToProcess.cantidad / sam : 0); // Para otros: tiempo = cantidad ÷ SAM (unidades/minuto)
+          const tiempoTotalHoras = tiempoTotal / 60;
 
           // Verificar si es proceso especial (Lavado/Pintura)
           const isSpecialProcess = proceso === 'Lavado' || proceso === 'Pintura';
@@ -460,11 +470,25 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const specialProcesses = projection.filter(p => p.especial).length;
 
   if (loading) {
+    const elapsedTime = Math.max(0, (Date.now() - startTime) / 1000);
+    const remainingTime = Math.max(0, estimatedTime - elapsedTime);
+    
     return (
       <Card>
         <CardContent className="p-8 text-center">
-          <div className="animate-spin h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p>Calculando proyección de producción con distribución inteligente...</p>
+          <div className="animate-spin h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <div>
+            <p className="text-lg font-medium">Calculando proyección de capacidad...</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Tiempo estimado: ~{Math.ceil(remainingTime)}s restantes
+            </p>
+            <div className="w-48 bg-secondary rounded-full h-2 mx-auto mt-3">
+              <div 
+                className="bg-primary h-2 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min(100, (elapsedTime / estimatedTime) * 100)}%` }}
+              ></div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     );
