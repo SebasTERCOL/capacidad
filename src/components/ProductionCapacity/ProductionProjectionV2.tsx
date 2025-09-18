@@ -450,18 +450,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   };
 
   // Capacidad por proceso basada en configuración y proyección actual
-  const processesInfo = operatorConfig.processes.reduce((acc, process) => {
-    const operationalCount = process.machines.filter(m => m.isOperational).length;
-    const effectiveCapacity = Math.min(operationalCount, process.operatorCount);
-    
-    acc[process.processName] = {
-      total: process.machines.length,
-      available: operationalCount,
-      operators: process.operatorCount,
-      effective: effectiveCapacity
-    };
-    return acc;
-  }, {} as Record<string, { total: number; available: number; operators: number; effective: number }>);
+  const processesInfo = operatorConfig.processes
+    .filter(process => process.processName.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
+    .reduce((acc, process) => {
+      const operationalCount = process.machines.filter(m => m.isOperational).length;
+      const effectiveCapacity = Math.min(operationalCount, process.operatorCount);
+      
+      acc[process.processName] = {
+        total: process.machines.length,
+        available: operationalCount,
+        operators: process.operatorCount,
+        effective: effectiveCapacity
+      };
+      return acc;
+    }, {} as Record<string, { total: number; available: number; operators: number; effective: number }>);
 
   const workloadByProcess: Record<string, number> = {};
   projection.forEach(p => {
@@ -470,29 +472,33 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     workloadByProcess[key] = (workloadByProcess[key] || 0) + hours;
   });
   
-  const processesOverview = Object.entries(processesInfo).map(([name, info]) => {
-    const availableHours = info.effective * operatorConfig.availableHours;
-    const workloadHours = workloadByProcess[name.toLowerCase()] || 0;
-    const occupancy = availableHours > 0 ? (workloadHours / availableHours) * 100 : 0;
-    return { 
-      name, 
-      total: info.total, 
-      available: info.available, 
-      operators: info.operators,
-      effective: info.effective,
-      availableHours, 
-      workloadHours, 
-      occupancy 
-    };
-  });
+  const processesOverview = Object.entries(processesInfo)
+    .filter(([name]) => name.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
+    .map(([name, info]) => {
+      const availableHours = info.effective * operatorConfig.availableHours;
+      const workloadHours = workloadByProcess[name.toLowerCase()] || 0;
+      const occupancy = availableHours > 0 ? (workloadHours / availableHours) * 100 : 0;
+      return { 
+        name, 
+        total: info.total, 
+        available: info.available, 
+        operators: info.operators,
+        effective: info.effective,
+        availableHours, 
+        workloadHours, 
+        occupancy 
+      };
+    });
 
   // Crear datos para la vista jerárquica
   const createHierarchicalData = () => {
-    const processGroups = Object.entries(processesInfo).map(([processName, info]) => {
-      const processProjections = projection.filter(p => (p.proceso || '').toLowerCase() === processName.toLowerCase());
-      const totalTimeMinutes = processProjections.reduce((sum, p) => sum + p.tiempoTotal, 0);
-      const availableHours = info.effective * operatorConfig.availableHours;
-      const occupancyPercent = availableHours > 0 ? (totalTimeMinutes / 60) / availableHours * 100 : 0;
+    const processGroups = Object.entries(processesInfo)
+      .filter(([processName]) => processName.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
+      .map(([processName, info]) => {
+        const processProjections = projection.filter(p => (p.proceso || '').toLowerCase() === processName.toLowerCase());
+        const totalTimeMinutes = processProjections.reduce((sum, p) => sum + p.tiempoTotal, 0);
+        const availableHours = info.effective * operatorConfig.availableHours;
+        const occupancyPercent = availableHours > 0 ? (totalTimeMinutes / 60) / availableHours * 100 : 0;
 
       // Agrupar por máquina
       const machineGroups = new Map<string, any>();
