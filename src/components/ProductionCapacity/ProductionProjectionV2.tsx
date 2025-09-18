@@ -138,18 +138,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       });
 
         for (const item of data) {
-        // 1. Obtener BOM recursivo de la referencia principal
-        const allComponents = await getRecursiveBOM(item.referencia, item.cantidad);
+          const mainRef = item.referencia?.trim().toUpperCase();
+          // 1. Obtener BOM recursivo de la referencia principal
+          const allComponents = await getRecursiveBOM(mainRef, item.cantidad);
 
-        // 2. Obtener TODAS las referencias que están en machines_processes para la referencia principal
-        const { data: allMachinesProcesses, error: allMpError } = await supabase
-          .from('machines_processes')
-          .select(`
-            sam, frequency, ref, id_machine, id_process,
-            machines!inner(id, name, status),
-            processes!inner(id, name)
-          `)
-          .eq('ref', item.referencia);
+          // 2. Obtener TODAS las referencias que están en machines_processes para la referencia principal
+          const { data: allMachinesProcesses, error: allMpError } = await supabase
+            .from('machines_processes')
+            .select(`
+              sam, frequency, ref, id_machine, id_process,
+              machines!inner(id, name, status),
+              processes!inner(id, name)
+            `)
+            .eq('ref', mainRef);
 
         if (allMpError) throw allMpError;
 
@@ -164,7 +165,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
         // Agregar SIEMPRE la referencia principal para evaluar procesos o advertencias
         referencesToProcess.push({ 
-          ref: item.referencia, 
+          ref: mainRef, 
           cantidad: item.cantidad, 
           isMain: true
         });
@@ -182,7 +183,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         // Si no hay procesos definidos para la principal y no tiene componentes, agregar como sin definir
         if ((!allMachinesProcesses || allMachinesProcesses.length === 0) && allComponents.size === 0) {
           referencesToProcess.push({
-            ref: item.referencia,
+            ref: mainRef,
             cantidad: item.cantidad,
             isMain: true
           });
@@ -190,6 +191,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
         // 4. Procesar cada referencia (principal y componentes)
         for (const refToProcess of referencesToProcess) {
+          const normalizedRef = refToProcess.ref?.trim().toUpperCase();
           // Obtener todos los procesos de máquinas disponibles para esta referencia
           const { data: machinesProcesses, error: machineError } = await supabase
             .from('machines_processes')
@@ -198,9 +200,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               machines!inner(id, name, status),
               processes!inner(id, name)
             `)
-            .eq('ref', refToProcess.ref);
+            .eq('ref', normalizedRef);
 
           if (machineError) throw machineError;
+          console.log(`📋 Procesos encontrados para ${normalizedRef}: ${machinesProcesses?.length || 0}`);
 
           if (!machinesProcesses || machinesProcesses.length === 0) {
             // Referencia sin tiempo definido - mostrar con SAM 0 y nota en rojo
