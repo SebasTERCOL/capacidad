@@ -198,13 +198,17 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           currentRef: `Procesando ${item.referencia}...` 
         });
 
+        console.log(`\n🔍 === PROCESANDO REFERENCIA PRINCIPAL: ${item.referencia} (cantidad: ${item.cantidad}) ===`);
+
         // Obtener BOM usando función optimizada
         const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad);
+        console.log(`📦 Componentes BOM encontrados para ${item.referencia}:`, allComponents.size);
 
         // Obtener procesos para la referencia principal usando datos precargados
         const referenceMachinesProcesses = allMachinesProcesses.filter(mp => 
-          mp.ref === item.referencia
+          mp.ref.trim().toUpperCase() === item.referencia.trim().toUpperCase()
         );
+        console.log(`🏭 Procesos para referencia principal ${item.referencia}:`, referenceMachinesProcesses.length);
 
         // Crear lista de referencias a procesar
         const referencesToProcess: {
@@ -231,14 +235,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           });
         }
 
+        console.log(`📋 Total de referencias a procesar: ${referencesToProcess.length}`);
+
         // Procesar cada referencia
         for (const refToProcess of referencesToProcess) {
-          // Obtener procesos usando datos precargados
+          console.log(`🔍 Procesando referencia: ${refToProcess.ref} (cantidad: ${refToProcess.cantidad}, isMain: ${refToProcess.isMain})`);
+          
+          // Obtener procesos usando datos precargados con matching exacto
           const machinesProcesses = allMachinesProcesses.filter(mp => 
-            mp.ref === refToProcess.ref
+            mp.ref.trim().toUpperCase() === refToProcess.ref.trim().toUpperCase()
           );
 
+          console.log(`📋 Procesos encontrados para ${refToProcess.ref}:`, machinesProcesses.length);
+          if (machinesProcesses.length > 0) {
+            console.log(`   Procesos: ${machinesProcesses.map(mp => mp.processes.name).join(', ')}`);
+          }
+
           if (!machinesProcesses || machinesProcesses.length === 0) {
+            console.log(`❌ Sin procesos para ${refToProcess.ref}`);
             // Referencia sin tiempo definido
             results.push({
               referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
@@ -263,13 +277,21 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             const processConfig = operatorConfig.processes.find(p => 
               p.processName.toLowerCase() === mp.processes.name.toLowerCase()
             );
-            if (!processConfig) return false;
+            if (!processConfig) {
+              console.log(`❌ No se encontró configuración para proceso: ${mp.processes.name}`);
+              return false;
+            }
             const machine = processConfig.machines.find(m => m.id === mp.id_machine);
-            return machine ? machine.isOperational : true;
+            const isOperational = machine ? machine.isOperational : true;
+            console.log(`🔧 Máquina ${mp.machines.name} (${mp.processes.name}): operativa=${isOperational}`);
+            return isOperational;
           });
+
+          console.log(`✅ Máquinas operativas para ${refToProcess.ref}:`, availableMachineProcesses.length);
 
           if (availableMachineProcesses.length === 0) {
             const firstProcess = machinesProcesses[0] as any;
+            console.log(`❌ No hay máquinas operativas para ${refToProcess.ref}`);
             results.push({
               referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
               cantidadRequerida: refToProcess.cantidad,
@@ -290,7 +312,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
           // Seleccionar mejor máquina (lógica optimizada)
           const bestMachine = selectBestMachine(availableMachineProcesses, machineWorkload, operatorConfig);
-          if (!bestMachine) continue;
+          if (!bestMachine) {
+            console.log(`❌ No se pudo seleccionar máquina para ${refToProcess.ref}`);
+            continue;
+          }
+
+          console.log(`🎯 Mejor máquina seleccionada para ${refToProcess.ref}: ${bestMachine.machines.name} (${bestMachine.processes.name})`);
 
           // Calcular tiempos y ocupación
           const projectionResult = calculateProcessTime(
@@ -301,6 +328,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             machineWorkload, 
             processWorkload
           );
+
+          console.log(`📊 Resultado calculado para ${refToProcess.ref}:`, {
+            sam: projectionResult.sam,
+            tiempoTotal: projectionResult.tiempoTotal,
+            proceso: projectionResult.proceso
+          });
 
           results.push(projectionResult);
         }
