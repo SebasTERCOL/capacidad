@@ -75,6 +75,59 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
 
   const monthlyHours = calculateMonthlyHours();
 
+  // Función recursiva para obtener todos los componentes del BOM
+  const getRecursiveBOM = async (productId: string, quantity: number = 1, level: number = 0, visited: Set<string> = new Set()): Promise<Map<string, number>> => {
+    // Prevenir loops infinitos
+    if (level > 10 || visited.has(productId)) {
+      console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
+      return new Map();
+    }
+    
+    visited.add(productId);
+    const componentsMap = new Map<string, number>();
+    
+    console.log(`${'  '.repeat(level)}🔍 Buscando BOM para: ${productId} (cantidad: ${quantity})`);
+    
+    // Buscar BOM directo para este product_id
+    const { data: bomData, error: bomError } = await supabase
+      .from('bom')
+      .select('component_id, amount')
+      .eq('product_id', productId.trim().toUpperCase());
+    
+    if (bomError) {
+      console.error(`❌ Error al buscar BOM para ${productId}:`, bomError);
+      return componentsMap;
+    }
+    
+    if (!bomData || bomData.length === 0) {
+      console.log(`${'  '.repeat(level)}📦 ${productId} es un componente final`);
+      return componentsMap;
+    }
+    
+    // Procesar cada componente
+    for (const bomItem of bomData) {
+      const componentId = bomItem.component_id.trim().toUpperCase();
+      const componentQuantity = quantity * bomItem.amount;
+      
+      console.log(`${'  '.repeat(level)}📋 Encontrado componente: ${componentId} (cantidad: ${componentQuantity})`);
+      
+      // Agregar este componente al mapa
+      const existingQuantity = componentsMap.get(componentId) || 0;
+      componentsMap.set(componentId, existingQuantity + componentQuantity);
+      
+      // Buscar recursivamente si este componente tiene sus propios subcomponentes
+      const subComponents = await getRecursiveBOM(componentId, componentQuantity, level + 1, new Set(visited));
+      
+      // Agregar los subcomponentes al mapa principal
+      for (const [subComponentId, subQuantity] of subComponents) {
+        const existingSubQuantity = componentsMap.get(subComponentId) || 0;
+        componentsMap.set(subComponentId, existingSubQuantity + subQuantity);
+      }
+    }
+    
+    return componentsMap;
+  };
+
   const validateComponents = async () => {
     setLoading(true);
     setError(null);
@@ -117,48 +170,12 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           continue;
         }
         
-        // Buscar BOM para esta referencia con múltiples estrategias
-        let bomData: any[] = [];
-        let bomError: any = null;
+        console.log(`🚀 Iniciando análisis recursivo de BOM para: ${ref}`);
         
-        // Estrategia 1: Coincidencia exacta
-        const { data: exactData, error: exactError } = await supabase
-          .from('bom')
-          .select('component_id, amount, product_id')
-          .eq('product_id', ref);
+        // Obtener todos los componentes recursivos
+        const allComponents = await getRecursiveBOM(ref, item.cantidad);
         
-        if (exactData && exactData.length > 0) {
-          bomData = exactData;
-        } else {
-          // Estrategia 2: Búsqueda con ILIKE (contiene)
-          const { data: ilikeData, error: ilikeError } = await supabase
-            .from('bom')
-            .select('component_id, amount, product_id')
-            .ilike('product_id', `%${ref}%`);
-          
-          if (ilikeData && ilikeData.length > 0) {
-            bomData = ilikeData;
-          } else {
-            // Estrategia 3: Búsqueda case-insensitive con trim
-            const { data: allBomData, error: allBomError } = await supabase
-              .from('bom')
-              .select('component_id, amount, product_id');
-            
-            if (allBomData) {
-              const filteredData = allBomData.filter(bom => 
-                bom.product_id?.trim().toUpperCase() === ref
-              );
-              bomData = filteredData;
-            }
-            bomError = allBomError;
-          }
-        }
-        
-        if (bomError) {
-          continue;
-        }
-        
-        if (!bomData || bomData.length === 0) {
+        if (allComponents.size === 0) {
           results.push({
             referencia: item.referencia,
             cantidadRequerida: item.cantidad,
@@ -181,7 +198,8 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
         const componentValidation = [];
         
         // Obtener todos los productos de una vez para mejor performance
-        const componentIds = bomData.map(bom => bom.component_id);
+        const componentIds = Array.from(allComponents.keys());
+        console.log(`📦 Componentes encontrados para ${ref}:`, componentIds);
         
         const { data: productsData, error: productsError } = await supabase
           .from('products')
@@ -189,22 +207,24 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           .in('reference', componentIds);
         
         if (productsError) {
+          console.error(`❌ Error al obtener productos:`, productsError);
           continue;
         }
         
         const productsMap = new Map(
-          productsData?.map(p => [p.reference, p]) || []
+          productsData?.map(p => [p.reference.trim().toUpperCase(), p]) || []
         );
         
-        for (const bomItem of bomData) {
-          const productData = productsMap.get(bomItem.component_id);
+        // Procesar cada componente del BOM recursivo
+        for (const [componentId, totalQuantity] of allComponents) {
+          const productData = productsMap.get(componentId);
           
           if (!productData) {
             componentValidation.push({
-              component_id: bomItem.component_id,
-              amount: bomItem.amount,
+              component_id: componentId,
+              amount: totalQuantity / item.cantidad, // Cantidad promedio por unidad principal
               cantidadDisponible: 0,
-              cantidadNecesaria: Math.ceil(item.cantidad * bomItem.amount),
+              cantidadNecesaria: Math.ceil(totalQuantity),
               minimum_unit: null,
               maximum_unit: null,
               alerta: 'error' as const,
@@ -215,7 +235,7 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
             continue;
           }
           
-          const cantidadNecesaria = Math.ceil(item.cantidad * bomItem.amount);
+          const cantidadNecesaria = Math.ceil(totalQuantity);
           const cantidadDisponible = productData.quantity || 0;
           
           let alerta: 'ok' | 'warning' | 'error' = 'ok';
@@ -236,8 +256,8 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           let machineOccupancy = 0;
           let processOccupancy = 0;
 
-          // Buscar procesos tanto para el component_id como para la referencia principal
-          let componentMachineProcesses = machineProcessMap.get(bomItem.component_id);
+          // Buscar procesos para este componente específico
+          let componentMachineProcesses = machineProcessMap.get(componentId);
           
           // Si no se encuentra por component_id, intentar con la referencia principal
           if (!componentMachineProcesses || componentMachineProcesses.length === 0) {
@@ -247,9 +267,9 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           // También intentar búsquedas parciales para referencias similares
           if (!componentMachineProcesses || componentMachineProcesses.length === 0) {
             for (const [mapRef, processes] of machineProcessMap) {
-              if (mapRef.includes(bomItem.component_id) || mapRef.includes(ref) || bomItem.component_id.includes(mapRef)) {
+              if (mapRef.includes(componentId) || mapRef.includes(ref) || componentId.includes(mapRef)) {
                 componentMachineProcesses = processes;
-                console.log(`🔍 Encontrado proceso por búsqueda parcial: ${mapRef} para componente: ${bomItem.component_id}`);
+                console.log(`🔍 Encontrado proceso por búsqueda parcial: ${mapRef} para componente: ${componentId}`);
                 break;
               }
             }
@@ -258,26 +278,31 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
           if (componentMachineProcesses && componentMachineProcesses.length > 0) {
             // Buscar el proceso con SAM > 0
             const mp = componentMachineProcesses.find(p => p.sam > 0) || componentMachineProcesses[0];
-            console.log(`📊 Calculando ocupación para ${bomItem.component_id}: SAM=${mp.sam}, Cantidad=${cantidadNecesaria}, Máquina=${mp.machines?.name}`);
+            console.log(`📊 Calculando ocupación para ${componentId}: SAM=${mp.sam}, Cantidad=${cantidadNecesaria}, Máquina=${mp.machines?.name}`);
             
             if (mp.sam > 0 && mp.machines?.status === 'ENCENDIDO') {
-              const timeRequiredMinutes = cantidadNecesaria * mp.sam;
+              // Manejar casos especiales para procesos donde SAM está en minutos/unidad
+              const isMinutesPerUnitProcess = mp.processes?.name === 'Inyección' || mp.processes?.name === 'RoscadoConectores';
+              const timeRequiredMinutes = isMinutesPerUnitProcess 
+                ? cantidadNecesaria * mp.sam  // Para Inyección/RoscadoConectores: tiempo = cantidad × SAM
+                : cantidadNecesaria / mp.sam; // Para otros: tiempo = cantidad ÷ SAM
+              
               const timeRequiredHours = timeRequiredMinutes / 60;
               
               machineOccupancy = Math.min((timeRequiredHours / monthlyHours) * 100, 100);
               processOccupancy = machineOccupancy; // Por simplicidad, usar el mismo valor
               
-              console.log(`⏰ Ocupación calculada: ${machineOccupancy.toFixed(2)}% (${timeRequiredHours.toFixed(2)}h de ${monthlyHours.toFixed(2)}h)`);
+              console.log(`⏰ Ocupación calculada para ${componentId} (${mp.processes?.name}): ${machineOccupancy.toFixed(2)}% (${timeRequiredHours.toFixed(2)}h de ${monthlyHours.toFixed(2)}h)`);
             } else {
               console.log(`⚠️ No se pudo calcular ocupación: SAM=${mp.sam}, Status=${mp.machines?.status}`);
             }
           } else {
-            console.log(`❌ No se encontraron procesos para componente: ${bomItem.component_id} ni para ref: ${ref}`);
+            console.log(`❌ No se encontraron procesos para componente: ${componentId} ni para ref: ${ref}`);
           }
           
           componentValidation.push({
-            component_id: bomItem.component_id,
-            amount: bomItem.amount,
+            component_id: componentId,
+            amount: totalQuantity / item.cantidad, // Cantidad promedio por unidad principal
             cantidadDisponible,
             cantidadNecesaria,
             minimum_unit: productData.minimum_unit,

@@ -54,6 +54,59 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
   }, [data, operatorConfig]);
 
+  // Función recursiva para obtener todos los componentes del BOM
+  const getRecursiveBOM = async (productId: string, quantity: number = 1, level: number = 0, visited: Set<string> = new Set()): Promise<Map<string, number>> => {
+    // Prevenir loops infinitos
+    if (level > 10 || visited.has(productId)) {
+      console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
+      return new Map();
+    }
+    
+    visited.add(productId);
+    const componentsMap = new Map<string, number>();
+    
+    console.log(`${'  '.repeat(level)}🔍 Buscando BOM para: ${productId} (cantidad: ${quantity})`);
+    
+    // Buscar BOM directo para este product_id
+    const { data: bomData, error: bomError } = await supabase
+      .from('bom')
+      .select('component_id, amount')
+      .eq('product_id', productId.trim().toUpperCase());
+    
+    if (bomError) {
+      console.error(`❌ Error al buscar BOM para ${productId}:`, bomError);
+      return componentsMap;
+    }
+    
+    if (!bomData || bomData.length === 0) {
+      console.log(`${'  '.repeat(level)}📦 ${productId} es un componente final`);
+      return componentsMap;
+    }
+    
+    // Procesar cada componente
+    for (const bomItem of bomData) {
+      const componentId = bomItem.component_id.trim().toUpperCase();
+      const componentQuantity = quantity * bomItem.amount;
+      
+      console.log(`${'  '.repeat(level)}📋 Encontrado componente: ${componentId} (cantidad: ${componentQuantity})`);
+      
+      // Agregar este componente al mapa
+      const existingQuantity = componentsMap.get(componentId) || 0;
+      componentsMap.set(componentId, existingQuantity + componentQuantity);
+      
+      // Buscar recursivamente si este componente tiene sus propios subcomponentes
+      const subComponents = await getRecursiveBOM(componentId, componentQuantity, level + 1, new Set(visited));
+      
+      // Agregar los subcomponentes al mapa principal
+      for (const [subComponentId, subQuantity] of subComponents) {
+        const existingSubQuantity = componentsMap.get(subComponentId) || 0;
+        componentsMap.set(subComponentId, existingSubQuantity + subQuantity);
+      }
+    }
+    
+    return componentsMap;
+  };
+
   const calculateProjection = async () => {
     if (!data || data.length === 0) {
       setProjection([]);
@@ -84,16 +137,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           });
       });
 
-      for (const item of data) {
-        // 1. Obtener BOM de la referencia principal
-        const { data: bomData, error: bomError } = await supabase
-          .from('bom')
-          .select('component_id, amount')
-          .eq('product_id', item.referencia);
+        for (const item of data) {
+        // 1. Obtener BOM recursivo de la referencia principal
+        const allComponents = await getRecursiveBOM(item.referencia, item.cantidad);
 
-        if (bomError) throw bomError;
-
-        // 2. Crear lista de todas las referencias a procesar (principal + componentes)
+        // 2. Crear lista de todas las referencias a procesar (principal + todos los componentes recursivos)
         const referencesToProcess: {
           ref: string;
           cantidad: number;
@@ -101,9 +149,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           parentRef?: string;
         }[] = [
           { ref: item.referencia, cantidad: item.cantidad, isMain: true },
-          ...(bomData || []).map(bom => ({
-            ref: bom.component_id,
-            cantidad: bom.amount * item.cantidad,
+          ...Array.from(allComponents.entries()).map(([componentId, totalQuantity]) => ({
+            ref: componentId,
+            cantidad: totalQuantity,
             isMain: false,
             parentRef: item.referencia
           }))
@@ -125,8 +173,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
           if (!machinesProcesses || machinesProcesses.length === 0) {
             // Componente sin tiempo definido
-            if (refToProcess.isMain || bomData?.length === 0) {
-              // Solo mostrar alerta si es referencia principal o no tiene BOM
+            if (refToProcess.isMain || allComponents.size === 0) {
+              // Solo mostrar alerta si es referencia principal o no tiene componentes
               results.push({
                 referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
                 cantidadRequerida: refToProcess.cantidad,
@@ -212,7 +260,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const proceso = bestMachine.processes.name;
 
           // Manejo especial para procesos donde SAM está en minutos/unidad
-          const isMinutesPerUnitProcess = proceso === 'Inyección' || proceso === 'RoscadoConectores';
+          const isMinutesPerUnitProcess = bestMachine.id_process === 140 || bestMachine.id_process === 170; // INYECCIÓN=140, RoscadoConectores=170
           const tiempoTotal = isMinutesPerUnitProcess
             ? (sam > 0 ? refToProcess.cantidad * sam : 0) // Para Inyección/RoscadoConectores: tiempo = cantidad × SAM (minutos/unidad)
             : (sam > 0 ? refToProcess.cantidad / sam : 0); // Para otros: tiempo = cantidad ÷ SAM (unidades/minuto)
