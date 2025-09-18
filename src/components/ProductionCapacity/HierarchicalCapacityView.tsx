@@ -235,7 +235,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                         <AlertTriangle className="h-4 w-4 text-amber-500" />
                                       )}
                                     </div>
-                                    <div className="flex items-center gap-6 text-sm">
+                                    <div className="flex flex-wrap items-center gap-4 text-sm">
                                       <span className="text-muted-foreground">
                                         Cant: <span className="font-medium text-foreground">{ref.cantidadRequerida}</span>
                                       </span>
@@ -248,6 +248,11 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                       <Badge variant={getOccupancyVariant(ref.ocupacionPorcentaje)} className="text-xs">
                                         {ref.ocupacionPorcentaje.toFixed(1)}%
                                       </Badge>
+                                      {ref.alerta && (
+                                        <span className={`text-xs ${ref.sam === 0 || ref.alerta.toLowerCase().includes('falta sam') ? 'text-destructive' : 'text-muted-foreground'}`}>
+                                          {ref.alerta}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 ))}

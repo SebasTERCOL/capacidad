@@ -162,15 +162,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           directProcess?: boolean;
         }[] = [];
 
-        // Agregar la referencia principal si tiene procesos definidos
-        if (allMachinesProcesses && allMachinesProcesses.length > 0) {
-          referencesToProcess.push({ 
-            ref: item.referencia, 
-            cantidad: item.cantidad, 
-            isMain: true,
-            directProcess: true
-          });
-        }
+        // Agregar SIEMPRE la referencia principal para evaluar procesos o advertencias
+        referencesToProcess.push({ 
+          ref: item.referencia, 
+          cantidad: item.cantidad, 
+          isMain: true
+        });
 
         // Agregar todos los componentes del BOM recursivo
         for (const [componentId, totalQuantity] of allComponents.entries()) {
@@ -227,11 +224,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
           // Filtrar solo las máquinas que están operativas
           const availableMachineProcesses = machinesProcesses.filter((mp: any) => {
-            const processConfig = operatorConfig.processes.find(p => p.processName === mp.processes.name);
+            const processConfig = operatorConfig.processes.find(p => p.processName.toLowerCase() === mp.processes.name.toLowerCase());
             if (!processConfig) return false;
-            
             const machine = processConfig.machines.find(m => m.id === mp.id_machine);
-            return machine && machine.isOperational;
+            return machine ? machine.isOperational : true;
           });
 
           if (availableMachineProcesses.length === 0) {
@@ -416,19 +412,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
   const getProcessRequirements = (process: string) => {
     const requirements: { [key: string]: { minOperators: number } } = {
-      'Punzonado': { minOperators: 2 },
-      'Corte': { minOperators: 1 },
-      'Troquelado': { minOperators: 5 },
-      'Doblez': { minOperators: 4 },
-      'Soldadura': { minOperators: 3 },
-      'MIG': { minOperators: 1 },
-      'EnsambleInt': { minOperators: 3 },
-      'Lavado': { minOperators: 1 },
-      'Pintura': { minOperators: 4 },
-      'Ensamble': { minOperators: 9 },
-      'Inyección': { minOperators: 7 }
+      'punzonado': { minOperators: 2 },
+      'corte': { minOperators: 1 },
+      'troquelado': { minOperators: 5 },
+      'doblez': { minOperators: 4 },
+      'soldadura': { minOperators: 3 },
+      'mig': { minOperators: 1 },
+      'ensambleint': { minOperators: 3 },
+      'lavado': { minOperators: 1 },
+      'pintura': { minOperators: 4 },
+      'ensamble': { minOperators: 9 },
+      'inyección': { minOperators: 7 },
+      'inyeccion': { minOperators: 7 }
     };
-    return requirements[process] || { minOperators: 1 };
+    return requirements[process.toLowerCase()] || { minOperators: 1 };
   };
 
   const formatTime = (minutes: number): string => {
@@ -469,12 +466,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const workloadByProcess: Record<string, number> = {};
   projection.forEach(p => {
     const hours = p.tiempoTotal / 60;
-    workloadByProcess[p.proceso] = (workloadByProcess[p.proceso] || 0) + hours;
+    const key = (p.proceso || '').toLowerCase();
+    workloadByProcess[key] = (workloadByProcess[key] || 0) + hours;
   });
-
+  
   const processesOverview = Object.entries(processesInfo).map(([name, info]) => {
     const availableHours = info.effective * operatorConfig.availableHours;
-    const workloadHours = workloadByProcess[name] || 0;
+    const workloadHours = workloadByProcess[name.toLowerCase()] || 0;
     const occupancy = availableHours > 0 ? (workloadHours / availableHours) * 100 : 0;
     return { 
       name, 
@@ -491,7 +489,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   // Crear datos para la vista jerárquica
   const createHierarchicalData = () => {
     const processGroups = Object.entries(processesInfo).map(([processName, info]) => {
-      const processProjections = projection.filter(p => p.proceso === processName);
+      const processProjections = projection.filter(p => (p.proceso || '').toLowerCase() === processName.toLowerCase());
       const totalTimeMinutes = processProjections.reduce((sum, p) => sum + p.tiempoTotal, 0);
       const availableHours = info.effective * operatorConfig.availableHours;
       const occupancyPercent = availableHours > 0 ? (totalTimeMinutes / 60) / availableHours * 100 : 0;
@@ -793,7 +791,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
                     </TableCell>
                     <TableCell>
                       {item.alerta && (
-                        <div className="text-sm text-muted-foreground max-w-[200px] truncate" title={item.alerta}>
+                        <div
+                          className={`text-sm max-w-[240px] truncate ${item.sam === 0 || (item.alerta?.toLowerCase().includes('falta sam') || item.alerta?.toLowerCase().includes('no inscrita')) ? 'text-destructive' : 'text-muted-foreground'}`}
+                          title={item.alerta!}
+                        >
                           {item.alerta}
                         </div>
                       )}
