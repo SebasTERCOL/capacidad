@@ -141,23 +141,57 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         // 1. Obtener BOM recursivo de la referencia principal
         const allComponents = await getRecursiveBOM(item.referencia, item.cantidad);
 
-        // 2. Crear lista de todas las referencias a procesar (principal + todos los componentes recursivos)
+        // 2. Obtener TODAS las referencias que están en machines_processes para la referencia principal
+        const { data: allMachinesProcesses, error: allMpError } = await supabase
+          .from('machines_processes')
+          .select(`
+            sam, frequency, ref, id_machine, id_process,
+            machines!inner(id, name, status),
+            processes!inner(id, name)
+          `)
+          .eq('ref', item.referencia);
+
+        if (allMpError) throw allMpError;
+
+        // 3. Crear lista de todas las referencias a procesar incluyendo la principal y todos sus procesos
         const referencesToProcess: {
           ref: string;
           cantidad: number;
           isMain: boolean;
           parentRef?: string;
-        }[] = [
-          { ref: item.referencia, cantidad: item.cantidad, isMain: true },
-          ...Array.from(allComponents.entries()).map(([componentId, totalQuantity]) => ({
+          directProcess?: boolean;
+        }[] = [];
+
+        // Agregar la referencia principal si tiene procesos definidos
+        if (allMachinesProcesses && allMachinesProcesses.length > 0) {
+          referencesToProcess.push({ 
+            ref: item.referencia, 
+            cantidad: item.cantidad, 
+            isMain: true,
+            directProcess: true
+          });
+        }
+
+        // Agregar todos los componentes del BOM recursivo
+        for (const [componentId, totalQuantity] of allComponents.entries()) {
+          referencesToProcess.push({
             ref: componentId,
             cantidad: totalQuantity,
             isMain: false,
             parentRef: item.referencia
-          }))
-        ];
+          });
+        }
 
-        // 3. Procesar cada referencia (principal y componentes)
+        // Si no hay procesos definidos para la principal y no tiene componentes, agregar como sin definir
+        if ((!allMachinesProcesses || allMachinesProcesses.length === 0) && allComponents.size === 0) {
+          referencesToProcess.push({
+            ref: item.referencia,
+            cantidad: item.cantidad,
+            isMain: true
+          });
+        }
+
+        // 4. Procesar cada referencia (principal y componentes)
         for (const refToProcess of referencesToProcess) {
           // Obtener todos los procesos de máquinas disponibles para esta referencia
           const { data: machinesProcesses, error: machineError } = await supabase
@@ -172,25 +206,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           if (machineError) throw machineError;
 
           if (!machinesProcesses || machinesProcesses.length === 0) {
-            // Componente sin tiempo definido
-            if (refToProcess.isMain || allComponents.size === 0) {
-              // Solo mostrar alerta si es referencia principal o no tiene componentes
-              results.push({
-                referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
-                cantidadRequerida: refToProcess.cantidad,
-                sam: 0,
-                tiempoTotal: 0,
-                maquina: 'Sin definir',
-                estadoMaquina: 'Sin definir',
-                proceso: 'Sin definir',
-                operadoresRequeridos: 0,
-                operadoresDisponibles: 0,
-                capacidadPorcentaje: 0,
-                ocupacionMaquina: 0,
-                ocupacionProceso: 0,
-                alerta: `⚠️ Falta definir tiempos para ${refToProcess.ref}`
-              });
-            }
+            // Referencia sin tiempo definido - mostrar con SAM 0 y nota en rojo
+            results.push({
+              referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+              cantidadRequerida: refToProcess.cantidad,
+              sam: 0,
+              tiempoTotal: 0,
+              maquina: 'Sin definir',
+              estadoMaquina: 'Sin definir',
+              proceso: 'Sin definir',
+              operadoresRequeridos: 0,
+              operadoresDisponibles: 0,
+              capacidadPorcentaje: 0,
+              ocupacionMaquina: 0,
+              ocupacionProceso: 0,
+              alerta: `🔴 Falta SAM para ${refToProcess.ref} - No inscrita en machines_processes`
+            });
             continue;
           }
 
