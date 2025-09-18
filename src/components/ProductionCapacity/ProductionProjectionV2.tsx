@@ -142,7 +142,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     quantity: number, 
     nivel: number = 0, 
     visited: Set<string> = new Set(),
-    parentHierarchy: string = ''
+    parentHierarchy: string = '',
+    dataCache?: DataCache
   ): ComponentNode[] => {
     const normalizedId = productId.trim().toUpperCase();
     
@@ -158,8 +159,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Construir jerarquía actual
     const currentHierarchy = parentHierarchy ? `${parentHierarchy} → ${normalizedId}` : normalizedId;
     
-    // Buscar componentes en cache
-    const bomComponents = cache.bomData.get(normalizedId) || [];
+    // Buscar componentes en cache (usar el cache pasado explícitamente si existe)
+    const bomSource = dataCache?.bomData ?? cache.bomData;
+    const bomComponents = bomSource.get(normalizedId) || [];
     
     if (bomComponents.length === 0) {
       // Es un componente final
@@ -189,7 +191,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         componentQuantity, 
         nivel + 1, 
         new Set(visited),
-        currentHierarchy
+        currentHierarchy,
+        dataCache
       );
       
       components.push(...subComponents);
@@ -240,7 +243,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         console.log(`\n🎯 === PROCESANDO REFERENCIA PRINCIPAL: ${mainRef} ===`);
         
         // Construir árbol BOM completo
-        const bomTree = buildBOMTree(mainRef, item.cantidad);
+        const bomTree = buildBOMTree(mainRef, item.cantidad, 0, new Set(), '', loadedCache);
         
         // Crear lista de todas las referencias a procesar
         const referencesToProcess: ComponentNode[] = [];
