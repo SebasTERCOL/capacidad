@@ -45,13 +45,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const [projection, setProjection] = useState<ProjectionInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState({ current: 0, total: 0, currentRef: '' });
+  const [estimatedTime, setEstimatedTime] = useState<number>(0);
   const [startTime, setStartTime] = useState<number>(0);
-  
-  // Cache para BOM y machines_processes para evitar consultas repetidas
-  const [bomCache] = useState(new Map<string, Map<string, number>>());
-  const [allMachinesProcesses, setAllMachinesProcesses] = useState<any[]>([]);
-  const [allBomData, setAllBomData] = useState<any[]>([]);
 
   useEffect(() => {
     if (data.length > 0) {
@@ -59,58 +54,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
   }, [data, operatorConfig]);
 
-  // Función optimizada para cargar todos los datos BOM de una vez
-  const loadAllBomData = async () => {
-    console.log('🚀 Cargando todos los datos BOM...');
-    const { data: bomData, error } = await supabase
-      .from('bom')
-      .select('product_id, component_id, amount');
-    
-    if (error) {
-      console.error('❌ Error cargando BOM:', error);
-      throw error;
-    }
-    
-    setAllBomData(bomData || []);
-    console.log(`✅ Cargados ${bomData?.length || 0} registros BOM`);
-    return bomData || [];
-  };
-
-  // Función optimizada para cargar todos los datos de machines_processes
-  const loadAllMachinesProcesses = async () => {
-    console.log('🚀 Cargando todos los datos machines_processes...');
-    const { data: mpData, error } = await supabase
-      .from('machines_processes')
-      .select(`
-        sam, frequency, ref, id_machine, id_process,
-        machines!inner(id, name, status),
-        processes!inner(id, name)
-      `);
-    
-    if (error) {
-      console.error('❌ Error cargando machines_processes:', error);
-      throw error;
-    }
-    
-    setAllMachinesProcesses(mpData || []);
-    console.log(`✅ Cargados ${mpData?.length || 0} registros machines_processes`);
-    return mpData || [];
-  };
-
-  // Función recursiva optimizada con cache
-  const getRecursiveBOMOptimized = (
-    productId: string, 
-    quantity: number = 1, 
-    level: number = 0, 
-    visited: Set<string> = new Set()
-  ): Map<string, number> => {
-    const cacheKey = `${productId}_${quantity}`;
-    
-    // Verificar cache
-    if (bomCache.has(cacheKey)) {
-      return new Map(bomCache.get(cacheKey)!);
-    }
-    
+  // Función recursiva para obtener todos los componentes del BOM
+  const getRecursiveBOM = async (productId: string, quantity: number = 1, level: number = 0, visited: Set<string> = new Set()): Promise<Map<string, number>> => {
     // Prevenir loops infinitos
     if (level > 10 || visited.has(productId)) {
       console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
@@ -120,28 +65,37 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     visited.add(productId);
     const componentsMap = new Map<string, number>();
     
-    // Buscar en datos precargados
-    const bomItems = allBomData.filter(item => 
-      item.product_id.trim().toUpperCase() === productId.trim().toUpperCase()
-    );
+    console.log(`${'  '.repeat(level)}🔍 Buscando BOM para: ${productId} (cantidad: ${quantity})`);
     
-    if (bomItems.length === 0) {
-      // Es un componente final, cachear resultado vacío
-      bomCache.set(cacheKey, componentsMap);
+    // Buscar BOM directo para este product_id
+    const { data: bomData, error: bomError } = await supabase
+      .from('bom')
+      .select('component_id, amount')
+      .eq('product_id', productId.trim().toUpperCase());
+    
+    if (bomError) {
+      console.error(`❌ Error al buscar BOM para ${productId}:`, bomError);
+      return componentsMap;
+    }
+    
+    if (!bomData || bomData.length === 0) {
+      console.log(`${'  '.repeat(level)}📦 ${productId} es un componente final`);
       return componentsMap;
     }
     
     // Procesar cada componente
-    for (const bomItem of bomItems) {
+    for (const bomItem of bomData) {
       const componentId = bomItem.component_id.trim().toUpperCase();
       const componentQuantity = quantity * bomItem.amount;
+      
+      console.log(`${'  '.repeat(level)}📋 Encontrado componente: ${componentId} (cantidad: ${componentQuantity})`);
       
       // Agregar este componente al mapa
       const existingQuantity = componentsMap.get(componentId) || 0;
       componentsMap.set(componentId, existingQuantity + componentQuantity);
       
-      // Buscar recursivamente subcomponentes
-      const subComponents = getRecursiveBOMOptimized(componentId, componentQuantity, level + 1, new Set(visited));
+      // Buscar recursivamente si este componente tiene sus propios subcomponentes
+      const subComponents = await getRecursiveBOM(componentId, componentQuantity, level + 1, new Set(visited));
       
       // Agregar los subcomponentes al mapa principal
       for (const [subComponentId, subQuantity] of subComponents) {
@@ -150,8 +104,6 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
     }
     
-    // Cachear resultado
-    bomCache.set(cacheKey, componentsMap);
     return componentsMap;
   };
 
@@ -163,17 +115,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
     setLoading(true);
     setError(null);
-    setStartTime(Date.now());
-    setProgress({ current: 0, total: data.length + 2, currentRef: 'Cargando datos...' });
     
-    try {
-      // 1. Cargar todos los datos de una vez (optimización principal)
-      setProgress({ current: 1, total: data.length + 2, currentRef: 'Cargando BOM...' });
-      await loadAllBomData();
-      
-      setProgress({ current: 2, total: data.length + 2, currentRef: 'Cargando procesos...' });
-      await loadAllMachinesProcesses();
+    // Calcular tiempo estimado basado en cantidad de referencias
+    const estimatedSeconds = Math.max(3, data.length * 0.8 + 2);
+    setEstimatedTime(estimatedSeconds);
+    setStartTime(Date.now());
 
+    try {
       const results: ProjectionInfo[] = [];
       const processWorkload = new Map<string, number>();
       const machineWorkload = new Map<string, number>();
@@ -189,43 +137,39 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           });
       });
 
-      // 2. Procesar cada referencia (ahora con datos precargados)
-      for (let i = 0; i < data.length; i++) {
-        const item = data[i];
-        setProgress({ 
-          current: i + 3, 
-          total: data.length + 2, 
-          currentRef: `Procesando ${item.referencia}...` 
-        });
+        for (const item of data) {
+        // 1. Obtener BOM recursivo de la referencia principal
+        const allComponents = await getRecursiveBOM(item.referencia, item.cantidad);
 
-        console.log(`\n🔍 === PROCESANDO REFERENCIA PRINCIPAL: ${item.referencia} (cantidad: ${item.cantidad}) ===`);
+        // 2. Obtener TODAS las referencias que están en machines_processes para la referencia principal
+        const { data: allMachinesProcesses, error: allMpError } = await supabase
+          .from('machines_processes')
+          .select(`
+            sam, frequency, ref, id_machine, id_process,
+            machines!inner(id, name, status),
+            processes!inner(id, name)
+          `)
+          .eq('ref', item.referencia);
 
-        // Obtener BOM usando función optimizada
-        const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad);
-        console.log(`📦 Componentes BOM encontrados para ${item.referencia}:`, allComponents.size);
+        if (allMpError) throw allMpError;
 
-        // Obtener procesos para la referencia principal usando datos precargados
-        const referenceMachinesProcesses = allMachinesProcesses.filter(mp => 
-          mp.ref.trim().toUpperCase() === item.referencia.trim().toUpperCase()
-        );
-        console.log(`🏭 Procesos para referencia principal ${item.referencia}:`, referenceMachinesProcesses.length);
-
-        // Crear lista de referencias a procesar
+        // 3. Crear lista de todas las referencias a procesar incluyendo la principal y todos sus procesos
         const referencesToProcess: {
           ref: string;
           cantidad: number;
           isMain: boolean;
           parentRef?: string;
+          directProcess?: boolean;
         }[] = [];
 
-        // Agregar SIEMPRE la referencia principal
+        // Agregar SIEMPRE la referencia principal para evaluar procesos o advertencias
         referencesToProcess.push({ 
           ref: item.referencia, 
           cantidad: item.cantidad, 
           isMain: true
         });
 
-        // Agregar componentes del BOM
+        // Agregar todos los componentes del BOM recursivo
         for (const [componentId, totalQuantity] of allComponents.entries()) {
           referencesToProcess.push({
             ref: componentId,
@@ -235,25 +179,31 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           });
         }
 
-        console.log(`📋 Total de referencias a procesar: ${referencesToProcess.length}`);
+        // Si no hay procesos definidos para la principal y no tiene componentes, agregar como sin definir
+        if ((!allMachinesProcesses || allMachinesProcesses.length === 0) && allComponents.size === 0) {
+          referencesToProcess.push({
+            ref: item.referencia,
+            cantidad: item.cantidad,
+            isMain: true
+          });
+        }
 
-        // Procesar cada referencia
+        // 4. Procesar cada referencia (principal y componentes)
         for (const refToProcess of referencesToProcess) {
-          console.log(`🔍 Procesando referencia: ${refToProcess.ref} (cantidad: ${refToProcess.cantidad}, isMain: ${refToProcess.isMain})`);
-          
-          // Obtener procesos usando datos precargados con matching exacto
-          const machinesProcesses = allMachinesProcesses.filter(mp => 
-            mp.ref.trim().toUpperCase() === refToProcess.ref.trim().toUpperCase()
-          );
+          // Obtener todos los procesos de máquinas disponibles para esta referencia
+          const { data: machinesProcesses, error: machineError } = await supabase
+            .from('machines_processes')
+            .select(`
+              sam, frequency, ref, id_machine, id_process,
+              machines!inner(id, name, status),
+              processes!inner(id, name)
+            `)
+            .eq('ref', refToProcess.ref);
 
-          console.log(`📋 Procesos encontrados para ${refToProcess.ref}:`, machinesProcesses.length);
-          if (machinesProcesses.length > 0) {
-            console.log(`   Procesos: ${machinesProcesses.map(mp => mp.processes.name).join(', ')}`);
-          }
+          if (machineError) throw machineError;
 
           if (!machinesProcesses || machinesProcesses.length === 0) {
-            console.log(`❌ Sin procesos para ${refToProcess.ref}`);
-            // Referencia sin tiempo definido
+            // Referencia sin tiempo definido - mostrar con SAM 0 y nota en rojo
             results.push({
               referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
               cantidadRequerida: refToProcess.cantidad,
@@ -272,26 +222,17 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             continue;
           }
 
-          // Filtrar máquinas operativas
+          // Filtrar solo las máquinas que están operativas
           const availableMachineProcesses = machinesProcesses.filter((mp: any) => {
-            const processConfig = operatorConfig.processes.find(p => 
-              p.processName.toLowerCase() === mp.processes.name.toLowerCase()
-            );
-            if (!processConfig) {
-              console.log(`❌ No se encontró configuración para proceso: ${mp.processes.name}`);
-              return false;
-            }
+            const processConfig = operatorConfig.processes.find(p => p.processName.toLowerCase() === mp.processes.name.toLowerCase());
+            if (!processConfig) return false;
             const machine = processConfig.machines.find(m => m.id === mp.id_machine);
-            const isOperational = machine ? machine.isOperational : true;
-            console.log(`🔧 Máquina ${mp.machines.name} (${mp.processes.name}): operativa=${isOperational}`);
-            return isOperational;
+            return machine ? machine.isOperational : true;
           });
 
-          console.log(`✅ Máquinas operativas para ${refToProcess.ref}:`, availableMachineProcesses.length);
-
           if (availableMachineProcesses.length === 0) {
+            // No hay máquinas disponibles para esta referencia/componente
             const firstProcess = machinesProcesses[0] as any;
-            console.log(`❌ No hay máquinas operativas para ${refToProcess.ref}`);
             results.push({
               referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
               cantidadRequerida: refToProcess.cantidad,
@@ -310,32 +251,152 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             continue;
           }
 
-          // Seleccionar mejor máquina (lógica optimizada)
-          const bestMachine = selectBestMachine(availableMachineProcesses, machineWorkload, operatorConfig);
-          if (!bestMachine) {
-            console.log(`❌ No se pudo seleccionar máquina para ${refToProcess.ref}`);
+          // Determinar prioridad: referencias que pueden hacerse en pocas máquinas tienen prioridad
+          const totalMachinesForRef = machinesProcesses.length;
+          const availableMachinesCount = availableMachineProcesses.length;
+          const scarcityFactor = totalMachinesForRef === 1 ? 1 : (1 / availableMachinesCount);
+
+          // Elegir la mejor máquina considerando carga actual y scarcidad
+          let bestMachine: any = null;
+          let minWorkload = Infinity;
+
+          for (const mp of availableMachineProcesses) {
+            const processConfig = operatorConfig.processes.find(p => p.processName === mp.processes.name);
+            if (!processConfig) continue;
+            
+            const machine = processConfig.machines.find(m => m.id === mp.id_machine);
+            if (!machine) continue;
+
+            const currentWorkload = machineWorkload.get(machine.name) || 0;
+            const adjustedWorkload = currentWorkload * (scarcityFactor > 0.5 ? 0.5 : 1); // Penalizar menos a máquinas escasas
+
+            if (adjustedWorkload < minWorkload) {
+              minWorkload = adjustedWorkload;
+              bestMachine = {
+                ...mp,
+                machine: machine
+              };
+            }
+          }
+
+          if (!bestMachine) continue;
+
+          const sam = bestMachine.sam || 0;
+          const maquina = bestMachine.machines.name;
+          const estadoMaquina = bestMachine.machines.status;
+          const proceso = bestMachine.processes.name;
+
+          // Manejo especial para procesos donde SAM está en minutos/unidad
+          const isMinutesPerUnitProcess = bestMachine.id_process === 140 || bestMachine.id_process === 170; // INYECCIÓN=140, RoscadoConectores=170
+          const tiempoTotal = isMinutesPerUnitProcess
+            ? (sam > 0 ? refToProcess.cantidad * sam : 0) // Para Inyección/RoscadoConectores: tiempo = cantidad × SAM (minutos/unidad)
+            : (sam > 0 ? refToProcess.cantidad / sam : 0); // Para otros: tiempo = cantidad ÷ SAM (unidades/minuto)
+          const tiempoTotalHoras = tiempoTotal / 60;
+
+          // Verificar si es proceso especial (Lavado/Pintura)
+          const isSpecialProcess = proceso === 'Lavado' || proceso === 'Pintura';
+          
+          let alerta: string | null = null;
+          let capacidadPorcentaje = 0;
+          
+          // Obtener configuración del proceso y operarios disponibles
+          const processConfig = operatorConfig.processes.find(p => p.processName === proceso);
+          const operadoresDisponibles = processConfig ? processConfig.operatorCount : 0;
+          
+          if (isSpecialProcess) {
+            alerta = '⚖️ Proceso evaluado por peso - pendiente cálculo específico';
+            results.push({
+              referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+              cantidadRequerida: refToProcess.cantidad,
+              sam,
+              tiempoTotal,
+              maquina,
+              estadoMaquina,
+              proceso,
+              operadoresRequeridos: 1,
+              operadoresDisponibles,
+              capacidadPorcentaje: 0,
+              ocupacionMaquina: 0,
+              ocupacionProceso: 0,
+              alerta,
+              especial: true
+            });
             continue;
           }
 
-          console.log(`🎯 Mejor máquina seleccionada para ${refToProcess.ref}: ${bestMachine.machines.name} (${bestMachine.processes.name})`);
+          // Calcular requerimientos de operarios según el proceso
+          const processRequirements = getProcessRequirements(proceso);
+          const operadoresRequeridos = processRequirements.minOperators;
 
-          // Calcular tiempos y ocupación
-          const projectionResult = calculateProcessTime(
-            bestMachine, 
-            refToProcess, 
-            item, 
-            operatorConfig, 
-            machineWorkload, 
-            processWorkload
-          );
+          // Actualizar carga de trabajo
+          const currentMachineWorkload = machineWorkload.get(maquina) || 0;
+          const newMachineWorkload = currentMachineWorkload + tiempoTotalHoras;
+          machineWorkload.set(maquina, newMachineWorkload);
 
-          console.log(`📊 Resultado calculado para ${refToProcess.ref}:`, {
-            sam: projectionResult.sam,
-            tiempoTotal: projectionResult.tiempoTotal,
-            proceso: projectionResult.proceso
+          const currentProcessWorkload = processWorkload.get(proceso) || 0;
+          const newProcessWorkload = currentProcessWorkload + tiempoTotalHoras;
+          processWorkload.set(proceso, newProcessWorkload);
+
+          // Calcular ocupación de máquina y proceso
+          const horasDisponiblesPorMaquina = operatorConfig.availableHours;
+          const horasDisponiblesPorProceso = operatorConfig.availableHours * operadoresDisponibles;
+          
+          const ocupacionMaquina = (newMachineWorkload / horasDisponiblesPorMaquina) * 100;
+          const ocupacionProceso = (newProcessWorkload / horasDisponiblesPorProceso) * 100;
+
+          // Determinar alertas basadas en ocupación
+          if (operadoresDisponibles < operadoresRequeridos) {
+            alerta = `⚠️ Insuficientes operarios: ${operadoresDisponibles}/${operadoresRequeridos}`;
+            capacidadPorcentaje = (operadoresDisponibles / operadoresRequeridos) * 100;
+          } else if (ocupacionMaquina > 100) {
+            alerta = `🔴 Sobrecarga de máquina: ${ocupacionMaquina.toFixed(1)}%`;
+            capacidadPorcentaje = ocupacionMaquina;
+          } else if (ocupacionProceso > 100) {
+            alerta = `🟡 Sobrecarga de proceso: ${ocupacionProceso.toFixed(1)}%`;
+            capacidadPorcentaje = ocupacionProceso;
+          } else if (ocupacionMaquina > 85) {
+            alerta = `⚠️ Capacidad alta en máquina: ${ocupacionMaquina.toFixed(1)}%`;
+            capacidadPorcentaje = ocupacionMaquina;
+          } else if (ocupacionProceso > 85) {
+            alerta = `⚠️ Capacidad alta en proceso: ${ocupacionProceso.toFixed(1)}%`;
+            capacidadPorcentaje = ocupacionProceso;
+          } else if (estadoMaquina !== 'ENCENDIDO') {
+            alerta = `⚙️ Máquina en estado: ${estadoMaquina}`;
+            capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
+          } else {
+            capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
+          }
+
+          // Agregar información sobre distribución inteligente y BOM
+          if (!refToProcess.isMain) {
+            if (!alerta) {
+              alerta = `🔧 Componente de ${refToProcess.parentRef}`;
+            }
+          } else if (availableMachinesCount > 1 && scarcityFactor < 0.5) {
+            if (!alerta) {
+              alerta = `📊 Distribuible en ${availableMachinesCount} máquinas`;
+            }
+          } else if (availableMachinesCount === 1) {
+            if (!alerta) {
+              alerta = `🎯 Máquina exclusiva para esta referencia`;
+            }
+          }
+
+          results.push({
+            referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+            cantidadRequerida: refToProcess.cantidad,
+            sam,
+            tiempoTotal,
+            maquina,
+            estadoMaquina,
+            proceso,
+            operadoresRequeridos,
+            operadoresDisponibles,
+            capacidadPorcentaje,
+            ocupacionMaquina,
+            ocupacionProceso,
+            alerta
           });
-
-          results.push(projectionResult);
         }
       }
       
@@ -347,149 +408,6 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
     
     setLoading(false);
-    setProgress({ current: 0, total: 0, currentRef: '' });
-  };
-
-  // Función helper para seleccionar la mejor máquina
-  const selectBestMachine = (
-    availableMachineProcesses: any[],
-    machineWorkload: Map<string, number>,
-    operatorConfig: OperatorConfig
-  ) => {
-    const totalMachinesForRef = availableMachineProcesses.length;
-    const scarcityFactor = totalMachinesForRef === 1 ? 1 : (1 / totalMachinesForRef);
-
-    let bestMachine: any = null;
-    let minWorkload = Infinity;
-
-    for (const mp of availableMachineProcesses) {
-      const processConfig = operatorConfig.processes.find(p => 
-        p.processName.toLowerCase() === mp.processes.name.toLowerCase()
-      );
-      if (!processConfig) continue;
-      
-      const machine = processConfig.machines.find(m => m.id === mp.id_machine);
-      if (!machine) continue;
-
-      const currentWorkload = machineWorkload.get(machine.name) || 0;
-      const adjustedWorkload = currentWorkload * (scarcityFactor > 0.5 ? 0.5 : 1);
-
-      if (adjustedWorkload < minWorkload) {
-        minWorkload = adjustedWorkload;
-        bestMachine = { ...mp, machine: machine };
-      }
-    }
-
-    return bestMachine;
-  };
-
-  // Función helper para calcular tiempo de proceso
-  const calculateProcessTime = (
-    bestMachine: any,
-    refToProcess: any,
-    item: any,
-    operatorConfig: OperatorConfig,
-    machineWorkload: Map<string, number>,
-    processWorkload: Map<string, number>
-  ): ProjectionInfo => {
-    const sam = bestMachine.sam || 0;
-    const maquina = bestMachine.machines.name;
-    const estadoMaquina = bestMachine.machines.status;
-    const proceso = bestMachine.processes.name;
-
-    // Manejo especial para procesos donde SAM está en minutos/unidad
-    const isMinutesPerUnitProcess = bestMachine.id_process === 140 || bestMachine.id_process === 170;
-    const tiempoTotal = isMinutesPerUnitProcess
-      ? (sam > 0 ? refToProcess.cantidad * sam : 0)
-      : (sam > 0 ? refToProcess.cantidad / sam : 0);
-    const tiempoTotalHoras = tiempoTotal / 60;
-
-    // Verificar si es proceso especial
-    const isSpecialProcess = proceso === 'Lavado' || proceso === 'Pintura';
-    
-    const processConfig = operatorConfig.processes.find(p => p.processName === proceso);
-    const operadoresDisponibles = processConfig ? processConfig.operatorCount : 0;
-    
-    if (isSpecialProcess) {
-      return {
-        referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
-        cantidadRequerida: refToProcess.cantidad,
-        sam,
-        tiempoTotal,
-        maquina,
-        estadoMaquina,
-        proceso,
-        operadoresRequeridos: 1,
-        operadoresDisponibles,
-        capacidadPorcentaje: 0,
-        ocupacionMaquina: 0,
-        ocupacionProceso: 0,
-        alerta: '⚖️ Proceso evaluado por peso - pendiente cálculo específico',
-        especial: true
-      };
-    }
-
-    // Calcular requerimientos de operarios
-    const processRequirements = getProcessRequirements(proceso);
-    const operadoresRequeridos = processRequirements.minOperators;
-
-    // Actualizar carga de trabajo
-    const currentMachineWorkload = machineWorkload.get(maquina) || 0;
-    const newMachineWorkload = currentMachineWorkload + tiempoTotalHoras;
-    machineWorkload.set(maquina, newMachineWorkload);
-
-    const currentProcessWorkload = processWorkload.get(proceso) || 0;
-    const newProcessWorkload = currentProcessWorkload + tiempoTotalHoras;
-    processWorkload.set(proceso, newProcessWorkload);
-
-    // Calcular ocupación
-    const horasDisponiblesPorMaquina = operatorConfig.availableHours;
-    const horasDisponiblesPorProceso = operatorConfig.availableHours * operadoresDisponibles;
-    
-    const ocupacionMaquina = (newMachineWorkload / horasDisponiblesPorMaquina) * 100;
-    const ocupacionProceso = (newProcessWorkload / horasDisponiblesPorProceso) * 100;
-
-    // Determinar alertas
-    let alerta: string | null = null;
-    let capacidadPorcentaje = 0;
-
-    if (operadoresDisponibles < operadoresRequeridos) {
-      alerta = `⚠️ Insuficientes operarios: ${operadoresDisponibles}/${operadoresRequeridos}`;
-      capacidadPorcentaje = (operadoresDisponibles / operadoresRequeridos) * 100;
-    } else if (ocupacionMaquina > 100) {
-      alerta = `🔴 Sobrecarga de máquina: ${ocupacionMaquina.toFixed(1)}%`;
-      capacidadPorcentaje = ocupacionMaquina;
-    } else if (ocupacionProceso > 100) {
-      alerta = `🟡 Sobrecarga de proceso: ${ocupacionProceso.toFixed(1)}%`;
-      capacidadPorcentaje = ocupacionProceso;
-    } else if (ocupacionMaquina > 85) {
-      alerta = `⚠️ Capacidad alta en máquina: ${ocupacionMaquina.toFixed(1)}%`;
-      capacidadPorcentaje = ocupacionMaquina;
-    } else if (ocupacionProceso > 85) {
-      alerta = `⚠️ Capacidad alta en proceso: ${ocupacionProceso.toFixed(1)}%`;
-      capacidadPorcentaje = ocupacionProceso;
-    } else if (estadoMaquina !== 'ENCENDIDO') {
-      alerta = `⚙️ Máquina en estado: ${estadoMaquina}`;
-      capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
-    } else {
-      capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
-    }
-
-    return {
-      referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
-      cantidadRequerida: refToProcess.cantidad,
-      sam,
-      tiempoTotal,
-      maquina,
-      estadoMaquina,
-      proceso,
-      operadoresRequeridos,
-      operadoresDisponibles,
-      capacidadPorcentaje,
-      ocupacionMaquina,
-      ocupacionProceso,
-      alerta
-    };
   };
 
   const getProcessRequirements = (process: string) => {
@@ -637,7 +555,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
   if (loading) {
     const elapsedTime = Math.max(0, (Date.now() - startTime) / 1000);
-    const progressPercentage = progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
+    const remainingTime = Math.max(0, estimatedTime - elapsedTime);
     
     return (
       <Card>
@@ -646,20 +564,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           <div>
             <p className="text-lg font-medium">Calculando proyección de capacidad...</p>
             <p className="text-sm text-muted-foreground mt-2">
-              {progress.currentRef}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Progreso: {progress.current}/{progress.total}
+              Tiempo estimado: ~{Math.ceil(remainingTime)}s restantes
             </p>
             <div className="w-48 bg-secondary rounded-full h-2 mx-auto mt-3">
               <div 
                 className="bg-primary h-2 rounded-full transition-all duration-300" 
-                style={{ width: `${Math.min(100, progressPercentage)}%` }}
+                style={{ width: `${Math.min(100, (elapsedTime / estimatedTime) * 100)}%` }}
               ></div>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Tiempo transcurrido: {Math.floor(elapsedTime)}s
-            </p>
           </div>
         </CardContent>
       </Card>
