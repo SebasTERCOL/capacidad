@@ -3,14 +3,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Activity, Calendar, AlertCircle, Database, Clock } from "lucide-react";
+import { Activity, Calendar, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { OperatorConfig } from "./OperatorConfiguration";
 import HierarchicalCapacityView from './HierarchicalCapacityView';
 
 export interface ProjectionInfo {
   referencia: string;
-  jerarquia: string; // Nueva propiedad para mostrar la ruta completa
   cantidadRequerida: number;
   sam: number;
   tiempoTotal: number;
@@ -24,7 +23,6 @@ export interface ProjectionInfo {
   ocupacionProceso: number;
   alerta?: string | null;
   especial?: boolean;
-  nivel?: number; // Nivel en la jerarquía BOM
 }
 
 interface ProductionProjectionV2Props {
@@ -34,27 +32,6 @@ interface ProductionProjectionV2Props {
   onBack: () => void;
   onProjectionComplete: (projectionData: ProjectionInfo[]) => void;
   onStartOver: () => void;
-}
-
-// Cache de datos para optimizar consultas
-interface DataCache {
-  bomData: Map<string, { component_id: string; amount: number }[]>;
-  machinesProcesses: Map<string, {
-    sam: number;
-    frequency: number;
-    id_machine: number;
-    id_process: number;
-    machines: { id: number; name: string; status: string };
-    processes: { id: number; name: string };
-  }[]>;
-}
-
-interface ComponentNode {
-  referencia: string;
-  cantidad: number;
-  nivel: number;
-  padre?: string;
-  jerarquia: string;
 }
 
 export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({ 
@@ -68,9 +45,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const [projection, setProjection] = useState<ProjectionInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadingStage, setLoadingStage] = useState<string>('');
-  const [progress, setProgress] = useState<number>(0);
-  const [cache, setCache] = useState<DataCache>({ bomData: new Map(), machinesProcesses: new Map() });
+  const [progress, setProgress] = useState({ current: 0, total: 0, currentRef: '' });
+  const [startTime, setStartTime] = useState<number>(0);
+  
+  // Cache para BOM y machines_processes para evitar consultas repetidas
+  const [bomCache] = useState(new Map<string, Map<string, number>>());
+  const [allMachinesProcesses, setAllMachinesProcesses] = useState<any[]>([]);
+  const [allBomData, setAllBomData] = useState<any[]>([]);
 
   useEffect(() => {
     if (data.length > 0) {
@@ -78,127 +59,100 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
   }, [data, operatorConfig]);
 
-  // Función para cargar todos los datos al inicio
-  const loadAllData = async (): Promise<DataCache> => {
-    setLoadingStage('Cargando datos de BOM...');
-    setProgress(10);
-
-    // Cargar toda la tabla BOM
-    const { data: bomData, error: bomError } = await supabase
+  // Función optimizada para cargar todos los datos BOM de una vez
+  const loadAllBomData = async () => {
+    console.log('🚀 Cargando todos los datos BOM...');
+    const { data: bomData, error } = await supabase
       .from('bom')
       .select('product_id, component_id, amount');
     
-    if (bomError) throw bomError;
+    if (error) {
+      console.error('❌ Error cargando BOM:', error);
+      throw error;
+    }
+    
+    setAllBomData(bomData || []);
+    console.log(`✅ Cargados ${bomData?.length || 0} registros BOM`);
+    return bomData || [];
+  };
 
-    setLoadingStage('Cargando procesos y máquinas...');
-    setProgress(30);
-
-    // Cargar todos los machines_processes
-    const { data: machinesProcessesData, error: mpError } = await supabase
+  // Función optimizada para cargar todos los datos de machines_processes
+  const loadAllMachinesProcesses = async () => {
+    console.log('🚀 Cargando todos los datos machines_processes...');
+    const { data: mpData, error } = await supabase
       .from('machines_processes')
       .select(`
         sam, frequency, ref, id_machine, id_process,
         machines!inner(id, name, status),
         processes!inner(id, name)
       `);
-
-    if (mpError) throw mpError;
-
-    setProgress(50);
-
-    // Organizar datos en Maps para búsqueda eficiente
-    const bomMap = new Map<string, { component_id: string; amount: number }[]>();
-    bomData?.forEach(item => {
-      const key = item.product_id.trim().toUpperCase();
-      if (!bomMap.has(key)) {
-        bomMap.set(key, []);
-      }
-      bomMap.get(key)!.push({
-        component_id: item.component_id.trim().toUpperCase(),
-        amount: item.amount
-      });
-    });
-
-    const machinesProcessesMap = new Map<string, any[]>();
-    machinesProcessesData?.forEach(item => {
-      const key = item.ref.trim().toUpperCase();
-      if (!machinesProcessesMap.has(key)) {
-        machinesProcessesMap.set(key, []);
-      }
-      machinesProcessesMap.get(key)!.push(item);
-    });
-
-    console.log(`📊 Cache cargado: ${bomMap.size} productos BOM, ${machinesProcessesMap.size} referencias con procesos`);
-
-    return {
-      bomData: bomMap,
-      machinesProcesses: machinesProcessesMap
-    };
-  };
-
-  // Función recursiva optimizada para construir el árbol BOM completo
-  const buildBOMTree = (
-    productId: string, 
-    quantity: number, 
-    nivel: number = 0, 
-    visited: Set<string> = new Set(),
-    parentHierarchy: string = '',
-    dataCache?: DataCache
-  ): ComponentNode[] => {
-    const normalizedId = productId.trim().toUpperCase();
     
-    // Prevenir loops infinitos
-    if (nivel > 15 || visited.has(normalizedId)) {
-      console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${normalizedId}`);
-      return [];
+    if (error) {
+      console.error('❌ Error cargando machines_processes:', error);
+      throw error;
     }
     
-    visited.add(normalizedId);
-    const components: ComponentNode[] = [];
+    setAllMachinesProcesses(mpData || []);
+    console.log(`✅ Cargados ${mpData?.length || 0} registros machines_processes`);
+    return mpData || [];
+  };
+
+  // Función recursiva optimizada con cache
+  const getRecursiveBOMOptimized = (
+    productId: string, 
+    quantity: number = 1, 
+    level: number = 0, 
+    visited: Set<string> = new Set()
+  ): Map<string, number> => {
+    const cacheKey = `${productId}_${quantity}`;
     
-    // Construir jerarquía actual
-    const currentHierarchy = parentHierarchy ? `${parentHierarchy} → ${normalizedId}` : normalizedId;
+    // Verificar cache
+    if (bomCache.has(cacheKey)) {
+      return new Map(bomCache.get(cacheKey)!);
+    }
     
-    // Buscar componentes en cache (usar el cache pasado explícitamente si existe)
-    const bomSource = dataCache?.bomData ?? cache.bomData;
-    const bomComponents = bomSource.get(normalizedId) || [];
+    // Prevenir loops infinitos
+    if (level > 10 || visited.has(productId)) {
+      console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
+      return new Map();
+    }
     
-    if (bomComponents.length === 0) {
-      // Es un componente final
-      console.log(`${'  '.repeat(nivel)}📦 ${normalizedId} es componente final`);
-      return [];
+    visited.add(productId);
+    const componentsMap = new Map<string, number>();
+    
+    // Buscar en datos precargados
+    const bomItems = allBomData.filter(item => 
+      item.product_id.trim().toUpperCase() === productId.trim().toUpperCase()
+    );
+    
+    if (bomItems.length === 0) {
+      // Es un componente final, cachear resultado vacío
+      bomCache.set(cacheKey, componentsMap);
+      return componentsMap;
     }
     
     // Procesar cada componente
-    for (const bomItem of bomComponents) {
-      const componentId = bomItem.component_id;
+    for (const bomItem of bomItems) {
+      const componentId = bomItem.component_id.trim().toUpperCase();
       const componentQuantity = quantity * bomItem.amount;
       
-      console.log(`${'  '.repeat(nivel)}📋 ${normalizedId} → ${componentId} (cantidad: ${componentQuantity})`);
-      
-      // Agregar este componente
-      components.push({
-        referencia: componentId,
-        cantidad: componentQuantity,
-        nivel: nivel + 1,
-        padre: normalizedId,
-        jerarquia: `${currentHierarchy} → ${componentId}`
-      });
+      // Agregar este componente al mapa
+      const existingQuantity = componentsMap.get(componentId) || 0;
+      componentsMap.set(componentId, existingQuantity + componentQuantity);
       
       // Buscar recursivamente subcomponentes
-      const subComponents = buildBOMTree(
-        componentId, 
-        componentQuantity, 
-        nivel + 1, 
-        new Set(visited),
-        currentHierarchy,
-        dataCache
-      );
+      const subComponents = getRecursiveBOMOptimized(componentId, componentQuantity, level + 1, new Set(visited));
       
-      components.push(...subComponents);
+      // Agregar los subcomponentes al mapa principal
+      for (const [subComponentId, subQuantity] of subComponents) {
+        const existingSubQuantity = componentsMap.get(subComponentId) || 0;
+        componentsMap.set(subComponentId, existingSubQuantity + subQuantity);
+      }
     }
     
-    return components;
+    // Cachear resultado
+    bomCache.set(cacheKey, componentsMap);
+    return componentsMap;
   };
 
   const calculateProjection = async () => {
@@ -209,164 +163,209 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
     setLoading(true);
     setError(null);
-    setProgress(0);
-
+    setStartTime(Date.now());
+    setProgress({ current: 0, total: data.length + 2, currentRef: 'Cargando datos...' });
+    
     try {
-      // 1. Cargar todos los datos al inicio
-      setLoadingStage('Cargando base de datos...');
-      const loadedCache = await loadAllData();
-      setCache(loadedCache);
-
-      setLoadingStage('Construyendo árboles BOM...');
-      setProgress(60);
+      // 1. Cargar todos los datos de una vez (optimización principal)
+      setProgress({ current: 1, total: data.length + 2, currentRef: 'Cargando BOM...' });
+      await loadAllBomData();
+      
+      setProgress({ current: 2, total: data.length + 2, currentRef: 'Cargando procesos...' });
+      await loadAllMachinesProcesses();
 
       const results: ProjectionInfo[] = [];
       const processWorkload = new Map<string, number>();
       const machineWorkload = new Map<string, number>();
 
       // Inicializar carga de trabajo para todas las máquinas operativas
+      const allMachines: any[] = [];
       operatorConfig.processes.forEach(process => {
         process.machines
           .filter(m => m.isOperational)
           .forEach(machine => {
+            allMachines.push({ ...machine, processName: process.processName });
             machineWorkload.set(machine.name, 0);
           });
       });
 
-      // 2. Procesar cada referencia principal
-      let processedReferences = 0;
-      for (const item of data) {
-        const mainRef = item.referencia?.trim().toUpperCase();
-        setLoadingStage(`Procesando ${mainRef}... (${processedReferences + 1}/${data.length})`);
-        setProgress(60 + (processedReferences / data.length) * 35);
-
-        console.log(`\n🎯 === PROCESANDO REFERENCIA PRINCIPAL: ${mainRef} ===`);
-        
-        // Construir árbol BOM completo
-        const bomTree = buildBOMTree(mainRef, item.cantidad, 0, new Set(), '', loadedCache);
-        
-        // Crear lista de todas las referencias a procesar
-        const referencesToProcess: ComponentNode[] = [];
-        
-        // Agregar referencia principal
-        referencesToProcess.push({
-          referencia: mainRef,
-          cantidad: item.cantidad,
-          nivel: 0,
-          jerarquia: mainRef
+      // 2. Procesar cada referencia (ahora con datos precargados)
+      for (let i = 0; i < data.length; i++) {
+        const item = data[i];
+        setProgress({ 
+          current: i + 3, 
+          total: data.length + 2, 
+          currentRef: `Procesando ${item.referencia}...` 
         });
-        
-        // Agregar todos los componentes del BOM
-        referencesToProcess.push(...bomTree);
 
-        console.log(`📋 Total referencias a procesar para ${mainRef}: ${referencesToProcess.length}`);
+        console.log(`\n🔍 === PROCESANDO REFERENCIA PRINCIPAL: ${item.referencia} (cantidad: ${item.cantidad}) ===`);
 
-        // 3. Procesar cada componente
-        for (const refToProcess of referencesToProcess) {
-          await processReference(refToProcess, item.referencia, results, processWorkload, machineWorkload, loadedCache);
+        // Obtener BOM usando función optimizada
+        const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad);
+        console.log(`📦 Componentes BOM encontrados para ${item.referencia}:`, allComponents.size);
+
+        // Obtener procesos para la referencia principal usando datos precargados
+        const referenceMachinesProcesses = allMachinesProcesses.filter(mp => 
+          mp.ref.trim().toUpperCase() === item.referencia.trim().toUpperCase()
+        );
+        console.log(`🏭 Procesos para referencia principal ${item.referencia}:`, referenceMachinesProcesses.length);
+
+        // Crear lista de referencias a procesar
+        const referencesToProcess: {
+          ref: string;
+          cantidad: number;
+          isMain: boolean;
+          parentRef?: string;
+        }[] = [];
+
+        // Agregar SIEMPRE la referencia principal
+        referencesToProcess.push({ 
+          ref: item.referencia, 
+          cantidad: item.cantidad, 
+          isMain: true
+        });
+
+        // Agregar componentes del BOM
+        for (const [componentId, totalQuantity] of allComponents.entries()) {
+          referencesToProcess.push({
+            ref: componentId,
+            cantidad: totalQuantity,
+            isMain: false,
+            parentRef: item.referencia
+          });
         }
-        
-        processedReferences++;
-      }
 
-      setLoadingStage('Finalizando cálculos...');
-      setProgress(95);
-      
-      console.log(`\n🎉 === RESUMEN FINAL ===`);
-      console.log(`Total resultados: ${results.length}`);
-      console.log(`Referencias con alertas: ${results.filter(r => r.alerta).length}`);
-      console.log(`Procesos especiales: ${results.filter(r => r.especial).length}`);
+        console.log(`📋 Total de referencias a procesar: ${referencesToProcess.length}`);
+
+        // Procesar cada referencia
+        for (const refToProcess of referencesToProcess) {
+          console.log(`🔍 Procesando referencia: ${refToProcess.ref} (cantidad: ${refToProcess.cantidad}, isMain: ${refToProcess.isMain})`);
+          
+          // Obtener procesos usando datos precargados con matching exacto
+          const machinesProcesses = allMachinesProcesses.filter(mp => 
+            mp.ref.trim().toUpperCase() === refToProcess.ref.trim().toUpperCase()
+          );
+
+          console.log(`📋 Procesos encontrados para ${refToProcess.ref}:`, machinesProcesses.length);
+          if (machinesProcesses.length > 0) {
+            console.log(`   Procesos: ${machinesProcesses.map(mp => mp.processes.name).join(', ')}`);
+          }
+
+          if (!machinesProcesses || machinesProcesses.length === 0) {
+            console.log(`❌ Sin procesos para ${refToProcess.ref}`);
+            // Referencia sin tiempo definido
+            results.push({
+              referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+              cantidadRequerida: refToProcess.cantidad,
+              sam: 0,
+              tiempoTotal: 0,
+              maquina: 'Sin definir',
+              estadoMaquina: 'Sin definir',
+              proceso: 'Sin definir',
+              operadoresRequeridos: 0,
+              operadoresDisponibles: 0,
+              capacidadPorcentaje: 0,
+              ocupacionMaquina: 0,
+              ocupacionProceso: 0,
+              alerta: `🔴 Falta SAM para ${refToProcess.ref} - No inscrita en machines_processes`
+            });
+            continue;
+          }
+
+          // Filtrar máquinas operativas
+          const availableMachineProcesses = machinesProcesses.filter((mp: any) => {
+            const processConfig = operatorConfig.processes.find(p => 
+              p.processName.toLowerCase() === mp.processes.name.toLowerCase()
+            );
+            if (!processConfig) {
+              console.log(`❌ No se encontró configuración para proceso: ${mp.processes.name}`);
+              return false;
+            }
+            const machine = processConfig.machines.find(m => m.id === mp.id_machine);
+            const isOperational = machine ? machine.isOperational : true;
+            console.log(`🔧 Máquina ${mp.machines.name} (${mp.processes.name}): operativa=${isOperational}`);
+            return isOperational;
+          });
+
+          console.log(`✅ Máquinas operativas para ${refToProcess.ref}:`, availableMachineProcesses.length);
+
+          if (availableMachineProcesses.length === 0) {
+            const firstProcess = machinesProcesses[0] as any;
+            console.log(`❌ No hay máquinas operativas para ${refToProcess.ref}`);
+            results.push({
+              referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+              cantidadRequerida: refToProcess.cantidad,
+              sam: firstProcess.sam || 0,
+              tiempoTotal: 0,
+              maquina: firstProcess.machines.name,
+              estadoMaquina: firstProcess.machines.status,
+              proceso: firstProcess.processes.name,
+              operadoresRequeridos: 1,
+              operadoresDisponibles: 0,
+              capacidadPorcentaje: 0,
+              ocupacionMaquina: 0,
+              ocupacionProceso: 0,
+              alerta: '❌ No hay máquinas operativas disponibles'
+            });
+            continue;
+          }
+
+          // Seleccionar mejor máquina (lógica optimizada)
+          const bestMachine = selectBestMachine(availableMachineProcesses, machineWorkload, operatorConfig);
+          if (!bestMachine) {
+            console.log(`❌ No se pudo seleccionar máquina para ${refToProcess.ref}`);
+            continue;
+          }
+
+          console.log(`🎯 Mejor máquina seleccionada para ${refToProcess.ref}: ${bestMachine.machines.name} (${bestMachine.processes.name})`);
+
+          // Calcular tiempos y ocupación
+          const projectionResult = calculateProcessTime(
+            bestMachine, 
+            refToProcess, 
+            item, 
+            operatorConfig, 
+            machineWorkload, 
+            processWorkload
+          );
+
+          console.log(`📊 Resultado calculado para ${refToProcess.ref}:`, {
+            sam: projectionResult.sam,
+            tiempoTotal: projectionResult.tiempoTotal,
+            proceso: projectionResult.proceso
+          });
+
+          results.push(projectionResult);
+        }
+      }
       
       setProjection(results);
       onProjectionComplete(results);
-      setProgress(100);
-      
     } catch (error) {
       console.error('Error calculating projection:', error);
       setError('Error al calcular la proyección. Verifique la conexión a la base de datos.');
     }
     
     setLoading(false);
+    setProgress({ current: 0, total: 0, currentRef: '' });
   };
 
-  const processReference = async (
-    refToProcess: ComponentNode,
-    mainReferencia: string,
-    results: ProjectionInfo[],
-    processWorkload: Map<string, number>,
+  // Función helper para seleccionar la mejor máquina
+  const selectBestMachine = (
+    availableMachineProcesses: any[],
     machineWorkload: Map<string, number>,
-    dataCache: DataCache
+    operatorConfig: OperatorConfig
   ) => {
-    const normalizedRef = refToProcess.referencia.trim().toUpperCase();
-    
-    // Buscar procesos en cache
-    const machinesProcesses = dataCache.machinesProcesses.get(normalizedRef) || [];
-    
-    if (machinesProcesses.length === 0) {
-      // Referencia sin procesos definidos
-      results.push({
-        referencia: refToProcess.nivel === 0 ? mainReferencia : refToProcess.referencia,
-        jerarquia: refToProcess.jerarquia,
-        cantidadRequerida: refToProcess.cantidad,
-        sam: 0,
-        tiempoTotal: 0,
-        maquina: 'Sin definir',
-        estadoMaquina: 'Sin definir',
-        proceso: 'Sin definir',
-        operadoresRequeridos: 0,
-        operadoresDisponibles: 0,
-        capacidadPorcentaje: 0,
-        ocupacionMaquina: 0,
-        ocupacionProceso: 0,
-        alerta: `🔴 Falta SAM para ${normalizedRef} - No inscrita en machines_processes`,
-        nivel: refToProcess.nivel
-      });
-      return;
-    }
-
-    // Filtrar máquinas operativas
-    const availableMachineProcesses = machinesProcesses.filter((mp: any) => {
-      const processConfig = operatorConfig.processes.find(p => 
-        p.processName.toLowerCase() === mp.processes.name.toLowerCase()
-      );
-      if (!processConfig) return false;
-      const machine = processConfig.machines.find(m => m.id === mp.id_machine);
-      return machine ? machine.isOperational : true;
-    });
-
-    if (availableMachineProcesses.length === 0) {
-      // No hay máquinas disponibles
-      const firstProcess = machinesProcesses[0] as any;
-      results.push({
-        referencia: refToProcess.nivel === 0 ? mainReferencia : refToProcess.referencia,
-        jerarquia: refToProcess.jerarquia,
-        cantidadRequerida: refToProcess.cantidad,
-        sam: firstProcess.sam || 0,
-        tiempoTotal: 0,
-        maquina: firstProcess.machines.name,
-        estadoMaquina: firstProcess.machines.status,
-        proceso: firstProcess.processes.name,
-        operadoresRequeridos: 1,
-        operadoresDisponibles: 0,
-        capacidadPorcentaje: 0,
-        ocupacionMaquina: 0,
-        ocupacionProceso: 0,
-        alerta: '❌ No hay máquinas operativas disponibles',
-        nivel: refToProcess.nivel
-      });
-      return;
-    }
-
-    // Seleccionar mejor máquina basado en carga de trabajo y escasez
-    const totalMachinesForRef = machinesProcesses.length;
-    const availableMachinesCount = availableMachineProcesses.length;
-    const scarcityFactor = totalMachinesForRef === 1 ? 1 : (1 / availableMachinesCount);
+    const totalMachinesForRef = availableMachineProcesses.length;
+    const scarcityFactor = totalMachinesForRef === 1 ? 1 : (1 / totalMachinesForRef);
 
     let bestMachine: any = null;
     let minWorkload = Infinity;
 
     for (const mp of availableMachineProcesses) {
-      const processConfig = operatorConfig.processes.find(p => p.processName === mp.processes.name);
+      const processConfig = operatorConfig.processes.find(p => 
+        p.processName.toLowerCase() === mp.processes.name.toLowerCase()
+      );
       if (!processConfig) continue;
       
       const machine = processConfig.machines.find(m => m.id === mp.id_machine);
@@ -381,40 +380,60 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
     }
 
-    if (!bestMachine) return;
+    return bestMachine;
+  };
 
-    // Calcular métricas
+  // Función helper para calcular tiempo de proceso
+  const calculateProcessTime = (
+    bestMachine: any,
+    refToProcess: any,
+    item: any,
+    operatorConfig: OperatorConfig,
+    machineWorkload: Map<string, number>,
+    processWorkload: Map<string, number>
+  ): ProjectionInfo => {
     const sam = bestMachine.sam || 0;
     const maquina = bestMachine.machines.name;
     const estadoMaquina = bestMachine.machines.status;
     const proceso = bestMachine.processes.name;
 
-    // Cálculo de tiempo mejorado con manejo de procesos especiales
-    const isMinutesPerUnitProcess = ['Inyección', 'RoscadoConectores'].includes(proceso);
-    const isSpecialWeightProcess = ['Lavado', 'Pintura', 'Horno'].includes(proceso);
-    
-    let tiempoTotal = 0;
-    let alerta: string | null = null;
-    let especial = false;
-
-    if (isSpecialWeightProcess) {
-      especial = true;
-      alerta = '⚖️ Proceso evaluado por peso - pendiente cálculo específico';
-    } else if (isMinutesPerUnitProcess) {
-      tiempoTotal = sam > 0 ? refToProcess.cantidad * sam : 0;
-    } else {
-      tiempoTotal = sam > 0 ? refToProcess.cantidad / sam : 0;
-    }
-
+    // Manejo especial para procesos donde SAM está en minutos/unidad
+    const isMinutesPerUnitProcess = bestMachine.id_process === 140 || bestMachine.id_process === 170;
+    const tiempoTotal = isMinutesPerUnitProcess
+      ? (sam > 0 ? refToProcess.cantidad * sam : 0)
+      : (sam > 0 ? refToProcess.cantidad / sam : 0);
     const tiempoTotalHoras = tiempoTotal / 60;
 
-    // Obtener configuración del proceso y operarios
+    // Verificar si es proceso especial
+    const isSpecialProcess = proceso === 'Lavado' || proceso === 'Pintura';
+    
     const processConfig = operatorConfig.processes.find(p => p.processName === proceso);
     const operadoresDisponibles = processConfig ? processConfig.operatorCount : 0;
+    
+    if (isSpecialProcess) {
+      return {
+        referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
+        cantidadRequerida: refToProcess.cantidad,
+        sam,
+        tiempoTotal,
+        maquina,
+        estadoMaquina,
+        proceso,
+        operadoresRequeridos: 1,
+        operadoresDisponibles,
+        capacidadPorcentaje: 0,
+        ocupacionMaquina: 0,
+        ocupacionProceso: 0,
+        alerta: '⚖️ Proceso evaluado por peso - pendiente cálculo específico',
+        especial: true
+      };
+    }
+
+    // Calcular requerimientos de operarios
     const processRequirements = getProcessRequirements(proceso);
     const operadoresRequeridos = processRequirements.minOperators;
 
-    // Actualizar cargas de trabajo
+    // Actualizar carga de trabajo
     const currentMachineWorkload = machineWorkload.get(maquina) || 0;
     const newMachineWorkload = currentMachineWorkload + tiempoTotalHoras;
     machineWorkload.set(maquina, newMachineWorkload);
@@ -423,52 +442,41 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const newProcessWorkload = currentProcessWorkload + tiempoTotalHoras;
     processWorkload.set(proceso, newProcessWorkload);
 
-    // Calcular ocupaciones
+    // Calcular ocupación
     const horasDisponiblesPorMaquina = operatorConfig.availableHours;
     const horasDisponiblesPorProceso = operatorConfig.availableHours * operadoresDisponibles;
     
     const ocupacionMaquina = (newMachineWorkload / horasDisponiblesPorMaquina) * 100;
     const ocupacionProceso = (newProcessWorkload / horasDisponiblesPorProceso) * 100;
 
-    // Determinar alertas y capacidad
+    // Determinar alertas
+    let alerta: string | null = null;
     let capacidadPorcentaje = 0;
 
-    if (!especial) {
-      if (operadoresDisponibles < operadoresRequeridos) {
-        alerta = `⚠️ Insuficientes operarios: ${operadoresDisponibles}/${operadoresRequeridos}`;
-        capacidadPorcentaje = (operadoresDisponibles / operadoresRequeridos) * 100;
-      } else if (ocupacionMaquina > 100) {
-        alerta = `🔴 Sobrecarga de máquina: ${ocupacionMaquina.toFixed(1)}%`;
-        capacidadPorcentaje = ocupacionMaquina;
-      } else if (ocupacionProceso > 100) {
-        alerta = `🟡 Sobrecarga de proceso: ${ocupacionProceso.toFixed(1)}%`;
-        capacidadPorcentaje = ocupacionProceso;
-      } else if (ocupacionMaquina > 85) {
-        alerta = `⚠️ Capacidad alta en máquina: ${ocupacionMaquina.toFixed(1)}%`;
-        capacidadPorcentaje = ocupacionMaquina;
-      } else if (ocupacionProceso > 85) {
-        alerta = `⚠️ Capacidad alta en proceso: ${ocupacionProceso.toFixed(1)}%`;
-        capacidadPorcentaje = ocupacionProceso;
-      } else if (estadoMaquina !== 'ENCENDIDO') {
-        alerta = `⚙️ Máquina en estado: ${estadoMaquina}`;
-        capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
-      } else {
-        capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
-        
-        // Información adicional para casos normales
-        if (refToProcess.nivel > 0) {
-          alerta = `🔧 Componente de ${mainReferencia}`;
-        } else if (availableMachinesCount > 1 && scarcityFactor < 0.5) {
-          alerta = `📊 Distribuible en ${availableMachinesCount} máquinas`;
-        } else if (availableMachinesCount === 1) {
-          alerta = `🎯 Máquina exclusiva para esta referencia`;
-        }
-      }
+    if (operadoresDisponibles < operadoresRequeridos) {
+      alerta = `⚠️ Insuficientes operarios: ${operadoresDisponibles}/${operadoresRequeridos}`;
+      capacidadPorcentaje = (operadoresDisponibles / operadoresRequeridos) * 100;
+    } else if (ocupacionMaquina > 100) {
+      alerta = `🔴 Sobrecarga de máquina: ${ocupacionMaquina.toFixed(1)}%`;
+      capacidadPorcentaje = ocupacionMaquina;
+    } else if (ocupacionProceso > 100) {
+      alerta = `🟡 Sobrecarga de proceso: ${ocupacionProceso.toFixed(1)}%`;
+      capacidadPorcentaje = ocupacionProceso;
+    } else if (ocupacionMaquina > 85) {
+      alerta = `⚠️ Capacidad alta en máquina: ${ocupacionMaquina.toFixed(1)}%`;
+      capacidadPorcentaje = ocupacionMaquina;
+    } else if (ocupacionProceso > 85) {
+      alerta = `⚠️ Capacidad alta en proceso: ${ocupacionProceso.toFixed(1)}%`;
+      capacidadPorcentaje = ocupacionProceso;
+    } else if (estadoMaquina !== 'ENCENDIDO') {
+      alerta = `⚙️ Máquina en estado: ${estadoMaquina}`;
+      capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
+    } else {
+      capacidadPorcentaje = Math.max(ocupacionMaquina, ocupacionProceso);
     }
 
-    results.push({
-      referencia: refToProcess.nivel === 0 ? mainReferencia : refToProcess.referencia,
-      jerarquia: refToProcess.jerarquia,
+    return {
+      referencia: refToProcess.isMain ? item.referencia : `${item.referencia} → ${refToProcess.ref}`,
       cantidadRequerida: refToProcess.cantidad,
       sam,
       tiempoTotal,
@@ -480,10 +488,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       capacidadPorcentaje,
       ocupacionMaquina,
       ocupacionProceso,
-      alerta,
-      especial,
-      nivel: refToProcess.nivel
-    });
+      alerta
+    };
   };
 
   const getProcessRequirements = (process: string) => {
@@ -491,19 +497,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       'punzonado': { minOperators: 2 },
       'corte': { minOperators: 1 },
       'troquelado': { minOperators: 5 },
-      'despunte': { minOperators: 5 }, // Nueva configuración para Despunte - usa las mismas máquinas que Troquelado
       'doblez': { minOperators: 4 },
       'soldadura': { minOperators: 3 },
       'mig': { minOperators: 1 },
       'ensambleint': { minOperators: 3 },
-      'lavado': { minOperators: 2 }, // Actualizado
+      'lavado': { minOperators: 1 },
       'pintura': { minOperators: 4 },
-      'horno': { minOperators: 1 }, // Nuevo
       'ensamble': { minOperators: 9 },
       'inyección': { minOperators: 7 },
-      'inyeccion': { minOperators: 7 },
-      'tapas': { minOperators: 2 }, // Actualizado
-      'interiores': { minOperators: 3 } // Nuevo
+      'inyeccion': { minOperators: 7 }
     };
     return requirements[process.toLowerCase()] || { minOperators: 1 };
   };
@@ -531,7 +533,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
   // Capacidad por proceso basada en configuración y proyección actual
   const processesInfo = operatorConfig.processes
-    .filter(process => process.processName.toLowerCase() !== 'reclasificacion')
+    .filter(process => process.processName.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
     .reduce((acc, process) => {
       const operationalCount = process.machines.filter(m => m.isOperational).length;
       const effectiveCapacity = Math.min(operationalCount, process.operatorCount);
@@ -553,7 +555,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   });
   
   const processesOverview = Object.entries(processesInfo)
-    .filter(([name]) => name.toLowerCase() !== 'reclasificacion')
+    .filter(([name]) => name.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
     .map(([name, info]) => {
       const availableHours = info.effective * operatorConfig.availableHours;
       const workloadHours = workloadByProcess[name.toLowerCase()] || 0;
@@ -573,7 +575,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   // Crear datos para la vista jerárquica
   const createHierarchicalData = () => {
     const processGroups = Object.entries(processesInfo)
-      .filter(([processName]) => processName.toLowerCase() !== 'reclasificacion')
+      .filter(([processName]) => processName.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
       .map(([processName, info]) => {
         const processProjections = projection.filter(p => (p.proceso || '').toLowerCase() === processName.toLowerCase());
         const totalTimeMinutes = processProjections.reduce((sum, p) => sum + p.tiempoTotal, 0);
@@ -599,7 +601,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const machine = machineGroups.get(key);
         machine.totalTime += p.tiempoTotal;
         machine.references.push({
-          referencia: p.jerarquia, // Usar jerarquía completa
+          referencia: p.referencia,
           cantidadRequerida: p.cantidadRequerida,
           sam: p.sam,
           tiempoTotal: p.tiempoTotal,
@@ -622,7 +624,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         effectiveStations: info.effective,
         operators: info.operators
       };
-    }).filter(p => p.machines.length > 0 || p.totalTime > 0);
+    }).filter(p => p.machines.length > 0 || p.totalTime > 0); // Solo procesos con trabajo asignado
 
     return processGroups;
   };
@@ -630,24 +632,34 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const [viewMode, setViewMode] = useState<'hierarchical' | 'table'>('hierarchical');
 
   const totalTime = projection.reduce((sum, item) => sum + item.tiempoTotal, 0);
-  const processesWithProblems = projection.filter(p => p.alerta && !p.especial && !p.alerta.includes('Componente de') && !p.alerta.includes('Distribuible') && !p.alerta.includes('Máquina exclusiva')).length;
+  const processesWithProblems = projection.filter(p => p.alerta && !p.especial).length;
   const specialProcesses = projection.filter(p => p.especial).length;
-  const componentsCount = projection.filter(p => p.nivel && p.nivel > 0).length;
 
   if (loading) {
+    const elapsedTime = Math.max(0, (Date.now() - startTime) / 1000);
+    const progressPercentage = progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
+    
     return (
       <Card>
         <CardContent className="p-8 text-center">
           <div className="animate-spin h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <div>
-            <p className="text-lg font-medium">{loadingStage}</p>
-            <div className="w-64 bg-secondary rounded-full h-3 mx-auto mt-4">
+            <p className="text-lg font-medium">Calculando proyección de capacidad...</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              {progress.currentRef}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Progreso: {progress.current}/{progress.total}
+            </p>
+            <div className="w-48 bg-secondary rounded-full h-2 mx-auto mt-3">
               <div 
-                className="bg-primary h-3 rounded-full transition-all duration-300" 
-                style={{ width: `${progress}%` }}
+                className="bg-primary h-2 rounded-full transition-all duration-300" 
+                style={{ width: `${Math.min(100, progressPercentage)}%` }}
               ></div>
             </div>
-            <p className="text-sm text-muted-foreground mt-2">{progress.toFixed(0)}% completado</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Tiempo transcurrido: {Math.floor(elapsedTime)}s
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -667,308 +679,236 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   }
 
   // Renderizar vista jerárquica o tabla según el modo
+  if (viewMode === 'hierarchical') {
+    return (
+      <HierarchicalCapacityView
+        processGroups={createHierarchicalData()}
+        onBack={onBack}
+        onStartOver={onStartOver}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
-            Proyección de Producción - Sistema Reestructurado
+            Proyección de Producción con Distribución Inteligente
           </CardTitle>
           <CardDescription>
-            Análisis completo con despliegue BOM jerárquico y asignación optimizada
+            Análisis realista con asignación optimizada de máquinas y operarios
           </CardDescription>
         </CardHeader>
       </Card>
 
-      {/* Controles de Vista */}
+      {/* Resumen del Período */}
       <Card>
-        <CardContent className="p-4">
-          <div className="flex gap-2">
-            <Button 
-              variant={viewMode === 'hierarchical' ? 'default' : 'outline'}
-              onClick={() => setViewMode('hierarchical')}
-              size="sm"
-            >
-              Vista Jerárquica
-            </Button>
-            <Button 
-              variant={viewMode === 'table' ? 'default' : 'outline'}
-              onClick={() => setViewMode('table')}
-              size="sm"
-            >
-              Vista Tabla
-            </Button>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Calendar className="h-5 w-5" />
+            Configuración del Período
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-muted rounded-lg">
+              <div className="text-xl font-bold text-primary">{operatorConfig.workMonth}/{operatorConfig.workYear}</div>
+              <div className="text-sm text-muted-foreground">Período</div>
+            </div>
+            <div className="text-center p-4 bg-muted rounded-lg">
+              <div className="text-xl font-bold text-primary">{operatorConfig.availableHours.toFixed(1)}h</div>
+              <div className="text-sm text-muted-foreground">Horas/Operario</div>
+            </div>
+            <div className="text-center p-4 bg-muted rounded-lg">
+              <div className="text-xl font-bold text-primary">
+                {operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0)}
+              </div>
+              <div className="text-sm text-muted-foreground">Total Operarios</div>
+            </div>
+            <div className="text-center p-4 bg-muted rounded-lg">
+              <div className="text-xl font-bold text-primary">
+                {(operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0) * operatorConfig.availableHours).toFixed(0)}h
+              </div>
+              <div className="text-lg font-medium text-primary">
+                {(() => {
+                  const currentOperators = operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0);
+                  const maxPossibleOperators = operatorConfig.processes.reduce((sum, p) => sum + p.machines.filter(m => m.isOperational).length, 0);
+                  const percentage = maxPossibleOperators > 0 ? (currentOperators / maxPossibleOperators) * 100 : 0;
+                  return `${percentage.toFixed(1)}%`;
+                })()}
+              </div>
+              <div className="text-sm text-muted-foreground">Capacidad Total</div>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {viewMode === 'hierarchical' ? (
-        <HierarchicalCapacityView
-          processGroups={createHierarchicalData()}
-          onBack={onBack}
-          onStartOver={onStartOver}
-        />
-      ) : (
-        <>
-          {/* Estadísticas del Cache */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Database className="h-5 w-5" />
-                Estadísticas del Sistema
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-xl font-bold text-blue-600">{cache.bomData.size}</div>
-                  <div className="text-sm text-muted-foreground">Productos BOM</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-xl font-bold text-green-600">{cache.machinesProcesses.size}</div>
-                  <div className="text-sm text-muted-foreground">Referencias con SAM</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-xl font-bold text-purple-600">{componentsCount}</div>
-                  <div className="text-sm text-muted-foreground">Componentes Expandidos</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-xl font-bold text-primary">{projection.length}</div>
-                  <div className="text-sm text-muted-foreground">Total Referencias</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Resumen del Período */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Calendar className="h-5 w-5" />
-                Configuración del Período
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-xl font-bold text-primary">{operatorConfig.workMonth}/{operatorConfig.workYear}</div>
-                  <div className="text-sm text-muted-foreground">Período</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-xl font-bold text-primary">{operatorConfig.availableHours.toFixed(1)}h</div>
-                  <div className="text-sm text-muted-foreground">Horas/Operario</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-xl font-bold text-primary">
-                    {operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Total Operarios</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-xl font-bold text-primary">
-                    {(operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0) * operatorConfig.availableHours).toFixed(0)}h
-                  </div>
-                  <div className="text-lg font-medium text-primary">
-                    {(() => {
-                      const currentOperators = operatorConfig.processes.reduce((sum, p) => sum + p.operatorCount, 0);
-                      const maxPossibleOperators = operatorConfig.processes.reduce((sum, p) => sum + p.machines.filter(m => m.isOperational).length, 0);
-                      const percentage = maxPossibleOperators > 0 ? (currentOperators / maxPossibleOperators) * 100 : 0;
-                      return `${percentage.toFixed(1)}%`;
-                    })()}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Capacidad Total</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Resumen Mejorado */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Clock className="h-5 w-5" />
-                Resumen de la Proyección
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-2xl font-bold text-primary">{data.length}</div>
-                  <div className="text-sm text-muted-foreground">Referencias Principales</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-2xl font-bold text-primary">{projection.length}</div>
-                  <div className="text-sm text-muted-foreground">Total Procesos</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-2xl font-bold text-primary">{formatTime(totalTime)}</div>
-                  <div className="text-sm text-muted-foreground">Tiempo Total</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{specialProcesses}</div>
-                  <div className="text-sm text-muted-foreground">Procesos Especiales</div>
-                </div>
-                <div className="text-center p-4 bg-muted rounded-lg">
-                  <div className="text-2xl font-bold text-red-600">{processesWithProblems}</div>
-                  <div className="text-sm text-muted-foreground">Con Alertas</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Capacidad por Proceso */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Capacidad por Proceso</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Proceso</TableHead>
-                      <TableHead>Máquinas</TableHead>
-                      <TableHead>Operarios</TableHead>
-                      <TableHead>Capacidad Efectiva</TableHead>
-                      <TableHead>Horas Disponibles</TableHead>
-                      <TableHead>Trabajo Asignado</TableHead>
-                      <TableHead>Ocupación</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {processesOverview.map((p) => (
-                      <TableRow key={p.name}>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell>
-                          <span className="text-green-600 font-medium">{p.available}</span>
-                          <span className="text-muted-foreground">/{p.total}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-blue-600 font-medium">{p.operators}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-primary font-medium">{p.effective}</span>
-                          <span className="text-xs text-muted-foreground ml-1">estaciones</span>
-                        </TableCell>
-                        <TableCell>{p.availableHours.toFixed(1)}h</TableCell>
-                        <TableCell>{p.workloadHours.toFixed(1)}h</TableCell>
-                        <TableCell>
-                          <Badge variant={getCapacityVariant(p.occupancy)}>
-                            {p.occupancy.toFixed(1)}%
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Tabla de Proyección con Jerarquía */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Proyección Detallada con Jerarquía BOM</CardTitle>
-              <CardDescription>
-                Muestra el despliegue completo de componentes con su jerarquía
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Jerarquía Completa</TableHead>
-                      <TableHead>Cantidad</TableHead>
-                      <TableHead>SAM</TableHead>
-                      <TableHead>Tiempo Total</TableHead>
-                      <TableHead>Proceso</TableHead>
-                      <TableHead>Máquina</TableHead>
-                      <TableHead>Estado Máq.</TableHead>
-                      <TableHead>Operarios</TableHead>
-                      <TableHead>Capacidad</TableHead>
-                      <TableHead>Ocupación Máq.</TableHead>
-                      <TableHead>Ocupación Proc.</TableHead>
-                      <TableHead>Alertas</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {projection.map((item, index) => (
-                      <TableRow key={index} className={item.nivel && item.nivel > 0 ? 'bg-muted/50' : ''}>
-                        <TableCell className="font-medium">
-                          <div className={`${item.nivel ? `pl-${Math.min(item.nivel * 4, 16)}` : ''}`}>
-                            {item.jerarquia}
-                          </div>
-                        </TableCell>
-                        <TableCell>{item.cantidadRequerida}</TableCell>
-                        <TableCell>{item.sam}</TableCell>
-                        <TableCell>{formatTime(item.tiempoTotal)}</TableCell>
-                        <TableCell>{item.proceso}</TableCell>
-                        <TableCell>{item.maquina}</TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusVariant(item.estadoMaquina)}>
-                            {item.estadoMaquina}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className={
-                            item.operadoresDisponibles < item.operadoresRequeridos 
-                              ? 'text-red-600' 
-                              : 'text-green-600'
-                          }>
-                            {item.operadoresDisponibles}/{item.operadoresRequeridos}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getCapacityVariant(item.capacidadPorcentaje)}>
-                            {item.capacidadPorcentaje.toFixed(1)}%
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getCapacityVariant(item.ocupacionMaquina)}>
-                            {item.ocupacionMaquina.toFixed(1)}%
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getCapacityVariant(item.ocupacionProceso)}>
-                            {item.ocupacionProceso.toFixed(1)}%
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {item.alerta && (
-                            <div
-                              className={`text-sm max-w-[240px] truncate ${
-                                item.sam === 0 || (item.alerta?.toLowerCase().includes('falta sam') || item.alerta?.toLowerCase().includes('no inscrita')) 
-                                  ? 'text-destructive' 
-                                  : item.alerta?.includes('🔧') || item.alerta?.includes('📊') || item.alerta?.includes('🎯')
-                                    ? 'text-blue-600'
-                                    : 'text-muted-foreground'
-                              }`}
-                              title={item.alerta!}
-                            >
-                              {item.alerta}
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onBack}>
-              Volver
-            </Button>
-            <Button onClick={onStartOver} className="flex-1">
-              Nuevo Análisis
-            </Button>
+      {/* Resumen General */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Resumen de la Proyección</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-muted rounded-lg">
+              <div className="text-2xl font-bold text-primary">{projection.length}</div>
+              <div className="text-sm text-muted-foreground">Referencias</div>
+            </div>
+            <div className="text-center p-4 bg-muted rounded-lg">
+              <div className="text-2xl font-bold text-primary">{formatTime(totalTime)}</div>
+              <div className="text-sm text-muted-foreground">Tiempo Total</div>
+            </div>
+            <div className="text-center p-4 bg-muted rounded-lg">
+              <div className="text-2xl font-bold text-orange-600">{specialProcesses}</div>
+              <div className="text-sm text-muted-foreground">Procesos Especiales</div>
+            </div>
+            <div className="text-center p-4 bg-muted rounded-lg">
+              <div className="text-2xl font-bold text-red-600">{processesWithProblems}</div>
+              <div className="text-sm text-muted-foreground">Con Alertas</div>
+            </div>
           </div>
-        </>
-      )}
+        </CardContent>
+      </Card>
+
+      {/* Capacidad por Proceso */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Capacidad por Proceso</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Proceso</TableHead>
+                  <TableHead>Máquinas</TableHead>
+                  <TableHead>Operarios</TableHead>
+                  <TableHead>Capacidad Efectiva</TableHead>
+                  <TableHead>Horas Disponibles</TableHead>
+                  <TableHead>Trabajo Asignado</TableHead>
+                  <TableHead>Ocupación</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {processesOverview.map((p) => (
+                  <TableRow key={p.name}>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell>
+                      <span className="text-green-600 font-medium">{p.available}</span>
+                      <span className="text-muted-foreground">/{p.total}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-blue-600 font-medium">{p.operators}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-primary font-medium">{p.effective}</span>
+                      <span className="text-xs text-muted-foreground ml-1">estaciones</span>
+                    </TableCell>
+                    <TableCell>{p.availableHours.toFixed(1)}h</TableCell>
+                    <TableCell>{p.workloadHours.toFixed(1)}h</TableCell>
+                    <TableCell>
+                      <Badge variant={getCapacityVariant(p.occupancy)}>
+                        {p.occupancy.toFixed(1)}%
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabla de Proyección */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Proyección Detallada por Referencia</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Referencia</TableHead>
+                  <TableHead>Cantidad</TableHead>
+                  <TableHead>SAM</TableHead>
+                  <TableHead>Tiempo Total</TableHead>
+                  <TableHead>Proceso</TableHead>
+                  <TableHead>Máquina</TableHead>
+                  <TableHead>Estado Máq.</TableHead>
+                  <TableHead>Operarios</TableHead>
+                  <TableHead>Capacidad</TableHead>
+                  <TableHead>Ocupación Máq.</TableHead>
+                  <TableHead>Ocupación Proc.</TableHead>
+                  <TableHead>Alertas</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {projection.map((item, index) => (
+                  <TableRow key={index}>
+                    <TableCell className="font-medium">{item.referencia}</TableCell>
+                    <TableCell>{item.cantidadRequerida}</TableCell>
+                    <TableCell>{item.sam}</TableCell>
+                    <TableCell>{formatTime(item.tiempoTotal)}</TableCell>
+                    <TableCell>{item.proceso}</TableCell>
+                    <TableCell>{item.maquina}</TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusVariant(item.estadoMaquina)}>
+                        {item.estadoMaquina}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className={
+                        item.operadoresDisponibles < item.operadoresRequeridos 
+                          ? 'text-red-600' 
+                          : 'text-green-600'
+                      }>
+                        {item.operadoresDisponibles}/{item.operadoresRequeridos}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getCapacityVariant(item.capacidadPorcentaje)}>
+                        {item.capacidadPorcentaje.toFixed(1)}%
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getCapacityVariant(item.ocupacionMaquina)}>
+                        {item.ocupacionMaquina.toFixed(1)}%
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getCapacityVariant(item.ocupacionProceso)}>
+                        {item.ocupacionProceso.toFixed(1)}%
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {item.alerta && (
+                        <div
+                          className={`text-sm max-w-[240px] truncate ${item.sam === 0 || (item.alerta?.toLowerCase().includes('falta sam') || item.alerta?.toLowerCase().includes('no inscrita')) ? 'text-destructive' : 'text-muted-foreground'}`}
+                          title={item.alerta!}
+                        >
+                          {item.alerta}
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex gap-2">
+        <Button variant="outline" onClick={onBack}>
+          Volver
+        </Button>
+        <Button onClick={onStartOver} className="flex-1">
+          Nuevo Análisis
+        </Button>
+      </div>
     </div>
   );
 };
