@@ -129,16 +129,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return all;
   };
 
-  // Normalización de nombres de proceso (p. ej., Despunte se agrupa con Troquelado)
+  // Normalización de nombres de proceso y filtros de exclusión
   const normalizeProcessName = (name: string) => {
     if (!name) return name;
     
     const processName = name.trim();
     
-    // Normalizaciones específicas
+    // Procesos excluidos que no deben considerarse en cálculos
+    const excludedProcesses = ['reclasificación', 'reclasificacion'];
+    if (excludedProcesses.includes(processName.toLowerCase())) {
+      return null; // Retornar null para procesos excluidos
+    }
+    
+    // Normalizaciones específicas - Unificar procesos similares
     const normalizations: { [key: string]: string } = {
       'despunte': 'Troquelado',
-      'ensambleint': 'EnsambleInt',
+      'ensambleint': 'EnsambleInt', 
       'roscadoconectores': 'RoscadoConectores'
     };
     
@@ -238,34 +244,35 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       setProgress({ current: 2, total: 6, currentRef: 'Cargando procesos...' });
       const machinesData = await loadAllMachinesProcesses();
 
-      // 2. FASE DE CONSOLIDACIÓN: Consolidar todas las referencias de entrada
+      // 2. FASE DE CONSOLIDACIÓN: Consolidar componentes evitando duplicación
       setProgress({ current: 3, total: 6, currentRef: 'Consolidando componentes...' });
       const consolidatedComponents = new Map<string, number>();
       const mainReferences = new Map<string, number>();
       
-      console.log('\n🔄 === FASE DE CONSOLIDACIÓN ===');
+      console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
 
-      // Procesar cada referencia de entrada directamente
+      // Procesar cada referencia de entrada
       for (const item of data) {
         console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
         
-        // Agregar referencia principal
+        // Agregar a referencias principales
         const currentMainQty = mainReferences.get(item.referencia) || 0;
         mainReferences.set(item.referencia, currentMainQty + item.cantidad);
         
-        // PRIMERO: Agregar la referencia de entrada directamente a componentes consolidados
-        const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
-        consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
+        // Intentar obtener BOM para esta referencia
+        const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
         
-        // SEGUNDO: Intentar obtener BOM si existe (opcional)
-        try {
-          const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
+        if (allComponents.size > 0) {
+          // Si tiene BOM, agregar SOLO los componentes (no la referencia principal)
           for (const [componentId, quantity] of allComponents.entries()) {
             const currentQty = consolidatedComponents.get(componentId) || 0;
             consolidatedComponents.set(componentId, currentQty + quantity);
           }
-          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes`);
-        } catch (error) {
+          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes (referencia principal excluida)`);
+        } else {
+          // Si NO tiene BOM, agregar la referencia directamente
+          const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
+          consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
           console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa`);
         }
       }
@@ -307,6 +314,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const processNameOriginal = mp.processes.name;
           const processName = normalizeProcessName(processNameOriginal);
           
+          // Saltar procesos excluidos
+          if (processName === null) {
+            console.log(`     ❌ Proceso excluido: ${processNameOriginal}`);
+            continue;
+          }
+          
           console.log(`     · Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
           
           if (!processGroups.has(processName)) {
@@ -327,14 +340,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const processGroup = processGroups.get(processName)!;
           const existingComponent = processGroup.components.get(ref);
           const availableMachines = machinesProcesses
-            .filter((machine: any) => normalizeProcessName(machine.processes.name).toLowerCase() === processName.toLowerCase())
+            .filter((machine: any) => {
+              const normalized = normalizeProcessName(machine.processes.name);
+              return normalized !== null && normalized.toLowerCase() === processName.toLowerCase();
+            })
             .filter((machine: any) => {
               const processConfig = operatorConfig.processes.find(p => 
                 p.processName.toLowerCase() === processName.toLowerCase()
               );
-              if (!processConfig) return false;
+              if (!processConfig) {
+                console.log(`     ⚠️ No hay configuración para proceso: ${processName}`);
+                return false;
+              }
               const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
-              return machineConfig?.isOperational || false;
+              const isOperational = machineConfig?.isOperational || false;
+              console.log(`     🔧 Máquina ${machine.machines.name} (ID: ${machine.id_machine}) - Operacional: ${isOperational}`);
+              return isOperational;
             });
 
           if (existingComponent) {
@@ -359,6 +380,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const processNameOriginal = mp.processes.name;
           const processName = normalizeProcessName(processNameOriginal);
           
+          // Saltar procesos excluidos
+          if (processName === null) {
+            console.log(`     ❌ Proceso excluido: ${processNameOriginal}`);  
+            continue;
+          }
+          
           console.log(`     · Componente ${componentId} - Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
           
           if (!processGroups.has(processName)) {
@@ -379,14 +406,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const processGroup = processGroups.get(processName)!;
           const existingComponent = processGroup.components.get(componentId);
           const availableMachines = machinesProcesses
-            .filter((machine: any) => normalizeProcessName(machine.processes.name).toLowerCase() === processName.toLowerCase())
+            .filter((machine: any) => {
+              const normalized = normalizeProcessName(machine.processes.name);
+              return normalized !== null && normalized.toLowerCase() === processName.toLowerCase();
+            })
             .filter((machine: any) => {
               const processConfig = operatorConfig.processes.find(p => 
                 p.processName.toLowerCase() === processName.toLowerCase()
               );
-              if (!processConfig) return false;
+              if (!processConfig) {
+                console.log(`     ⚠️ No hay configuración para proceso: ${processName}`);
+                return false;
+              }
               const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
-              return machineConfig?.isOperational || false;
+              const isOperational = machineConfig?.isOperational || false;
+              console.log(`     🔧 Máquina ${machine.machines.name} (ID: ${machine.id_machine}) - Operacional: ${isOperational}`);
+              return isOperational;
             });
 
           if (existingComponent) {
