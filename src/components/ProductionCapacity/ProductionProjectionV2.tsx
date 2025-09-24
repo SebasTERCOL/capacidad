@@ -132,7 +132,18 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   // Normalización de nombres de proceso (p. ej., Despunte se agrupa con Troquelado)
   const normalizeProcessName = (name: string) => {
     if (!name) return name;
-    return name.trim().toLowerCase() === 'despunte' ? 'Troquelado' : name;
+    
+    const processName = name.trim();
+    
+    // Normalizaciones específicas
+    const normalizations: { [key: string]: string } = {
+      'despunte': 'Troquelado',
+      'ensambleint': 'EnsambleInt',
+      'roscadoconectores': 'RoscadoConectores'
+    };
+    
+    const lowercaseName = processName.toLowerCase();
+    return normalizations[lowercaseName] || processName;
   };
 
   // Función recursiva optimizada con cache
@@ -257,6 +268,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       console.log(`✅ Referencias principales consolidadas: ${mainReferences.size}`);
       console.log(`✅ Componentes consolidados: ${consolidatedComponents.size}`);
+      
+      // Log all available processes from machines_processes
+      console.log('\n🔍 === PROCESOS ENCONTRADOS EN BD ===');
+      const uniqueProcesses = [...new Set(allMachinesProcesses.map(mp => mp.processes.name))];
+      uniqueProcesses.forEach(processName => {
+        const normalized = normalizeProcessName(processName);
+        console.log(`   · DB Process: ${processName} -> Normalized: ${normalized}`);
+      });
+      
+      // Log all configured processes from operatorConfig
+      console.log('\n⚙️ === PROCESOS CONFIGURADOS ===');
+      operatorConfig.processes.forEach(p => {
+        console.log(`   · Configured: ${p.processName} (${p.operatorCount} operarios)`);
+      });
 
       // 3. FASE DE AGRUPACIÓN POR PROCESO: Agrupar por procesos y aplicar distribución inteligente
       setProgress({ current: 4, total: 6, currentRef: 'Agrupando por procesos...' });
@@ -277,10 +302,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         for (const mp of machinesProcesses) {
           const processNameOriginal = mp.processes.name;
           const processName = normalizeProcessName(processNameOriginal);
+          
+          console.log(`     · Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
+          
           if (!processGroups.has(processName)) {
             const processConfig = operatorConfig.processes.find(p => 
               p.processName.toLowerCase() === processName.toLowerCase()
             );
+            
+            console.log(`     · Buscando configuración para: ${processName} -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
+            
             processGroups.set(processName, {
               processName,
               components: new Map(),
@@ -323,10 +354,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         for (const mp of machinesProcesses) {
           const processNameOriginal = mp.processes.name;
           const processName = normalizeProcessName(processNameOriginal);
+          
+          console.log(`     · Componente ${componentId} - Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
+          
           if (!processGroups.has(processName)) {
             const processConfig = operatorConfig.processes.find(p => 
               p.processName.toLowerCase() === processName.toLowerCase()
             );
+            
+            console.log(`     · Buscando configuración para: ${processName} -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
+            
             processGroups.set(processName, {
               processName,
               components: new Map(),
