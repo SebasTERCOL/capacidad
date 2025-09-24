@@ -125,11 +125,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       item.product_id.trim().toUpperCase() === productId.trim().toUpperCase()
     );
     
+    console.log(`🔍 Buscando BOM para ${productId}:`, {
+      productId: productId.trim().toUpperCase(),
+      totalBomRecords: allBomData.length,
+      foundItems: bomItems.length,
+      sampleProductIds: allBomData.slice(0, 5).map(item => item.product_id)
+    });
+    
     if (bomItems.length === 0) {
+      console.log(`⚠️ No se encontraron componentes BOM para ${productId}`);
       // Es un componente final, cachear resultado vacío
       bomCache.set(cacheKey, componentsMap);
       return componentsMap;
     }
+    
+    console.log(`✅ Encontrados ${bomItems.length} componentes para ${productId}:`, 
+      bomItems.map(item => `${item.component_id} (cantidad: ${item.amount})`));
     
     // Procesar cada componente
     for (const bomItem of bomItems) {
