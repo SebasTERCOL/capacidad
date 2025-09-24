@@ -153,6 +153,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return normalizations[lowercaseName] || processName;
   };
 
+  // Mapeo forzado por máquina para Troquelado
+  const resolveProcessName = (mp: any) => {
+    const original = mp?.processes?.name ?? '';
+    const normalized = normalizeProcessName(original);
+    if (normalized === null) return null;
+    const id = Number(mp?.id_machine);
+    const machineName = String(mp?.machines?.name || '').toUpperCase();
+    const troqueladoIds = new Set([3001,3002,3003,3004,3005,3006,3007,3008,3009,3010,14017,12004]);
+    const isTQ = troqueladoIds.has(id) || /^TQ-\d+/i.test(machineName) || machineName === 'RM-04';
+    if (isTQ) return 'Troquelado';
+    return normalized;
+  };
+
   // Función recursiva optimizada con cache
   const getRecursiveBOMOptimized = (
     productId: string, 
@@ -312,8 +325,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         );
         
         for (const mp of machinesProcesses) {
+          const processName = resolveProcessName(mp);
           const processNameOriginal = mp.processes.name;
-          const processName = normalizeProcessName(processNameOriginal);
           
           // Saltar procesos excluidos
           if (processName === null) {
@@ -342,8 +355,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const existingComponent = processGroup.components.get(ref);
           const availableMachines = machinesProcesses
             .filter((machine: any) => {
-              const normalized = normalizeProcessName(machine.processes.name);
-              return normalized !== null && normalized.toLowerCase() === processName.toLowerCase();
+              const resolved = resolveProcessName(machine);
+              return resolved !== null && resolved.toLowerCase() === processName.toLowerCase();
             })
             .filter((machine: any) => {
               const processConfig = operatorConfig.processes.find(p => 
@@ -378,8 +391,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         );
         
         for (const mp of machinesProcesses) {
+          const processName = resolveProcessName(mp);
           const processNameOriginal = mp.processes.name;
-          const processName = normalizeProcessName(processNameOriginal);
           
           // Saltar procesos excluidos
           if (processName === null) {
@@ -408,8 +421,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const existingComponent = processGroup.components.get(componentId);
           const availableMachines = machinesProcesses
             .filter((machine: any) => {
-              const normalized = normalizeProcessName(machine.processes.name);
-              return normalized !== null && normalized.toLowerCase() === processName.toLowerCase();
+              const resolved = resolveProcessName(machine);
+              return resolved !== null && resolved.toLowerCase() === processName.toLowerCase();
             })
             .filter((machine: any) => {
               const processConfig = operatorConfig.processes.find(p => 
