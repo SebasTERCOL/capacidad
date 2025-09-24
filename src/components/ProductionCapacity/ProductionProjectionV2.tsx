@@ -174,26 +174,35 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       setProgress({ current: 2, total: 6, currentRef: 'Cargando procesos...' });
       await loadAllMachinesProcesses();
 
-      // 2. FASE DE CONSOLIDACIÓN: Consolidar todos los componentes de todas las referencias principales
+      // 2. FASE DE CONSOLIDACIÓN: Consolidar todas las referencias de entrada
       setProgress({ current: 3, total: 6, currentRef: 'Consolidando componentes...' });
       const consolidatedComponents = new Map<string, number>();
       const mainReferences = new Map<string, number>();
       
       console.log('\n🔄 === FASE DE CONSOLIDACIÓN ===');
 
-      // Procesar cada referencia principal y consolidar sus componentes
+      // Procesar cada referencia de entrada directamente
       for (const item of data) {
-        console.log(`🔍 Consolidando ${item.referencia} (cantidad: ${item.cantidad})`);
+        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
         
         // Agregar referencia principal
         const currentMainQty = mainReferences.get(item.referencia) || 0;
         mainReferences.set(item.referencia, currentMainQty + item.cantidad);
         
-        // Obtener BOM y consolidar componentes
-        const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad);
-        for (const [componentId, quantity] of allComponents.entries()) {
-          const currentQty = consolidatedComponents.get(componentId) || 0;
-          consolidatedComponents.set(componentId, currentQty + quantity);
+        // PRIMERO: Agregar la referencia de entrada directamente a componentes consolidados
+        const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
+        consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
+        
+        // SEGUNDO: Intentar obtener BOM si existe (opcional)
+        try {
+          const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad);
+          for (const [componentId, quantity] of allComponents.entries()) {
+            const currentQty = consolidatedComponents.get(componentId) || 0;
+            consolidatedComponents.set(componentId, currentQty + quantity);
+          }
+          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes`);
+        } catch (error) {
+          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa`);
         }
       }
 
