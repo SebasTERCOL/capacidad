@@ -141,10 +141,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       return null; // Retornar null para procesos excluidos
     }
     
-    // Normalizaciones específicas - Unificar procesos similares
+    // Normalizaciones específicas - Unificar SOLO Despunte y Troquelado
     const normalizations: { [key: string]: string } = {
-      'despunte': 'Troquelado',
-      'troquelado': 'Troquelado', // Mantener Troquelado como está
+      'despunte': 'Troquelado', // Unificar Despunte con Troquelado
+      // NO unificar Corte con nada - es un proceso independiente
       'ensambleint': 'EnsambleInt', 
       'roscadoconectores': 'RoscadoConectores'
     };
