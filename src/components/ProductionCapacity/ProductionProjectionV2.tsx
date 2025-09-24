@@ -151,7 +151,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     productId: string, 
     quantity: number = 1, 
     level: number = 0, 
-    visited: Set<string> = new Set()
+    visited: Set<string> = new Set(),
+    bomDataOverride?: any[]
   ): Map<string, number> => {
     const cacheKey = `${productId}_${quantity}`;
     
@@ -169,16 +170,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     visited.add(productId);
     const componentsMap = new Map<string, number>();
     
+    // Fuente de datos: preferir override local si existe para evitar races con setState
+    const source = bomDataOverride ?? allBomData;
+
     // Buscar en datos precargados
-    const bomItems = allBomData.filter(item => 
-      item.product_id.trim().toUpperCase() === productId.trim().toUpperCase()
+    const bomItems = source.filter((item: any) => 
+      String(item.product_id).trim().toUpperCase() === String(productId).trim().toUpperCase()
     );
     
     console.log(`🔍 Buscando BOM para ${productId}:`, {
-      productId: productId.trim().toUpperCase(),
-      totalBomRecords: allBomData.length,
+      productId: String(productId).trim().toUpperCase(),
+      totalBomRecords: source.length,
       foundItems: bomItems.length,
-      sampleProductIds: allBomData.slice(0, 5).map(item => item.product_id)
+      sampleProductIds: source.slice(0, 5).map((item: any) => item.product_id)
     });
     
     if (bomItems.length === 0) {
@@ -189,19 +193,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
     
     console.log(`✅ Encontrados ${bomItems.length} componentes para ${productId}:`, 
-      bomItems.map(item => `${item.component_id} (cantidad: ${item.amount})`));
+      bomItems.map((item: any) => `${item.component_id} (cantidad: ${item.amount})`));
     
     // Procesar cada componente
     for (const bomItem of bomItems) {
-      const componentId = bomItem.component_id.trim().toUpperCase();
-      const componentQuantity = quantity * bomItem.amount;
+      const componentId = String(bomItem.component_id).trim().toUpperCase();
+      const componentQuantity = quantity * Number(bomItem.amount);
       
       // Agregar este componente al mapa
       const existingQuantity = componentsMap.get(componentId) || 0;
       componentsMap.set(componentId, existingQuantity + componentQuantity);
       
       // Buscar recursivamente subcomponentes
-      const subComponents = getRecursiveBOMOptimized(componentId, componentQuantity, level + 1, new Set(visited));
+      const subComponents = getRecursiveBOMOptimized(componentId, componentQuantity, level + 1, new Set(visited), source);
       
       // Agregar los subcomponentes al mapa principal
       for (const [subComponentId, subQuantity] of subComponents) {
@@ -229,10 +233,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     try {
       // 1. Cargar todos los datos
       setProgress({ current: 1, total: 6, currentRef: 'Cargando BOM...' });
-      await loadAllBomData();
+      const bomData = await loadAllBomData();
       
       setProgress({ current: 2, total: 6, currentRef: 'Cargando procesos...' });
-      await loadAllMachinesProcesses();
+      const machinesData = await loadAllMachinesProcesses();
 
       // 2. FASE DE CONSOLIDACIÓN: Consolidar todas las referencias de entrada
       setProgress({ current: 3, total: 6, currentRef: 'Consolidando componentes...' });
@@ -255,7 +259,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         
         // SEGUNDO: Intentar obtener BOM si existe (opcional)
         try {
-          const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad);
+          const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
           for (const [componentId, quantity] of allComponents.entries()) {
             const currentQty = consolidatedComponents.get(componentId) || 0;
             consolidatedComponents.set(componentId, currentQty + quantity);
@@ -271,10 +275,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       
       // Log all available processes from machines_processes
       console.log('\n🔍 === PROCESOS ENCONTRADOS EN BD ===');
-      const uniqueProcesses = [...new Set(allMachinesProcesses.map(mp => mp.processes.name))];
+      const uniqueProcesses = [...new Set(machinesData.map((mp: any) => mp.processes.name))];
       uniqueProcesses.forEach(processName => {
         const normalized = normalizeProcessName(processName);
-        console.log(`   · DB Process: ${processName} -> Normalized: ${normalized}`);
+        console.log(`   · DB Process: ${processName} -> Normalizado: ${normalized}`);
       });
       
       // Log all configured processes from operatorConfig
@@ -295,8 +299,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       // Incluir referencias principales
       for (const [ref, quantity] of mainReferences.entries()) {
-        const machinesProcesses = allMachinesProcesses.filter(mp => 
-          mp.ref.trim().toUpperCase() === ref.trim().toUpperCase()
+        const machinesProcesses = machinesData.filter((mp: any) => 
+          String(mp.ref).trim().toUpperCase() === String(ref).trim().toUpperCase()
         );
         
         for (const mp of machinesProcesses) {
@@ -347,8 +351,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       // Incluir componentes consolidados
       for (const [componentId, quantity] of consolidatedComponents.entries()) {
-        const machinesProcesses = allMachinesProcesses.filter(mp => 
-          mp.ref.trim().toUpperCase() === componentId.trim().toUpperCase()
+        const machinesProcesses = machinesData.filter((mp: any) => 
+          String(mp.ref).trim().toUpperCase() === String(componentId).trim().toUpperCase()
         );
         
         for (const mp of machinesProcesses) {
