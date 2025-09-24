@@ -176,9 +176,9 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                         <Factory className="h-5 w-5" />
                         PROCESO: {process.processName.toUpperCase()}
                       </CardTitle>
-                      <Badge variant={getOccupancyVariant(process.totalOccupancy)} className="text-sm">
-                        {process.totalOccupancy.toFixed(1)}% Ocupación
-                      </Badge>
+          <Badge variant={getOccupancyVariant(process.totalOccupancy)} className="text-sm">
+            {process.totalOccupancy.toFixed(1)}% Ocupación ({formatTime(process.totalTime)} / {formatTime(process.availableHours * process.operators * 60)})
+          </Badge>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <span>{process.machines.length} máquinas</span>
@@ -210,9 +210,9 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                     <Settings className="h-4 w-4" />
                                     Máquina {machine.machineName}
                                   </CardTitle>
-                                  <Badge variant={getOccupancyVariant(machine.occupancy)} className="text-xs">
-                                    {machine.occupancy.toFixed(1)}% - {formatTime(machine.totalTime)}
-                                  </Badge>
+                  <Badge variant={getOccupancyVariant(machine.occupancy)} className="text-xs">
+                    {machine.occupancy.toFixed(1)}% - {formatTime(machine.totalTime)} / {formatTime(process.availableHours * 60)}
+                  </Badge>
                                 </div>
                                 <div className="text-sm text-muted-foreground">
                                   {machine.references.length} referencia{machine.references.length !== 1 ? 's' : ''}
