@@ -59,42 +59,80 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
   }, [data, operatorConfig]);
 
-  // Función optimizada para cargar todos los datos BOM de una vez
+  // Función optimizada para cargar todos los datos BOM con paginación
   const loadAllBomData = async () => {
-    console.log('🚀 Cargando todos los datos BOM...');
-    const { data: bomData, error } = await supabase
-      .from('bom')
-      .select('product_id, component_id, amount');
-    
-    if (error) {
-      console.error('❌ Error cargando BOM:', error);
-      throw error;
+    console.log('🚀 Cargando todos los datos BOM (con paginación)...');
+    const pageSize = 1000;
+    let from = 0;
+    let to = pageSize - 1;
+    let all: any[] = [];
+
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('bom')
+        .select('product_id, component_id, amount')
+        .range(from, to);
+
+      if (error) {
+        console.error('❌ Error cargando BOM:', error);
+        throw error;
+      }
+
+      const chunk = page || [];
+      all = all.concat(chunk);
+      console.log(`   · Página ${from / pageSize + 1}: ${chunk.length} filas`);
+
+      if (chunk.length < pageSize) break; // última página
+      from += pageSize;
+      to += pageSize;
     }
-    
-    setAllBomData(bomData || []);
-    console.log(`✅ Cargados ${bomData?.length || 0} registros BOM`);
-    return bomData || [];
+
+    setAllBomData(all);
+    console.log(`✅ Cargados ${all.length} registros BOM (total acumulado)`);
+    return all;
   };
 
-  // Función optimizada para cargar todos los datos de machines_processes
+  // Función optimizada para cargar todos los datos de machines_processes con paginación
   const loadAllMachinesProcesses = async () => {
-    console.log('🚀 Cargando todos los datos machines_processes...');
-    const { data: mpData, error } = await supabase
-      .from('machines_processes')
-      .select(`
-        sam, frequency, ref, id_machine, id_process,
-        machines!inner(id, name, status),
-        processes!inner(id, name)
-      `);
-    
-    if (error) {
-      console.error('❌ Error cargando machines_processes:', error);
-      throw error;
+    console.log('🚀 Cargando todos los datos machines_processes (con paginación)...');
+    const pageSize = 1000;
+    let from = 0;
+    let to = pageSize - 1;
+    let all: any[] = [];
+
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('machines_processes')
+        .select(`
+          sam, frequency, ref, id_machine, id_process,
+          machines!inner(id, name, status),
+          processes!inner(id, name)
+        `)
+        .range(from, to);
+
+      if (error) {
+        console.error('❌ Error cargando machines_processes:', error);
+        throw error;
+      }
+
+      const chunk = page || [];
+      all = all.concat(chunk);
+      console.log(`   · Página ${from / pageSize + 1}: ${chunk.length} filas`);
+
+      if (chunk.length < pageSize) break; // última página
+      from += pageSize;
+      to += pageSize;
     }
-    
-    setAllMachinesProcesses(mpData || []);
-    console.log(`✅ Cargados ${mpData?.length || 0} registros machines_processes`);
-    return mpData || [];
+
+    setAllMachinesProcesses(all);
+    console.log(`✅ Cargados ${all.length} registros machines_processes (total acumulado)`);
+    return all;
+  };
+
+  // Normalización de nombres de proceso (p. ej., Despunte se agrupa con Troquelado)
+  const normalizeProcessName = (name: string) => {
+    if (!name) return name;
+    return name.trim().toLowerCase() === 'despunte' ? 'Troquelado' : name;
   };
 
   // Función recursiva optimizada con cache
@@ -237,7 +275,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         );
         
         for (const mp of machinesProcesses) {
-          const processName = mp.processes.name;
+          const processNameOriginal = mp.processes.name;
+          const processName = normalizeProcessName(processNameOriginal);
           if (!processGroups.has(processName)) {
             const processConfig = operatorConfig.processes.find(p => 
               p.processName.toLowerCase() === processName.toLowerCase()
@@ -252,14 +291,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           
           const processGroup = processGroups.get(processName)!;
           const existingComponent = processGroup.components.get(ref);
-          const availableMachines = machinesProcesses.filter((machine: any) => {
-            const processConfig = operatorConfig.processes.find(p => 
-              p.processName.toLowerCase() === machine.processes.name.toLowerCase()
-            );
-            if (!processConfig) return false;
-            const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
-            return machineConfig?.isOperational || false;
-          });
+          const availableMachines = machinesProcesses
+            .filter((machine: any) => normalizeProcessName(machine.processes.name).toLowerCase() === processName.toLowerCase())
+            .filter((machine: any) => {
+              const processConfig = operatorConfig.processes.find(p => 
+                p.processName.toLowerCase() === processName.toLowerCase()
+              );
+              if (!processConfig) return false;
+              const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
+              return machineConfig?.isOperational || false;
+            });
 
           if (existingComponent) {
             existingComponent.quantity += quantity;
@@ -280,7 +321,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         );
         
         for (const mp of machinesProcesses) {
-          const processName = mp.processes.name;
+          const processNameOriginal = mp.processes.name;
+          const processName = normalizeProcessName(processNameOriginal);
           if (!processGroups.has(processName)) {
             const processConfig = operatorConfig.processes.find(p => 
               p.processName.toLowerCase() === processName.toLowerCase()
@@ -295,14 +337,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           
           const processGroup = processGroups.get(processName)!;
           const existingComponent = processGroup.components.get(componentId);
-          const availableMachines = machinesProcesses.filter((machine: any) => {
-            const processConfig = operatorConfig.processes.find(p => 
-              p.processName.toLowerCase() === machine.processes.name.toLowerCase()
-            );
-            if (!processConfig) return false;
-            const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
-            return machineConfig?.isOperational || false;
-          });
+          const availableMachines = machinesProcesses
+            .filter((machine: any) => normalizeProcessName(machine.processes.name).toLowerCase() === processName.toLowerCase())
+            .filter((machine: any) => {
+              const processConfig = operatorConfig.processes.find(p => 
+                p.processName.toLowerCase() === processName.toLowerCase()
+              );
+              if (!processConfig) return false;
+              const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
+              return machineConfig?.isOperational || false;
+            });
 
           if (existingComponent) {
             existingComponent.quantity += quantity;
