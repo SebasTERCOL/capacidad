@@ -144,6 +144,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Normalizaciones específicas - Unificar procesos similares
     const normalizations: { [key: string]: string } = {
       'despunte': 'Troquelado',
+      'troquelado': 'Troquelado', // Mantener Troquelado como está
       'ensambleint': 'EnsambleInt', 
       'roscadoconectores': 'RoscadoConectores'
     };
