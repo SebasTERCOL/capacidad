@@ -153,16 +153,28 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return normalizations[lowercaseName] || processName;
   };
 
-  // Mapeo forzado por máquina para Troquelado
+  // Mapeo forzado por máquina para Troquelado (ids y nombres TQ-xx o RM-04)
   const resolveProcessName = (mp: any) => {
     const original = mp?.processes?.name ?? '';
     const normalized = normalizeProcessName(original);
     if (normalized === null) return null;
+
     const id = Number(mp?.id_machine);
-    const machineName = String(mp?.machines?.name || '').toUpperCase();
+    const rawName = String(mp?.machines?.name || '');
+    const upper = rawName.toUpperCase();
+    const compact = upper.replace(/\s|-/g, ''); // TQ02, TQ-02, TQ 02 -> TQ02
+
     const troqueladoIds = new Set([3001,3002,3003,3004,3005,3006,3007,3008,3009,3010,14017,12004]);
-    const isTQ = troqueladoIds.has(id) || /^TQ-\d+/i.test(machineName) || machineName === 'RM-04';
-    if (isTQ) return 'Troquelado';
+    const isTQById = troqueladoIds.has(id);
+    const isTQByName = /^TQ\d+/.test(compact) || compact === 'RM04';
+
+    if (isTQById || isTQByName) {
+      if (normalized.toLowerCase() !== 'troquelado') {
+        console.log(`↪️ Forzando proceso a Troquelado para máquina ${rawName} (id ${id}) que venía como '${normalized}'`);
+      }
+      return 'Troquelado';
+    }
+
     return normalized;
   };
 
@@ -504,8 +516,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     let minWorkload = Infinity;
 
     for (const mp of availableMachineProcesses) {
+      const resolvedName = resolveProcessName(mp);
+      if (!resolvedName) continue;
       const processConfig = operatorConfig.processes.find(p => 
-        p.processName.toLowerCase() === mp.processes.name.toLowerCase()
+        p.processName.toLowerCase() === resolvedName.toLowerCase()
       );
       if (!processConfig) continue;
       
