@@ -389,11 +389,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             });
 
           if (existingComponent) {
-            existingComponent.quantity += quantity;
+            // No sumar cantidad de nuevo: solo fusionar opciones de máquinas y completar SAM si falta
+            if (!existingComponent.sam || existingComponent.sam === 0) {
+              const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
+              existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
+            }
+            const existingNames = new Set(existingComponent.machineOptions.map((m: any) => m.machines.name));
+            const merged = [...existingComponent.machineOptions];
+            for (const m of availableMachines) if (!existingNames.has(m.machines.name)) merged.push(m);
+            existingComponent.machineOptions = merged;
           } else {
+            const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
             processGroup.components.set(ref, {
               quantity,
-              sam: mp.sam || 0,
+              sam: samForProcess,
               machineOptions: availableMachines
             });
           }
@@ -458,11 +467,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             });
 
           if (existingComponent) {
-            existingComponent.quantity += quantity;
+            // No duplicar cantidad: mantener la requerida y fusionar máquinas/SAM
+            if (!existingComponent.sam || existingComponent.sam === 0) {
+              const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
+              existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
+            }
+            const existingNames = new Set(existingComponent.machineOptions.map((m: any) => m.machines.name));
+            const merged = [...existingComponent.machineOptions];
+            for (const m of availableMachines) if (!existingNames.has(m.machines.name)) merged.push(m);
+            existingComponent.machineOptions = merged;
           } else {
+            const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
             processGroup.components.set(componentId, {
               quantity,
-              sam: mp.sam || 0,
+              sam: samForProcess,
               machineOptions: availableMachines
             });
           }
