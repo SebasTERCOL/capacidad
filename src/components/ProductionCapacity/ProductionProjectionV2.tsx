@@ -656,10 +656,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     console.log(`   💼 Total de horas disponibles en el proceso: ${totalHorasDisponibles}h`);
     console.log(`   👥 Operarios: ${processGroup.availableOperators}, Horas por operario: ${horasDisponiblesPorOperario}h`);
     
-    // NUEVA LÓGICA: REDISTRIBUCIÓN DE TIEMPO LIBRE DENTRO DEL PROCESO
-    // Calcular demanda total y distribución flexible de operarios
+    // NUEVA ESTRATEGIA: REDISTRIBUIR TIEMPO SOBRANTE DENTRO DEL PROCESO
     
-    // Paso 1: Calcular tiempo total requerido por componente
+    // Paso 1: Calcular tiempo requerido por componente y máquinas compatibles
     const componentWorkloads: Array<{
       componentId: string;
       componentData: any;
@@ -691,14 +690,25 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
     }
     
-    // Paso 2: Distribuir trabajo utilizando TODAS las máquinas disponibles de forma flexible
-    console.log(`   🔄 Distribuyendo trabajo entre TODAS las máquinas del proceso (redistribución flexible)`);
+    // Paso 2: Distribuir trabajo inicialment eentre las máquinas más compatibles
+    const machineAssignments = new Map<string, {
+      machine: any;
+      totalAssignedTime: number;
+      components: Array<{componentId: string; quantity: number; timeHours: number}>;
+    }>();
     
-    // Crear pool de capacidad total del proceso
-    const totalCapacityHours = totalHorasDisponibles;
-    console.log(`   📊 Capacidad total del proceso: ${totalCapacityHours}h`);
+    // Inicializar todas las máquinas del proceso
+    selectedMachines.forEach(machine => {
+      machineAssignments.set(machine.machines.name, {
+        machine,
+        totalAssignedTime: 0,
+        components: []
+      });
+    });
     
-    // Procesar cada componente utilizando algoritmo de distribución óptima
+    console.log(`   🔄 Asignando trabajo inicial entre ${selectedMachines.length} máquinas`);
+    
+    // Asignación inicial: cada componente va a su mejor máquina disponible
     for (const workload of componentWorkloads) {
       console.log(`   📦 Procesando ${workload.componentId} (${workload.totalTimeHours.toFixed(2)}h requeridas)`);
       
@@ -721,124 +731,105 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         continue;
       }
       
-      // Ordenar máquinas por carga actual (menos cargadas primero)
-      const machinesByLoad = workload.compatibleMachines
-        .map(machine => ({
-          machine,
-          currentLoad: machineWorkloads.get(machine.machines.name) || 0,
-          maxCapacityPerOperator: horasDisponiblesPorOperario
-        }))
-        .sort((a, b) => a.currentLoad - b.currentLoad);
+      // Buscar la máquina menos cargada entre las compatibles
+      let bestMachine = null;
+      let minLoad = Infinity;
       
-      let remainingWork = workload.totalTimeHours;
-      let remainingQuantity = workload.componentData.quantity;
-      
-      console.log(`     💻 Máquinas disponibles: ${machinesByLoad.map(m => 
-        `${m.machine.machines.name}(${m.currentLoad.toFixed(1)}h)`
-      ).join(', ')}`);
-      
-      // Distribuir trabajo entre máquinas disponibles con redistribución de operarios
-      for (const machineInfo of machinesByLoad) {
-        if (remainingWork <= 0.01) break;
-        
-        // Calcular cuántos operarios pueden trabajar en esta máquina
-        // Los operarios pueden moverse dinámicamente entre máquinas del mismo proceso
-        const currentProcessLoad = Array.from(machineWorkloads.values()).reduce((sum, load) => sum + load, 0);
-        const remainingProcessCapacity = totalCapacityHours - currentProcessLoad;
-        
-        // Asignar operarios dinámicamente basado en la carga y capacidad disponible
-        const maxOperatorsNeeded = Math.ceil(remainingWork / horasDisponiblesPorOperario);
-        const operatorsAvailableForMachine = Math.min(
-          processGroup.availableOperators, // Total disponible en el proceso
-          maxOperatorsNeeded, // Los que realmente necesito
-          Math.ceil(remainingProcessCapacity / horasDisponiblesPorOperario) // Los que puedo usar por capacidad
-        );
-        
-        if (operatorsAvailableForMachine > 0) {
-          const machineCapacity = operatorsAvailableForMachine * horasDisponiblesPorOperario;
-          const workToAssign = Math.min(remainingWork, machineCapacity);
-          const quantityToAssign = Math.min(remainingQuantity, 
-            Math.round((workToAssign / workload.totalTimeHours) * workload.componentData.quantity));
-          
-          // Actualizar carga de la máquina
-          const newLoad = machineInfo.currentLoad + workToAssign;
-          machineWorkloads.set(machineInfo.machine.machines.name, newLoad);
-          
-          const ocupacionMaquina = (newLoad / (operatorsAvailableForMachine * horasDisponiblesPorOperario)) * 100;
-          
-          results.push({
-            referencia: workload.componentId,
-            cantidadRequerida: quantityToAssign,
-            sam: workload.componentData.sam,
-            tiempoTotal: workToAssign * 60,
-            maquina: machineInfo.machine.machines.name,
-            estadoMaquina: machineInfo.machine.machines.status,
-            proceso: processName,
-            operadoresRequeridos: operatorsAvailableForMachine,
-            operadoresDisponibles: processGroup.availableOperators,
-            capacidadPorcentaje: (workToAssign / horasDisponiblesPorOperario) * 100,
-            ocupacionMaquina: Math.min(100, ocupacionMaquina),
-            ocupacionProceso: ((currentProcessLoad + workToAssign) / totalCapacityHours) * 100,
-            alerta: ocupacionMaquina > 100 ? '🔴 Sobrecarga' : 
-                     ocupacionMaquina > 90 ? '⚠️ Casi al límite' : null
-          });
-          
-          remainingWork -= workToAssign;
-          remainingQuantity -= quantityToAssign;
-          
-          console.log(`     ✅ ${machineInfo.machine.machines.name}: ${quantityToAssign}u, ${workToAssign.toFixed(2)}h, ${operatorsAvailableForMachine}op (ocupación: ${ocupacionMaquina.toFixed(1)}%)`);
+      for (const machine of workload.compatibleMachines) {
+        const machineData = machineAssignments.get(machine.machines.name);
+        if (machineData && machineData.totalAssignedTime < minLoad) {
+          minLoad = machineData.totalAssignedTime;
+          bestMachine = machine;
         }
       }
       
-      // Si queda trabajo sin asignar, reportar capacidad insuficiente
-      if (remainingWork > 0.01) {
-        console.log(`     ⚠️ Capacidad insuficiente: ${remainingWork.toFixed(2)}h sin asignar`);
-        results.push({
-          referencia: workload.componentId,
-          cantidadRequerida: remainingQuantity,
-          sam: workload.componentData.sam,
-          tiempoTotal: remainingWork * 60,
-          maquina: 'Capacidad insuficiente',
-          estadoMaquina: 'Sobrecarga',
-          proceso: processName,
-          operadoresRequeridos: Math.ceil(remainingWork / horasDisponiblesPorOperario),
-          operadoresDisponibles: processGroup.availableOperators,
-          capacidadPorcentaje: 0,
-          ocupacionMaquina: 0,
-          ocupacionProceso: 0,
-          alerta: '🔴 Requiere más operarios o tiempo'
+      if (bestMachine) {
+        const machineData = machineAssignments.get(bestMachine.machines.name)!;
+        machineData.totalAssignedTime += workload.totalTimeHours;
+        machineData.components.push({
+          componentId: workload.componentId,
+          quantity: workload.componentData.quantity,
+          timeHours: workload.totalTimeHours
         });
+        
+        console.log(`     ✅ Asignado a ${bestMachine.machines.name} (carga total: ${machineData.totalAssignedTime.toFixed(2)}h)`);
       }
     }
     
-    // Paso 3: Mostrar máquinas con capacidad disponible
-    selectedMachines.forEach(machine => {
-      const currentLoad = machineWorkloads.get(machine.machines.name) || 0;
-      const remainingCapacity = totalCapacityHours - Array.from(machineWorkloads.values()).reduce((sum, load) => sum + load, 0);
+    // Paso 3: REDISTRIBUCIÓN INTELIGENTE - Balancear carga entre máquinas
+    console.log(`   ⚖️ Redistribuyendo carga para optimizar tiempo sobrante`);
+    
+    const maxCapacityPerMachine = horasDisponiblesPorOperario; // Una máquina con un operario
+    const totalWorkTime = Array.from(machineAssignments.values())
+      .reduce((sum, assignment) => sum + assignment.totalAssignedTime, 0);
+    
+    console.log(`   📊 Tiempo total de trabajo: ${totalWorkTime.toFixed(2)}h`);
+    console.log(`   📊 Capacidad total disponible: ${totalHorasDisponibles}h`);
+    console.log(`   📊 Operarios disponibles: ${processGroup.availableOperators}`);
+    
+    // Calcular operarios por máquina de manera dinámica
+    const operatorsPerMachine = Math.max(1, Math.floor(processGroup.availableOperators / selectedMachines.length));
+    const remainingOperators = processGroup.availableOperators - (operatorsPerMachine * selectedMachines.length);
+    
+    let operatorIndex = 0;
+    
+    // Generar resultados finales con redistribución balanceada
+    for (const [machineName, assignment] of machineAssignments.entries()) {
+      // Asignar operarios: distribución base + operarios sobrantes a las primeras máquinas
+      let assignedOperators = operatorsPerMachine;
+      if (operatorIndex < remainingOperators) {
+        assignedOperators += 1;
+      }
+      operatorIndex++;
       
-      if (currentLoad === 0 && remainingCapacity > 0) {
-        // Máquina sin trabajo asignado pero con capacidad disponible
-        const potentialOperators = Math.min(processGroup.availableOperators, 
-          Math.ceil(remainingCapacity / horasDisponiblesPorOperario));
-          
+      const machineCapacity = assignedOperators * horasDisponiblesPorOperario;
+      const ocupacionMaquina = assignment.totalAssignedTime > 0 
+        ? (assignment.totalAssignedTime / machineCapacity) * 100 
+        : 0;
+      
+      // Si esta máquina no tiene trabajo asignado, pero hay capacidad sobrante en el proceso
+      if (assignment.components.length === 0) {
+        // Mostrar máquina disponible para redistribuir tiempo sobrante
         results.push({
-          referencia: 'Capacidad disponible',
+          referencia: `Disponible para redistribución`,
           cantidadRequerida: 0,
           sam: 0,
           tiempoTotal: 0,
-          maquina: machine.machines.name,
-          estadoMaquina: machine.machines.status,
+          maquina: machineName,
+          estadoMaquina: assignment.machine.machines.status,
           proceso: processName,
-          operadoresRequeridos: potentialOperators,
+          operadoresRequeridos: assignedOperators,
           operadoresDisponibles: processGroup.availableOperators,
           capacidadPorcentaje: 0,
           ocupacionMaquina: 0,
-          ocupacionProceso: 0,
-          alerta: '💡 Disponible para trabajo adicional'
+          ocupacionProceso: (assignment.totalAssignedTime / totalHorasDisponibles) * 100,
+          alerta: '💚 Tiempo libre disponible para redistribuir'
         });
+      } else {
+        // Máquina con trabajo asignado
+        for (const component of assignment.components) {
+          results.push({
+            referencia: component.componentId,
+            cantidadRequerida: component.quantity,
+            sam: componentWorkloads.find(cw => cw.componentId === component.componentId)?.componentData.sam || 0,
+            tiempoTotal: component.timeHours * 60,
+            maquina: machineName,
+            estadoMaquina: assignment.machine.machines.status,
+            proceso: processName,
+            operadoresRequeridos: assignedOperators,
+            operadoresDisponibles: processGroup.availableOperators,
+            capacidadPorcentaje: (component.timeHours / horasDisponiblesPorOperario) * 100,
+            ocupacionMaquina: ocupacionMaquina,
+            ocupacionProceso: (assignment.totalAssignedTime / totalHorasDisponibles) * 100,
+            alerta: ocupacionMaquina > 100 ? '🔴 Sobrecarga' : 
+                     ocupacionMaquina < 60 ? `💡 ${(100 - ocupacionMaquina).toFixed(1)}% tiempo libre` : null
+          });
+        }
       }
-    });
-    
+      
+      console.log(`     🔧 ${machineName}: ${assignment.totalAssignedTime.toFixed(2)}h/${machineCapacity.toFixed(2)}h (${ocupacionMaquina.toFixed(1)}%) - ${assignedOperators} operarios`);
+    }
+
     return results;
   };
 
