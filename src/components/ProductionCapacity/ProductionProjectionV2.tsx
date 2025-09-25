@@ -282,25 +282,25 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       for (const item of data) {
         console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
         
-        // Agregar a referencias principales
-        const currentMainQty = mainReferences.get(item.referencia) || 0;
-        mainReferences.set(item.referencia, currentMainQty + item.cantidad);
-        
         // Intentar obtener BOM para esta referencia
         const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
         
         if (allComponents.size > 0) {
-          // Si tiene BOM, agregar SOLO los componentes (no la referencia principal)
+          // Si tiene BOM, agregar a referencias principales Y expandir componentes
+          const currentMainQty = mainReferences.get(item.referencia) || 0;
+          mainReferences.set(item.referencia, currentMainQty + item.cantidad);
+          
+          // Agregar SOLO los componentes (no la referencia principal)
           for (const [componentId, quantity] of allComponents.entries()) {
             const currentQty = consolidatedComponents.get(componentId) || 0;
             consolidatedComponents.set(componentId, currentQty + quantity);
           }
-          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes (referencia principal excluida)`);
+          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes (referencia principal incluida en mainReferences)`);
         } else {
-          // Si NO tiene BOM, agregar la referencia directamente
+          // Si NO tiene BOM, agregar SOLO a componentes consolidados (NO duplicar)
           const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
           consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
-          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa`);
+          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa (sin duplicar)`);
         }
       }
 
