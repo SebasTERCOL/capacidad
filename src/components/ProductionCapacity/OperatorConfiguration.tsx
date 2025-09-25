@@ -96,76 +96,91 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
       try {
         setLoading(true);
 
-        // Normalización y exclusión de procesos
-        const normalizeProcess = (name: string) => {
-          if (!name) return name;
-          const original = name.trim();
-          const lower = original.toLowerCase();
-          const excluded = ['reclasificación', 'reclasificacion'];
-          if (excluded.includes(lower)) return null; // suprimir Reclasificación
-          const map: Record<string, string> = {
-            despunte: 'Troquelado',
-          };
-          return map[lower] || original;
+        // Configuración específica de máquinas por proceso según especificaciones
+        const processToMachines: Record<number, number[]> = {
+          1: [14016, 14075], // Tapas: EN-10A, EN-10B
+          2: [11041], // Horno: HG-01
+          3: [3001, 3005, 3010, 14017], // Despunte: TQ-01, TQ-05, TQ-10, TQ-11
+          10: [1001], // Corte: CZ-01
+          20: [2001, 2002], // Punzonado: PZ-01, PZ-02
+          30: [3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009, 3010, 14017], // Troquelado: TQ-01 a TQ-11
+          40: [4001, 4002, 4003, 4004, 4005, 14081, 12004], // Doblez: DB-01 a DB-06, RM-04
+          50: [5001, 5002, 5003], // Soldadura: SP-01, SP-02, SP-03
+          60: [6001, 6002], // MIG: SE-01, SE-02
+          70: [11092], // Lavado: TL-01
+          80: [8001, 8002, 8003], // Pintura: CB-01, CB-02, CB-03
+          90: [10085, 14009, 14065, 14010, 14011, 14012, 14013, 14014, 14015, 14066, 14067, 14068, 14069, 14070, 14071, 14072, 14073, 14074], // Ensamle: EN-01A a EN-09B
+          100: [10004, 10005], // Empaque: ZN-04, ZN-05
+          130: [14090, 14092, 14093, 14094, 14095], // EnsambleInt: MESA, MESA2, MESA3, MESA4, MESA5
+          140: [14001, 14002, 14003, 14004, 14005, 14006, 14007], // Inyeccion: INY-01 a INY-07
+          170: [11072, 14088] // RoscadoConectores: RC-01, RC-MANUAL1
         };
 
-        // Traer relación real máquina-proceso con joins para obtener nombres y estados
-        const { data: mpData, error: mpError } = await supabase
-          .from('machines_processes')
-          .select(`
-            id_machine,
-            id_process,
-            machines!inner(id, name, status),
-            processes!inner(id, name)
-          `);
-        if (mpError) throw mpError;
+        // Obtener información de procesos
+        const { data: processData, error: processError } = await supabase
+          .from('processes')
+          .select('id, name');
+        if (processError) throw processError;
 
-        console.log('📊 machines_processes cargado:', mpData?.length);
+        // Obtener información de máquinas
+        const { data: machineData, error: machineError } = await supabase
+          .from('machines')
+          .select('id, name, status');
+        if (machineError) throw machineError;
 
-        // Construir grupos por proceso normalizado con máquinas deduplicadas
-        const groups = new Map<string, { processId: number; processName: string; machines: MachineConfig[] }>();
+        console.log('📊 Procesos cargados:', processData?.length);
+        console.log('🏭 Máquinas cargadas:', machineData?.length);
 
-        mpData?.forEach((mp) => {
-          const normalized = normalizeProcess(mp.processes.name);
-          if (normalized === null) return; // excluir
+        // Crear mapa de máquinas por ID para búsqueda rápida
+        const machineMap = new Map(machineData?.map(m => [m.id, m]) || []);
+        const processMap = new Map(processData?.map(p => [p.id, p]) || []);
 
-          // Crear grupo si no existe
-          if (!groups.has(normalized)) {
-            groups.set(normalized, {
-              processId: mp.processes.id, // usar el primero encontrado
-              processName: normalized,
-              machines: []
-            });
+        // Construir configuración de procesos usando la especificación exacta
+        const processConfigs: ProcessConfig[] = [];
+
+        Object.entries(processToMachines).forEach(([processIdStr, machineIds]) => {
+          const processId = parseInt(processIdStr);
+          const process = processMap.get(processId);
+          
+          if (!process) {
+            console.warn(`Proceso ${processId} no encontrado en la base de datos`);
+            return;
           }
 
-          const group = groups.get(normalized)!;
-          // Deduplicar por id de máquina
-          const exists = group.machines.some((m) => m.id === mp.machines.id);
-          if (!exists) {
-            group.machines.push({
-              id: mp.machines.id,
-              name: mp.machines.name,
-              processName: normalized,
-              processId: group.processId,
-              isOperational: mp.machines.status === 'ENCENDIDO',
-              status: mp.machines.status,
+          const machines: MachineConfig[] = [];
+          
+          machineIds.forEach(machineId => {
+            const machine = machineMap.get(machineId);
+            if (machine) {
+              machines.push({
+                id: machine.id,
+                name: machine.name,
+                processName: process.name,
+                processId: processId,
+                isOperational: machine.status === 'ENCENDIDO',
+                status: machine.status,
+              });
+            } else {
+              console.warn(`Máquina ${machineId} no encontrada para el proceso ${process.name}`);
+            }
+          });
+
+          if (machines.length > 0) {
+            processConfigs.push({
+              processId: processId,
+              processName: process.name,
+              operatorCount: 1,
+              efficiency: 100,
+              missingOperators: 0,
+              machines: machines.sort((a, b) => a.name.localeCompare(b.name)),
             });
           }
         });
 
-        // Convertir a arreglo de configuración con valores por defecto de operarios/eficiencia
-        const processConfigs: ProcessConfig[] = Array.from(groups.values())
-          .map((g) => ({
-            processId: g.processId,
-            processName: g.processName,
-            operatorCount: 1,
-            efficiency: 100,
-            missingOperators: 0,
-            machines: g.machines.sort((a, b) => a.name.localeCompare(b.name)),
-          }))
-          .sort((a, b) => a.processName.localeCompare(b.processName));
+        // Ordenar procesos por nombre
+        processConfigs.sort((a, b) => a.processName.localeCompare(b.processName));
 
-        console.log('🏭 Procesos configurados (normalizados):', processConfigs.map(p => `${p.processName} (${p.machines.length})`));
+        console.log('🏭 Procesos configurados:', processConfigs.map(p => `${p.processName} (${p.machines.length} máquinas)`));
 
         setProcesses(processConfigs);
       } catch (err) {
