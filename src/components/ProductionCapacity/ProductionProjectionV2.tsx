@@ -143,7 +143,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     
     // Normalizaciones específicas - Unificar SOLO Despunte y Troquelado
     const normalizations: { [key: string]: string } = {
-      'despunte': 'Troquelado', // Unificar Despunte con Troquelado
+      'despunte': 'Troquelado / Despunte', // Unificar Despunte con nombre exacto usado en configuración
+      'troquelado': 'Troquelado / Despunte', // Normalizar también Troquelado al nombre unificado
       // NO unificar Corte con nada - es un proceso independiente
       'ensambleint': 'EnsambleInt', 
       'roscadoconectores': 'RoscadoConectores'
@@ -353,7 +354,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               p.processName.toLowerCase() === processName.toLowerCase()
             );
             
-            console.log(`     · Buscando configuración para: ${processName} -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
+            console.log(`     · Buscando configuración para: "${processName}" -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
+            if (!processConfig) {
+              console.log(`     · Procesos disponibles:`, operatorConfig.processes.map(p => p.processName));
+            }
             
             processGroups.set(processName, {
               processName,
@@ -419,7 +423,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               p.processName.toLowerCase() === processName.toLowerCase()
             );
             
-            console.log(`     · Buscando configuración para: ${processName} -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
+            console.log(`     · Buscando configuración para: "${processName}" -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
+            if (!processConfig) {
+              console.log(`     · Procesos disponibles:`, operatorConfig.processes.map(p => p.processName));
+            }
             
             processGroups.set(processName, {
               processName,
