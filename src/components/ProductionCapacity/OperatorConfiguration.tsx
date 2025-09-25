@@ -100,10 +100,9 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
         const processToMachines: Record<number, number[]> = {
           1: [14016, 14075], // Tapas: EN-10A, EN-10B
           2: [11041], // Horno: HG-01
-          3: [3001, 3005, 3010, 14017], // Despunte: TQ-01, TQ-05, TQ-10, TQ-11
           10: [1001], // Corte: CZ-01
           20: [2001, 2002], // Punzonado: PZ-01, PZ-02
-          30: [3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009, 3010, 14017], // Troquelado: TQ-01 a TQ-11
+          30: [3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009, 3010, 14017], // Troquelado + Despunte: TQ-01 a TQ-11
           40: [4001, 4002, 4003, 4004, 4005, 14081, 12004], // Doblez: DB-01 a DB-06, RM-04
           50: [5001, 5002, 5003], // Soldadura: SP-01, SP-02, SP-03
           60: [6001, 6002], // MIG: SE-01, SE-02
@@ -147,6 +146,15 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
             return;
           }
 
+          // Para el proceso 30 (Troquelado), unificar con Despunte
+          let processName = process.name;
+          if (processId === 30) {
+            const despunteProcess = processMap.get(3);
+            if (despunteProcess) {
+              processName = `${process.name} / ${despunteProcess.name}`;
+            }
+          }
+
           const machines: MachineConfig[] = [];
           
           machineIds.forEach(machineId => {
@@ -155,20 +163,20 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
               machines.push({
                 id: machine.id,
                 name: machine.name,
-                processName: process.name,
+                processName: processName,
                 processId: processId,
                 isOperational: machine.status === 'ENCENDIDO',
                 status: machine.status,
               });
             } else {
-              console.warn(`Máquina ${machineId} no encontrada para el proceso ${process.name}`);
+              console.warn(`Máquina ${machineId} no encontrada para el proceso ${processName}`);
             }
           });
 
           if (machines.length > 0) {
             processConfigs.push({
               processId: processId,
-              processName: process.name,
+              processName: processName,
               operatorCount: 1,
               efficiency: 100,
               missingOperators: 0,
