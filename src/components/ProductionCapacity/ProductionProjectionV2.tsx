@@ -141,13 +141,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       return null; // Retornar null para procesos excluidos
     }
     
-    // Normalizaciones específicas - Unificar procesos que comparten máquinas
+    // Normalizaciones específicas - Unificar SOLO procesos que comparten máquinas
     const normalizations: { [key: string]: string } = {
       'despunte': 'Troquelado / Despunte',
       'troquelado': 'Troquelado / Despunte',
-      'inyeccion': 'Inyección / Roscado Conectores',
-      'inyección': 'Inyección / Roscado Conectores',
-      'roscadoconectores': 'Inyección / Roscado Conectores',
+      // Inyección y RoscadoConectores se mantienen separados para cálculos
+      'inyeccion': 'Inyección',
+      'inyección': 'Inyección',
+      'roscadoconectores': 'RoscadoConectores',
       'ensambleint': 'EnsambleInt'
     };
     
@@ -987,21 +988,40 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
     // Consolidar datos por proceso y máquina
     projection.forEach(item => {
-      if (!processMap.has(item.proceso)) {
+      // Agrupar visualmente Inyección y RoscadoConectores
+      let displayProcessName = item.proceso;
+      if (item.proceso === 'Inyección' || item.proceso === 'RoscadoConectores') {
+        displayProcessName = 'Inyección / Roscado Conectores';
+      }
+      
+      if (!processMap.has(displayProcessName)) {
+        // Buscar configuración del proceso original (no el agrupado)
         const processConfig = operatorConfig.processes.find(p => 
           p.processName.toLowerCase() === item.proceso.toLowerCase()
         );
         
-        processMap.set(item.proceso, {
-          processName: item.proceso,
+        // Si es el proceso agrupado, sumar los operadores de ambos procesos
+        let totalOperators = processConfig?.operatorCount || 0;
+        if (displayProcessName === 'Inyección / Roscado Conectores') {
+          const inyeccionConfig = operatorConfig.processes.find(p => 
+            p.processName.toLowerCase() === 'inyección'
+          );
+          const roscadoConfig = operatorConfig.processes.find(p => 
+            p.processName.toLowerCase() === 'roscadoconectores'
+          );
+          totalOperators = (inyeccionConfig?.operatorCount || 0) + (roscadoConfig?.operatorCount || 0);
+        }
+        
+        processMap.set(displayProcessName, {
+          processName: displayProcessName,
           machines: new Map(),
           totalTime: 0,
           availableHours: operatorConfig.availableHours,
-          operators: processConfig?.operatorCount || 0
+          operators: totalOperators
         });
       }
 
-      const processGroup = processMap.get(item.proceso)!;
+      const processGroup = processMap.get(displayProcessName)!;
       
       if (!processGroup.machines.has(item.maquina)) {
         processGroup.machines.set(item.maquina, {
