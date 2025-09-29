@@ -154,6 +154,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return normalizations[lowercaseName] || processName;
   };
 
+  // Función para determinar si un proceso usa Minutos x Unidad
+  const isMinutesPerUnitProcess = (processId: number): boolean => {
+    // Minutos x Unidad: Lavado (70), Inyeccion (140), RoscadoConectores (170)
+    return processId === 70 || processId === 140 || processId === 170;
+  };
+
   // Mapeo forzado por máquina para Troquelado (ids y nombres TQ-xx o RM-04)
   const resolveProcessName = (mp: any) => {
     const original = mp?.processes?.name ?? '';
@@ -689,9 +695,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       // Calcular tiempo total requerido para este componente
-      const isMinutesPerUnitProcess = compatibleMachines[0].id_process === 140 || 
-        compatibleMachines[0].id_process === 170 || processName === 'Lavado';
-      const tiempoTotalMinutos = isMinutesPerUnitProcess
+      const isMinutesPerUnit = isMinutesPerUnitProcess(compatibleMachines[0].id_process);
+      const tiempoTotalMinutos = isMinutesPerUnit
         ? (componentData.sam > 0 ? componentData.quantity * componentData.sam : 0)
         : (componentData.sam > 0 ? componentData.quantity / componentData.sam : 0);
       const tiempoTotalHoras = tiempoTotalMinutos / 60;
@@ -798,8 +803,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const proceso = bestMachine.processes.name;
 
     // Manejo especial para procesos donde SAM está en minutos/unidad
-    const isMinutesPerUnitProcess = bestMachine.id_process === 140 || bestMachine.id_process === 170;
-    const tiempoTotal = isMinutesPerUnitProcess
+    const isMinutesPerUnit = isMinutesPerUnitProcess(bestMachine.id_process);
+    const tiempoTotal = isMinutesPerUnit
       ? (sam > 0 ? refToProcess.cantidad * sam : 0)
       : (sam > 0 ? refToProcess.cantidad / sam : 0);
     const tiempoTotalHoras = tiempoTotal / 60;
