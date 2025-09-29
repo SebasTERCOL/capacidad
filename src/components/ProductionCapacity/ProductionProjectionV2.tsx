@@ -160,28 +160,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return processId === 70 || processId === 140 || processId === 170;
   };
 
-  // Mapeo forzado por máquina para Troquelado (ids y nombres TQ-xx o RM-04)
+  // Resuelve el nombre del proceso usando normalización consistente
   const resolveProcessName = (mp: any) => {
     const original = mp?.processes?.name ?? '';
     const normalized = normalizeProcessName(original);
-    if (normalized === null) return null;
-
-    const id = Number(mp?.id_machine);
-    const rawName = String(mp?.machines?.name || '');
-    const upper = rawName.toUpperCase();
-    const compact = upper.replace(/\s|-/g, ''); // TQ02, TQ-02, TQ 02 -> TQ02
-
-    const troqueladoIds = new Set([3001,3002,3003,3004,3005,3006,3007,3008,3009,3010,14017,12004]);
-    const isTQById = troqueladoIds.has(id);
-    const isTQByName = /^TQ\d+/.test(compact) || compact === 'RM04';
-
-    if (isTQById || isTQByName) {
-      if (normalized.toLowerCase() !== 'troquelado') {
-        console.log(`↪️ Forzando proceso a Troquelado para máquina ${rawName} (id ${id}) que venía como '${normalized}'`);
-      }
-      return 'Troquelado';
-    }
-
+    
+    // Usar siempre el nombre normalizado sin forzar cambios
+    // Esto asegura que "Troquelado" y "Despunte" se agrupen como "Troquelado / Despunte"
     return normalized;
   };
 
