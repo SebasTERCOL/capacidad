@@ -141,13 +141,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       return null; // Retornar null para procesos excluidos
     }
     
-    // Normalizaciones específicas - Unificar SOLO Despunte y Troquelado
+    // Normalizaciones específicas - Unificar procesos que comparten máquinas
     const normalizations: { [key: string]: string } = {
-      'despunte': 'Troquelado / Despunte', // Unificar Despunte con nombre exacto usado en configuración
-      'troquelado': 'Troquelado / Despunte', // Normalizar también Troquelado al nombre unificado
-      // NO unificar Corte con nada - es un proceso independiente
-      'ensambleint': 'EnsambleInt', 
-      'roscadoconectores': 'RoscadoConectores'
+      'despunte': 'Troquelado / Despunte',
+      'troquelado': 'Troquelado / Despunte',
+      'inyeccion': 'Inyección / Roscado Conectores',
+      'inyección': 'Inyección / Roscado Conectores',
+      'roscadoconectores': 'Inyección / Roscado Conectores',
+      'ensambleint': 'EnsambleInt'
     };
     
     const lowercaseName = processName.toLowerCase();
