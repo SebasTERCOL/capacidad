@@ -25,6 +25,7 @@ export interface ProcessConfig {
   missingOperators: number; // Nuevo: operarios faltantes
   machines: MachineConfig[];
   effectivenessPercentage?: number; // Calculado: efectividad real
+  availableHours?: number; // Horas disponibles específicas por proceso
 }
 
 export interface OperatorConfig {
@@ -51,7 +52,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Calcular horas disponibles para el mes seleccionado
+  // Calcular horas disponibles para el mes seleccionado (3 turnos - estándar)
   const calculateAvailableHours = (month: number, year: number): number => {
     const date = new Date(year, month - 1, 1);
     const lastDay = new Date(year, month, 0).getDate();
@@ -88,7 +89,52 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
     return Math.round(netHours * 10) / 10; // Redondear a 1 decimal
   };
 
+  // Calcular horas disponibles para procesos de 2 turnos (Inyección y RoscadoConectores)
+  const calculateAvailableHours2Shifts = (month: number, year: number): number => {
+    const date = new Date(year, month - 1, 1);
+    const lastDay = new Date(year, month, 0).getDate();
+    
+    let weekdays = 0;
+    let saturdays = 0;
+    
+    for (let day = 1; day <= lastDay; day++) {
+      const currentDate = new Date(year, month - 1, day);
+      const dayOfWeek = currentDate.getDay();
+      
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Lunes a Viernes
+        weekdays++;
+      } else if (dayOfWeek === 6) { // Sábado
+        saturdays++;
+      }
+    }
+    
+    // Horas brutas por turno para días de semana (sin descanso)
+    const weekdayMorningHours = 7.584; // 5:25am - 1:00pm
+    const weekdayAfternoonHours = 7.617; // 1:00pm - 8:37pm
+    const weekdayTotalBrute = weekdayMorningHours + weekdayAfternoonHours; // 15.201 horas
+    
+    // Horas brutas por turno para sábado (sin descanso)
+    const saturdayMorningHours = 6.0834; // 5:25am - 11:30am
+    const saturdayAfternoonHours = 5.917; // 11:30am - 5:25pm
+    const saturdayTotalBrute = saturdayMorningHours + saturdayAfternoonHours; // 12.0004 horas
+    
+    // Calcular horas brutas totales
+    const totalBruteHours = (weekdays * weekdayTotalBrute) + (saturdays * saturdayTotalBrute);
+    
+    // Calcular turnos totales en el mes
+    const weekdayShifts = weekdays * 2; // 2 turnos por día de semana
+    const saturdayShifts = saturdays * 2; // 2 turnos por sábado
+    const totalShifts = weekdayShifts + saturdayShifts;
+    
+    // Restar 25 minutos (0.4167 horas) de descanso por cada turno
+    const totalBreakTime = totalShifts * (25/60); // 25 minutos en horas
+    const netHours = totalBruteHours - totalBreakTime;
+    
+    return Math.round(netHours * 10) / 10; // Redondear a 1 decimal
+  };
+
   const availableHours = calculateAvailableHours(workMonth, workYear);
+  const availableHours2Shifts = calculateAvailableHours2Shifts(workMonth, workYear);
 
   // Obtener máquinas y procesos de la base de datos
   useEffect(() => {
@@ -174,6 +220,9 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           });
 
           if (machines.length > 0) {
+            // Asignar horas específicas para procesos de 2 turnos
+            const is2ShiftProcess = processId === 140 || processId === 170; // Inyección y RoscadoConectores
+            
             processConfigs.push({
               processId: processId,
               processName: processName,
@@ -181,6 +230,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
               efficiency: 100,
               missingOperators: 0,
               machines: machines.sort((a, b) => a.name.localeCompare(b.name)),
+              availableHours: is2ShiftProcess ? undefined : undefined, // Se asignará dinámicamente
             });
           }
         });
@@ -268,11 +318,19 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   };
 
   const handleContinue = () => {
+    // Asignar horas específicas a cada proceso según su tipo
+    const processesWithHours = processes.map(process => ({
+      ...process,
+      availableHours: (process.processId === 140 || process.processId === 170) 
+        ? availableHours2Shifts 
+        : availableHours
+    }));
+
     const config: OperatorConfig = {
-      processes,
+      processes: processesWithHours,
       workMonth,
       workYear,
-      availableHours
+      availableHours // Horas estándar por defecto
     };
     onConfigComplete(config);
     onNext();
@@ -406,9 +464,22 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
         </CardContent>
       </Card>
 
-      {/* Configuración de Procesos y Máquinas */}
+      {/* Configuración de Procesos Estándar (3 Turnos) */}
       <div className="space-y-4">
-        {processes.map((process) => {
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Procesos Estándar (3 Turnos)</CardTitle>
+            <CardDescription>
+              Horario estándar: 3 turnos diarios de lunes a viernes + 2 turnos los sábados
+              <div className="mt-2 flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                <span className="font-semibold">{availableHours.toFixed(1)}h disponibles por operario</span>
+              </div>
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        {processes.filter(p => p.processId !== 140 && p.processId !== 170).map((process) => {
           const operationalCount = process.machines.filter(m => m.isOperational).length;
           const effectiveStations = Math.min(operationalCount, process.operatorCount);
           const capacityMinutes = effectiveStations * availableHours * 60 * (process.efficiency / 100);
@@ -494,6 +565,208 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-lg font-bold text-blue-600">{Math.max(0, process.operatorCount - process.missingOperators)}</div>
+                    <div className="text-xs text-muted-foreground">Operarios Efectivos</div>
+                  </div>
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <div className="text-lg font-bold text-primary">{effectiveStations}</div>
+                    <div className="text-xs text-muted-foreground">Estaciones Activas</div>
+                  </div>
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <div className={`text-lg font-bold ${effectiveness < 50 ? 'text-red-600' : effectiveness < 70 ? 'text-yellow-600' : 'text-green-600'}`}>
+                      {effectiveness.toFixed(1)}%
+                    </div>
+                    <div className="text-xs text-muted-foreground">Efectividad Real</div>
+                  </div>
+                </div>
+
+                {/* Alertas de proceso */}
+                {(effectiveness < 50 || operationalCount !== process.operatorCount) && (
+                  <div className="mt-2 space-y-1">
+                    {effectiveness < 50 && (
+                      <div className="text-sm text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        ⚠️ Efectividad crítica - Se requiere atención urgente
+                      </div>
+                    )}
+                    {operationalCount > process.operatorCount && (
+                      <div className="text-sm text-amber-600 flex items-center gap-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        {operationalCount - process.operatorCount} máquina(s) sin operario asignado
+                      </div>
+                    )}
+                    {process.operatorCount > operationalCount && (
+                      <div className="text-sm text-blue-600 flex items-center gap-1">
+                        <Users className="h-4 w-4" />
+                        {process.operatorCount - operationalCount} operario(s) adicional(es) disponible(s)
+                      </div>
+                    )}
+                    {process.missingOperators > 0 && (
+                      <div className="text-sm text-orange-600 flex items-center gap-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        {process.missingOperators} operario(s) faltante(s) - Reduce la capacidad efectiva
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {process.machines.map((machine) => (
+                    <div key={machine.id} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium">{machine.name}</div>
+                        <Badge variant={machine.status === 'ENCENDIDO' ? 'default' : 'secondary'}>
+                          {machine.status}
+                        </Badge>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`operational-${machine.id}`}
+                          checked={machine.isOperational}
+                          onCheckedChange={(checked) => 
+                            handleMachineConfigChange(process.processId, machine.id, !!checked)
+                          }
+                        />
+                        <Label htmlFor={`operational-${machine.id}`} className="text-sm">
+                          Máquina disponible para producción
+                        </Label>
+                      </div>
+                      
+                      {machine.isOperational && (
+                        <div className="text-xs text-green-600 font-medium">
+                          ✓ Disponible
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Configuración de Procesos Especiales (2 Turnos) */}
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Procesos con Horario Especial (2 Turnos)
+            </CardTitle>
+            <CardDescription>
+              Horario especial: 2 turnos diarios (mañana y tarde) de lunes a sábado
+              <div className="mt-2 space-y-1">
+                <div className="flex items-center gap-2 text-sm">
+                  <Clock className="h-4 w-4" />
+                  <span className="font-semibold">{availableHours2Shifts.toFixed(1)}h disponibles por operario</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  • Lunes a Viernes: Turno mañana (5:25am-1:00pm) + Turno tarde (1:00pm-8:37pm)
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  • Sábados: Turno mañana (5:25am-11:30am) + Turno tarde (11:30am-5:25pm)
+                </div>
+              </div>
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        {processes.filter(p => p.processId === 140 || p.processId === 170).map((process) => {
+          const operationalCount = process.machines.filter(m => m.isOperational).length;
+          const effectiveStations = Math.min(operationalCount, process.operatorCount);
+          const capacityMinutes = effectiveStations * availableHours2Shifts * 60 * (process.efficiency / 100);
+          const effectiveness = calculateEffectiveness(process);
+          
+          return (
+            <Card key={process.processId}>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    {process.processName}
+                    <Badge variant="outline">
+                      {process.machines.length} máquina{process.machines.length !== 1 ? 's' : ''}
+                    </Badge>
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      2 Turnos
+                    </Badge>
+                    <Badge variant={getEffectivenessVariant(effectiveness)} className="flex items-center gap-1">
+                      {getEffectivenessIcon(effectiveness)}
+                      {effectiveness.toFixed(1)}% Efectividad
+                    </Badge>
+                  </CardTitle>
+                </div>
+                
+                {/* Controles de configuración */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor={`operators-${process.processId}`} className="text-sm font-medium">
+                      Operarios Asignados
+                    </Label>
+                    <Input
+                      id={`operators-${process.processId}`}
+                      type="number"
+                      min="0"
+                      max={process.machines.length}
+                      value={process.operatorCount}
+                      onChange={(e) => handleOperatorCountChange(process.processId, parseInt(e.target.value) || 0)}
+                      className="text-center"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor={`efficiency-${process.processId}`} className="text-sm font-medium">
+                      Eficiencia (%)
+                    </Label>
+                    <Input
+                      id={`efficiency-${process.processId}`}
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={process.efficiency}
+                      onChange={(e) => handleEfficiencyChange(process.processId, parseInt(e.target.value) || 100)}
+                      className="text-center"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor={`missing-${process.processId}`} className="text-sm font-medium">
+                      Operarios Faltantes
+                    </Label>
+                    <Input
+                      id={`missing-${process.processId}`}
+                      type="number"
+                      min="0"
+                      max={process.operatorCount}
+                      value={process.missingOperators}
+                      onChange={(e) => handleMissingOperatorsChange(process.processId, parseInt(e.target.value) || 0)}
+                      className="text-center"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Capacidad (minutos)</Label>
+                    <div className="text-center p-2 bg-muted rounded-md">
+                      <div className="text-lg font-bold">
+                        {capacityMinutes.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Métricas en el header */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <div className="text-lg font-bold text-green-600">{operationalCount}</div>
+                    <div className="text-xs text-muted-foreground">Máq. Operativas</div>
+                  </div>
+                  <div className="text-center p-2 bg-muted/50 rounded">
+                    <div className="text-lg font-bold text-blue-600">
+                      {Math.max(0, process.operatorCount - process.missingOperators)}
+                    </div>
                     <div className="text-xs text-muted-foreground">Operarios Efectivos</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">

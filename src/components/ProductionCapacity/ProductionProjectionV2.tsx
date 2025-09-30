@@ -356,7 +356,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               processName,
               components: new Map(),
               availableOperators: processConfig?.operatorCount || 0,
-              availableHours: processConfig ? operatorConfig.availableHours : 0
+              availableHours: processConfig?.availableHours || operatorConfig.availableHours
             });
           }
           
@@ -434,7 +434,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               processName,
               components: new Map(),
               availableOperators: processConfig?.operatorCount || 0,
-              availableHours: processConfig ? operatorConfig.availableHours : 0
+              availableHours: processConfig?.availableHours || operatorConfig.availableHours
             });
           }
           
@@ -949,7 +949,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const processesOverview = Object.entries(processesInfo)
     .filter(([name]) => name.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
     .map(([name, info]) => {
-      const availableHours = info.effective * operatorConfig.availableHours;
+      // Buscar la configuración del proceso para obtener las horas específicas
+      const processConfig = operatorConfig.processes.find(p => 
+        p.processName.toLowerCase() === name.toLowerCase()
+      );
+      const hoursPerOperator = processConfig?.availableHours || operatorConfig.availableHours;
+      const availableHours = info.effective * hoursPerOperator;
       const workloadHours = workloadByProcess[name.toLowerCase()] || 0;
       const occupancy = availableHours > 0 ? (workloadHours / availableHours) * 100 : 0;
       return { 
@@ -958,7 +963,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         available: info.available, 
         operators: info.operators,
         effective: info.effective,
-        availableHours, 
+        availableHours,
         workloadHours, 
         occupancy 
       };
@@ -1002,6 +1007,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         
         // Si es el proceso agrupado, sumar los operadores de ambos procesos
         let totalOperators = processConfig?.operatorCount || 0;
+        let processAvailableHours = processConfig?.availableHours || operatorConfig.availableHours;
+        
         if (displayProcessName === 'Inyección / Roscado Conectores') {
           const inyeccionConfig = operatorConfig.processes.find(p => 
             p.processName.toLowerCase() === 'inyección'
@@ -1010,13 +1017,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             p.processName.toLowerCase() === 'roscadoconectores'
           );
           totalOperators = (inyeccionConfig?.operatorCount || 0) + (roscadoConfig?.operatorCount || 0);
+          // Usar las horas de Inyección (ambos procesos deberían tener las mismas horas de 2 turnos)
+          processAvailableHours = inyeccionConfig?.availableHours || operatorConfig.availableHours;
         }
         
         processMap.set(displayProcessName, {
           processName: displayProcessName,
           machines: new Map(),
           totalTime: 0,
-          availableHours: operatorConfig.availableHours,
+          availableHours: processAvailableHours,
           operators: totalOperators
         });
       }
