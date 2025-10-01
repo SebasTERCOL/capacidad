@@ -100,20 +100,39 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
       if (machinesError) throw machinesError;
       setMachines(machinesData || []);
 
-      // Cargar referencias (sin límite para obtener todos los registros)
-      const { data: referencesData, error: referencesError } = await supabase
-        .from('machines_processes')
-        .select('*', { count: 'exact' })
-        .order('ref')
-        .limit(10000);
-      
-      if (referencesError) throw referencesError;
+      // Cargar referencias en lotes para superar el límite de 1000 de PostgREST
+      const chunkSize = 1000;
+      let from = 0;
+      let to = chunkSize - 1;
+      let allReferences: MachineProcess[] = [];
+      let totalCount: number | null = null;
 
-      // Enriquecer datos con nombres
-      const enrichedReferences = (referencesData || []).map(ref => ({
+      // Primer request con count para conocer el total
+      while (true) {
+        const { data, error, count } = await supabase
+          .from('machines_processes')
+          .select('*', { count: totalCount === null ? 'exact' : undefined })
+          .order('ref')
+          .range(from, to);
+
+        if (error) throw error;
+        if (totalCount === null && typeof count === 'number') totalCount = count;
+
+        allReferences = allReferences.concat(data || []);
+        if (!data || data.length < chunkSize) break; // último lote
+
+        from += chunkSize;
+        to += chunkSize;
+      }
+
+      // Enriquecer datos con nombres usando mapas para O(1)
+      const machineMap = new Map((machinesData || []).map((m) => [m.id, m.name]));
+      const processMap = new Map((processesData || []).map((p) => [p.id, p.name]));
+
+      const enrichedReferences = (allReferences || []).map((ref) => ({
         ...ref,
-        machine_name: machinesData?.find(m => m.id === ref.id_machine)?.name || 'Desconocida',
-        process_name: processesData?.find(p => p.id === ref.id_process)?.name || 'Desconocido'
+        machine_name: machineMap.get(ref.id_machine) || 'Desconocida',
+        process_name: processMap.get(ref.id_process) || 'Desconocido',
       }));
 
       setReferences(enrichedReferences);
