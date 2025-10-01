@@ -1,14 +1,17 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Activity } from "lucide-react";
+import { Activity, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ReferenceManager } from "@/components/ProductionCapacity/ReferenceManager";
 
 const PROJECT_NAME = "Análisis de Capacidad de Producción";
 const DEVELOPER_NAME = "Tu Nombre"; // TODO: reemplazar por el nombre del desarrollador
 
 export default function Cover() {
   const navigate = useNavigate();
+  const [isReferenceManagerOpen, setIsReferenceManagerOpen] = useState(false);
 
   // SEO básico
   useEffect(() => {
@@ -75,7 +78,10 @@ export default function Cover() {
             </p>
             <div className="mt-8 flex gap-3">
               <Button onClick={() => navigate("/app")}>Comenzar análisis</Button>
-              <Button variant="outline" onClick={() => navigate("/app")}>Ver demo</Button>
+              <Button variant="outline" onClick={() => setIsReferenceManagerOpen(true)}>
+                <Settings className="mr-2 h-4 w-4" />
+                Gestionar Referencias
+              </Button>
             </div>
           </div>
 
@@ -97,6 +103,15 @@ export default function Cover() {
           © {new Date().getFullYear()} {DEVELOPER_NAME}
         </div>
       </footer>
+
+      <Dialog open={isReferenceManagerOpen} onOpenChange={setIsReferenceManagerOpen}>
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Gestión de Referencias Máquina-Proceso</DialogTitle>
+          </DialogHeader>
+          <ReferenceManager onClose={() => setIsReferenceManagerOpen(false)} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

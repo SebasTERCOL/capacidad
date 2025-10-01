@@ -59,7 +59,7 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
     frequency: 0
   });
 
-  const itemsPerPage = 20;
+  const itemsPerPage = 50;
 
   useEffect(() => {
     loadData();
