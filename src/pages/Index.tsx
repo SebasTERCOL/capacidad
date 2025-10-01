@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Factory, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Factory, ArrowRight, ArrowLeft } from "lucide-react";
 import { FileUpload, ProductionRequest } from "@/components/ProductionCapacity/FileUpload";
 import { OperatorConfiguration, OperatorConfig } from "@/components/ProductionCapacity/OperatorConfiguration";
 import { ProductionProjectionV2 } from "@/components/ProductionCapacity/ProductionProjectionV2";
@@ -77,14 +79,22 @@ const Index = () => {
       {/* Header */}
       <div className="border-b bg-card">
         <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center gap-3 mb-6">
-            <Factory className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-2xl font-bold">Capacidad de Producción</h1>
-              <p className="text-muted-foreground">
-                Análisis de capacidad y disponibilidad de componentes
-              </p>
+          <div className="flex items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-3">
+              <Factory className="h-8 w-8 text-primary" />
+              <div>
+                <h1 className="text-2xl font-bold">Capacidad de Producción</h1>
+                <p className="text-muted-foreground">
+                  Análisis de capacidad y disponibilidad de componentes
+                </p>
+              </div>
             </div>
+            <Link to="/">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Volver
+              </Button>
+            </Link>
           </div>
 
           {/* Progress Steps */}
