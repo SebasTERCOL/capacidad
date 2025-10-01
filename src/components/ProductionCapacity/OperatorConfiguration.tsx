@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Users, Calendar, Clock, Settings, AlertTriangle } from "lucide-react";
+import { Users, Calendar, Clock, Settings, AlertTriangle, Database } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ReferenceManager } from "./ReferenceManager";
 
 export interface MachineConfig {
   id: number;
@@ -51,6 +53,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   const [workYear, setWorkYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isReferenceManagerOpen, setIsReferenceManagerOpen] = useState(false);
 
   // Calcular horas disponibles para el mes seleccionado (3 turnos - estándar)
   const calculateAvailableHours = (month: number, year: number): number => {
@@ -848,6 +851,37 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           );
         })}
       </div>
+
+      {/* Gestión de Referencias */}
+      <Card className="bg-muted/50">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Database className="h-5 w-5 text-primary" />
+              <div>
+                <div className="font-medium">Gestión de Referencias</div>
+                <div className="text-sm text-muted-foreground">
+                  Administrar referencias de máquinas y procesos
+                </div>
+              </div>
+            </div>
+            <Dialog open={isReferenceManagerOpen} onOpenChange={setIsReferenceManagerOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Administrar Referencias
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Gestión de Referencias de Máquinas y Procesos</DialogTitle>
+                </DialogHeader>
+                <ReferenceManager onClose={() => setIsReferenceManagerOpen(false)} />
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex gap-2">
         <Button variant="outline" onClick={onBack}>
