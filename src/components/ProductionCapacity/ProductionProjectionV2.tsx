@@ -104,7 +104,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const { data: page, error } = await supabase
         .from('machines_processes')
         .select(`
-          sam, frequency, ref, id_machine, id_process,
+          sam, sam_unit, frequency, ref, id_machine, id_process,
           machines!inner(id, name, status),
           processes!inner(id, name)
         `)

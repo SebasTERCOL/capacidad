@@ -140,7 +140,8 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
         .from('machines_processes')
         .select(`
           ref, 
-          sam, 
+          sam,
+          sam_unit, 
           id_machine, 
           id_process,
           machines!inner(id, name, status),
