@@ -100,11 +100,12 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
       if (machinesError) throw machinesError;
       setMachines(machinesData || []);
 
-      // Cargar referencias
+      // Cargar referencias (sin límite para obtener todos los registros)
       const { data: referencesData, error: referencesError } = await supabase
         .from('machines_processes')
-        .select('*')
-        .order('ref');
+        .select('*', { count: 'exact' })
+        .order('ref')
+        .limit(10000);
       
       if (referencesError) throw referencesError;
 
