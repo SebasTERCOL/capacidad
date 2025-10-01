@@ -281,9 +281,9 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
             console.log(`📊 Calculando ocupación para ${componentId}: SAM=${mp.sam}, Cantidad=${cantidadNecesaria}, Máquina=${mp.machines?.name}`);
             
             if (mp.sam > 0 && mp.machines?.status === 'ENCENDIDO') {
-              // Manejar casos especiales para procesos donde SAM está en minutos/unidad
-              const isMinutesPerUnitProcess = mp.processes?.name === 'Inyección' || mp.processes?.name === 'RoscadoConectores';
-              const timeRequiredMinutes = isMinutesPerUnitProcess 
+            // Manejar cálculo usando sam_unit
+            const isMinutesPerUnit = mp.sam_unit === 'min_per_unit';
+            const timeRequiredMinutes = isMinutesPerUnit
                 ? cantidadNecesaria * mp.sam  // Para Inyección/RoscadoConectores: tiempo = cantidad × SAM
                 : cantidadNecesaria / mp.sam; // Para otros: tiempo = cantidad ÷ SAM
               

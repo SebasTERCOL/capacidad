@@ -156,12 +156,6 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return normalizations[lowercaseName] || processName;
   };
 
-  // Función para determinar si un proceso usa Minutos x Unidad
-  const isMinutesPerUnitProcess = (processId: number): boolean => {
-    // Minutos x Unidad: Lavado (70), Inyeccion (140), RoscadoConectores (170)
-    return processId === 70 || processId === 140 || processId === 170;
-  };
-
   // Resuelve el nombre del proceso usando normalización consistente
   const resolveProcessName = (mp: any) => {
     const original = mp?.processes?.name ?? '';
@@ -594,10 +588,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           );
           if (canProcess) {
             score++;
-            // Calcular tiempo de trabajo para este componente
-            const isMinutesPerUnitProcess = machine.id_process === 140 || machine.id_process === 170 || 
-              machine.processes.name === 'Lavado';
-            const timeTotal = isMinutesPerUnitProcess
+            // Calcular tiempo de trabajo para este componente usando sam_unit
+            const isMinutesPerUnit = machine.sam_unit === 'min_per_unit';
+            const timeTotal = isMinutesPerUnit
               ? (componentData.sam > 0 ? componentData.quantity * componentData.sam : 0)
               : (componentData.sam > 0 ? componentData.quantity / componentData.sam : 0);
             totalWorkload += timeTotal / 60; // convertir a horas
@@ -681,8 +674,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         continue;
       }
 
-      // Calcular tiempo total requerido para este componente
-      const isMinutesPerUnit = isMinutesPerUnitProcess(compatibleMachines[0].id_process);
+      // Calcular tiempo total requerido para este componente usando sam_unit
+      const isMinutesPerUnit = compatibleMachines[0].sam_unit === 'min_per_unit';
       const tiempoTotalMinutos = isMinutesPerUnit
         ? (componentData.sam > 0 ? componentData.quantity * componentData.sam : 0)
         : (componentData.sam > 0 ? componentData.quantity / componentData.sam : 0);
@@ -789,8 +782,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const estadoMaquina = bestMachine.machines.status;
     const proceso = bestMachine.processes.name;
 
-    // Manejo especial para procesos donde SAM está en minutos/unidad
-    const isMinutesPerUnit = isMinutesPerUnitProcess(bestMachine.id_process);
+    // Manejo especial para procesos usando sam_unit
+    const isMinutesPerUnit = bestMachine.sam_unit === 'min_per_unit';
     const tiempoTotal = isMinutesPerUnit
       ? (sam > 0 ? refToProcess.cantidad * sam : 0)
       : (sam > 0 ? refToProcess.cantidad / sam : 0);
