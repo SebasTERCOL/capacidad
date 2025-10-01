@@ -177,6 +177,7 @@ export type Database = {
           id_process: number
           ref: string
           sam: number
+          sam_unit: Database["public"]["Enums"]["sam_unit_type"]
         }
         Insert: {
           frequency?: number
@@ -185,6 +186,7 @@ export type Database = {
           id_process: number
           ref: string
           sam: number
+          sam_unit?: Database["public"]["Enums"]["sam_unit_type"]
         }
         Update: {
           frequency?: number
@@ -193,6 +195,7 @@ export type Database = {
           id_process?: number
           ref?: string
           sam?: number
+          sam_unit?: Database["public"]["Enums"]["sam_unit_type"]
         }
         Relationships: [
           {
@@ -663,6 +666,7 @@ export type Database = {
         | "CERRADA"
       product_feature: "GALVANIZADO" | "PINTADO"
       product_type: "MP" | "PP" | "PT" | "INSUMO" | "HERRAMIENTA" | "COMBO"
+      sam_unit_type: "min_per_unit" | "units_per_min"
       status_machine:
         | "PARO"
         | "CAMBIO"
@@ -828,6 +832,7 @@ export const Constants = {
       ],
       product_feature: ["GALVANIZADO", "PINTADO"],
       product_type: ["MP", "PP", "PT", "INSUMO", "HERRAMIENTA", "COMBO"],
+      sam_unit_type: ["min_per_unit", "units_per_min"],
       status_machine: [
         "PARO",
         "CAMBIO",

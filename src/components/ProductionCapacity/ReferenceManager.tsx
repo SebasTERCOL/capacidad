@@ -19,6 +19,7 @@ interface MachineProcess {
   ref: string;
   frequency: number;
   sam: number;
+  sam_unit: 'min_per_unit' | 'units_per_min';
   machine_name?: string;
   process_name?: string;
 }
@@ -48,7 +49,11 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
   const [selectedMachine, setSelectedMachine] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<{ sam: number; frequency: number }>({ sam: 0, frequency: 0 });
+  const [editValues, setEditValues] = useState<{ sam: number; frequency: number; sam_unit: 'min_per_unit' | 'units_per_min' }>({ 
+    sam: 0, 
+    frequency: 0,
+    sam_unit: 'units_per_min'
+  });
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newReference, setNewReference] = useState({
@@ -56,7 +61,8 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
     id_process: '',
     id_machine: '',
     sam: 0,
-    frequency: 0
+    frequency: 0,
+    sam_unit: 'units_per_min' as 'min_per_unit' | 'units_per_min'
   });
 
   const itemsPerPage = 50;
@@ -157,7 +163,11 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
 
   const handleEdit = (ref: MachineProcess) => {
     setEditingId(ref.id);
-    setEditValues({ sam: ref.sam, frequency: ref.frequency });
+    setEditValues({ 
+      sam: ref.sam, 
+      frequency: ref.frequency,
+      sam_unit: ref.sam_unit || 'units_per_min'
+    });
   };
 
   const handleSave = async (id: number) => {
@@ -166,7 +176,8 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
         .from('machines_processes')
         .update({
           sam: editValues.sam,
-          frequency: editValues.frequency
+          frequency: editValues.frequency,
+          sam_unit: editValues.sam_unit
         })
         .eq('id', id);
 
@@ -232,14 +243,22 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
           id_process: parseInt(newReference.id_process),
           id_machine: parseInt(newReference.id_machine),
           sam: newReference.sam,
-          frequency: newReference.frequency
+          frequency: newReference.frequency,
+          sam_unit: newReference.sam_unit
         });
 
       if (error) throw error;
 
       toast.success('Referencia agregada correctamente');
       setIsAddDialogOpen(false);
-      setNewReference({ ref: '', id_process: '', id_machine: '', sam: 0, frequency: 0 });
+      setNewReference({ 
+        ref: '', 
+        id_process: '', 
+        id_machine: '', 
+        sam: 0, 
+        frequency: 0,
+        sam_unit: 'units_per_min'
+      });
       loadData();
     } catch (error) {
       console.error('Error adding reference:', error);
@@ -415,7 +434,7 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="new-sam">SAM</Label>
                       <Input
@@ -425,6 +444,23 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
                         value={newReference.sam}
                         onChange={(e) => setNewReference({ ...newReference, sam: parseFloat(e.target.value) || 0 })}
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-sam-unit">Unidad SAM</Label>
+                      <Select 
+                        value={newReference.sam_unit} 
+                        onValueChange={(value: 'min_per_unit' | 'units_per_min') => 
+                          setNewReference({ ...newReference, sam_unit: value })
+                        }
+                      >
+                        <SelectTrigger id="new-sam-unit">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="min_per_unit">Minutos/Unidad</SelectItem>
+                          <SelectItem value="units_per_min">Unidades/Minuto</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="new-frequency">Frecuencia</Label>
@@ -464,6 +500,7 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
                 <TableHead>Proceso</TableHead>
                 <TableHead>Máquina</TableHead>
                 <TableHead className="text-right">SAM</TableHead>
+                <TableHead>Unidad SAM</TableHead>
                 <TableHead className="text-right">Frecuencia</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
@@ -471,7 +508,7 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
             <TableBody>
               {paginatedReferences.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     No se encontraron referencias con los filtros aplicados
                   </TableCell>
                 </TableRow>
@@ -519,6 +556,28 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
                         />
                       ) : (
                         ref.sam.toFixed(2)
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {editingId === ref.id ? (
+                        <Select 
+                          value={editValues.sam_unit} 
+                          onValueChange={(value: 'min_per_unit' | 'units_per_min') => 
+                            setEditValues({ ...editValues, sam_unit: value })
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="min_per_unit">Min/Unidad</SelectItem>
+                            <SelectItem value="units_per_min">Und/Minuto</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs">
+                          {ref.sam_unit === 'min_per_unit' ? 'Min/Und' : 'Und/Min'}
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
