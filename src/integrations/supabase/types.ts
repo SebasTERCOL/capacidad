@@ -599,21 +599,6 @@ export type Database = {
           },
         ]
       }
-      temp_refs: {
-        Row: {
-          ref: string | null
-          sam: number | null
-        }
-        Insert: {
-          ref?: string | null
-          sam?: number | null
-        }
-        Update: {
-          ref?: string | null
-          sam?: number | null
-        }
-        Relationships: []
-      }
       warehouse: {
         Row: {
           amount: number | null
