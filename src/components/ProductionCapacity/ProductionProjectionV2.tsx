@@ -655,6 +655,71 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       );
 
       if (compatibleMachines.length === 0) {
+        console.log(`     ⚠️ Sin máquinas compatibles entre las seleccionadas para ${componentId}`);
+        
+        // Verificar si hay máquinas compatibles en TODAS las opciones disponibles
+        const allCompatibleMachines = componentData.machineOptions;
+        
+        if (allCompatibleMachines.length > 0) {
+          console.log(`     ℹ️ Hay ${allCompatibleMachines.length} máquinas compatibles disponibles, buscando capacidad sobrante...`);
+          
+          // Encontrar la máquina seleccionada con menor ocupación
+          let machineWithLowestLoad = selectedMachines[0];
+          let lowestLoad = machineWorkloads.get(machineWithLowestLoad.machines.name) || 0;
+          
+          for (const machine of selectedMachines) {
+            const currentLoad = machineWorkloads.get(machine.machines.name) || 0;
+            if (currentLoad < lowestLoad) {
+              lowestLoad = currentLoad;
+              machineWithLowestLoad = machine;
+            }
+          }
+          
+          const ocupacionActual = (lowestLoad / horasDisponiblesPorOperario) * 100;
+          const capacidadDisponible = horasDisponiblesPorOperario - lowestLoad;
+          
+          console.log(`     ✅ Máquina con menor carga: ${machineWithLowestLoad.machines.name} (${ocupacionActual.toFixed(1)}% ocupada, ${capacidadDisponible.toFixed(2)}h disponibles)`);
+          
+          // Usar los datos de SAM de la máquina compatible original
+          const compatibleMachineData = allCompatibleMachines[0];
+          const isMinutesPerUnit = compatibleMachineData.sam_unit === 'min_per_unit';
+          const tiempoTotalMinutos = isMinutesPerUnit
+            ? (componentData.sam > 0 ? componentData.quantity * componentData.sam : 0)
+            : (componentData.sam > 0 ? componentData.quantity / componentData.sam : 0);
+          const tiempoTotalHoras = tiempoTotalMinutos / 60;
+          
+          // Verificar si hay suficiente capacidad disponible
+          if (capacidadDisponible >= tiempoTotalHoras) {
+            // Actualizar carga de la máquina
+            machineWorkloads.set(machineWithLowestLoad.machines.name, lowestLoad + tiempoTotalHoras);
+            
+            const ocupacionMaquinaNueva = ((lowestLoad + tiempoTotalHoras) / horasDisponiblesPorOperario) * 100;
+            const ocupacionProceso = (tiempoTotalHoras / totalHorasDisponibles) * 100;
+            
+            results.push({
+              referencia: componentId,
+              cantidadRequerida: componentData.quantity,
+              sam: componentData.sam,
+              tiempoTotal: tiempoTotalMinutos,
+              maquina: machineWithLowestLoad.machines.name,
+              estadoMaquina: machineWithLowestLoad.machines.estado,
+              proceso: processName,
+              operadoresRequeridos: 1,
+              operadoresDisponibles: processGroup.availableOperators,
+              capacidadPorcentaje: (tiempoTotalHoras / horasDisponiblesPorOperario) * 100,
+              ocupacionMaquina: ocupacionMaquinaNueva,
+              ocupacionProceso: ocupacionProceso,
+              alerta: `ℹ️ Asignado usando capacidad sobrante (ocupación previa: ${ocupacionActual.toFixed(1)}%)`
+            });
+            
+            console.log(`     ✅ Asignado a ${machineWithLowestLoad.machines.name} usando capacidad sobrante`);
+            continue;
+          } else {
+            console.log(`     ❌ Capacidad insuficiente. Requerido: ${tiempoTotalHoras.toFixed(2)}h, Disponible: ${capacidadDisponible.toFixed(2)}h`);
+          }
+        }
+        
+        // Si no se pudo asignar, mostrar error
         console.log(`     ❌ Sin máquinas compatibles para ${componentId}`);
         results.push({
           referencia: componentId,
@@ -669,7 +734,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           capacidadPorcentaje: 0,
           ocupacionMaquina: 0,
           ocupacionProceso: 0,
-          alerta: '❌ Sin máquinas compatibles en la distribución óptima'
+          alerta: '❌ Sin máquinas compatibles o capacidad insuficiente'
         });
         continue;
       }
