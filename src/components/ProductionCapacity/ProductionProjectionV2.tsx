@@ -690,8 +690,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           
           // Verificar si hay suficiente capacidad disponible
           if (capacidadDisponible >= tiempoTotalHoras) {
-            // Actualizar carga de la máquina
-            machineWorkloads.set(machineWithLowestLoad.machines.name, lowestLoad + tiempoTotalHoras);
+            // Actualizar carga de la máquina compatible (no la que presta el operario)
+            const cargaActualCompatible = machineWorkloads.get(compatibleMachineData.machines.name) || 0;
+            machineWorkloads.set(compatibleMachineData.machines.name, cargaActualCompatible + tiempoTotalHoras);
             
             const ocupacionMaquinaNueva = ((lowestLoad + tiempoTotalHoras) / horasDisponiblesPorOperario) * 100;
             const ocupacionProceso = (tiempoTotalHoras / totalHorasDisponibles) * 100;
@@ -701,15 +702,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               cantidadRequerida: componentData.quantity,
               sam: componentData.sam,
               tiempoTotal: tiempoTotalMinutos,
-              maquina: machineWithLowestLoad.machines.name,
-              estadoMaquina: machineWithLowestLoad.machines.estado,
+              maquina: compatibleMachineData.machines.name,
+              estadoMaquina: compatibleMachineData.machines.estado,
               proceso: processName,
               operadoresRequeridos: 1,
               operadoresDisponibles: processGroup.availableOperators,
               capacidadPorcentaje: (tiempoTotalHoras / horasDisponiblesPorOperario) * 100,
-              ocupacionMaquina: ocupacionMaquinaNueva,
+              ocupacionMaquina: (cargaActualCompatible + tiempoTotalHoras) / horasDisponiblesPorOperario * 100,
               ocupacionProceso: ocupacionProceso,
-              alerta: `ℹ️ Asignado usando capacidad sobrante (ocupación previa: ${ocupacionActual.toFixed(1)}%)`
+              alerta: `ℹ️ Usando capacidad sobrante de ${machineWithLowestLoad.machines.name} (${ocupacionActual.toFixed(1)}% ocupado)`
             });
             
             console.log(`     ✅ Asignado a ${machineWithLowestLoad.machines.name} usando capacidad sobrante`);
