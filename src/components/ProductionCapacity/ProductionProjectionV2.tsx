@@ -982,6 +982,55 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return 'default';
   };
 
+  // Función para ordenar procesos según el orden deseado
+  const getProcessOrder = (processName: string): number => {
+    const orderMap: Record<string, number> = {
+      'inyección': 1,
+      'inyección / roscado conectores': 1,
+      'roscadoconectores': 1,
+      'punzonado': 2,
+      'corte': 3,
+      'troquelado': 4,
+      'despunte': 4,
+      'doblez': 5,
+      'soldadura': 6,
+      'mig': 7,
+      'lavado': 8,
+      'pintura': 9,
+      'horno': 10,
+      'ensambleint': 11,
+      'tapas': 12,
+      'ensamble': 13,
+      'empaque': 14
+    };
+    
+    const normalized = processName.toLowerCase();
+    return orderMap[normalized] || 999;
+  };
+
+  // Función para ordenar máquinas de manera natural (TQ-01, TQ-02, TQ-10)
+  const sortMachineNames = (a: string, b: string): number => {
+    // Extraer prefijo y número
+    const matchA = a.match(/^([A-Z]+)-?(\d+)$/i);
+    const matchB = b.match(/^([A-Z]+)-?(\d+)$/i);
+    
+    if (matchA && matchB) {
+      const [, prefixA, numA] = matchA;
+      const [, prefixB, numB] = matchB;
+      
+      // Primero comparar prefijos
+      if (prefixA !== prefixB) {
+        return prefixA.localeCompare(prefixB);
+      }
+      
+      // Luego comparar números
+      return parseInt(numA, 10) - parseInt(numB, 10);
+    }
+    
+    // Fallback a comparación alfabética
+    return a.localeCompare(b);
+  };
+
   // Capacidad por proceso basada en configuración y proyección actual
   const processesInfo = operatorConfig.processes
     .filter(process => process.processName.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
@@ -1026,7 +1075,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         workloadHours, 
         occupancy 
       };
-    });
+    })
+    .sort((a, b) => getProcessOrder(a.name) - getProcessOrder(b.name));
 
   // Crear datos para la vista jerárquica
   const createHierarchicalData = () => {
@@ -1122,19 +1172,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const totalAvailableHours = processGroup.operators * processGroup.availableHours * 60; // en minutos
       const totalOccupancy = totalAvailableHours > 0 ? (processGroup.totalTime / totalAvailableHours) * 100 : 0;
 
-      const machines = Array.from(processGroup.machines.values()).map(machine => {
-        const machineAvailableTime = processGroup.availableHours * 60; // en minutos
-        const machineOccupancy = machineAvailableTime > 0 ? (machine.totalTime / machineAvailableTime) * 100 : 0;
+      // Ordenar máquinas de manera natural
+      const machines = Array.from(processGroup.machines.values())
+        .sort((a, b) => sortMachineNames(a.machineName, b.machineName))
+        .map(machine => {
+          const machineAvailableTime = processGroup.availableHours * 60; // en minutos
+          const machineOccupancy = machineAvailableTime > 0 ? (machine.totalTime / machineAvailableTime) * 100 : 0;
 
-        return {
-          machineId: machine.machineId,
-          machineName: machine.machineName,
-          totalTime: machine.totalTime,
-          occupancy: machineOccupancy,
-          capacity: machineAvailableTime,
-          references: machine.references
-        };
-      });
+          return {
+            machineId: machine.machineId,
+            machineName: machine.machineName,
+            totalTime: machine.totalTime,
+            occupancy: machineOccupancy,
+            capacity: machineAvailableTime,
+            references: machine.references
+          };
+        });
 
       return {
         processName: processGroup.processName,
@@ -1145,7 +1198,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         effectiveStations: processGroup.operators,
         operators: processGroup.operators
       };
-    }).filter(p => p.machines.length > 0 || p.totalTime > 0); // Solo procesos con trabajo asignado
+    })
+    .filter(p => p.machines.length > 0 || p.totalTime > 0) // Solo procesos con trabajo asignado
+    .sort((a, b) => getProcessOrder(a.processName) - getProcessOrder(b.processName));
   };
 
   const [viewMode, setViewMode] = useState<'hierarchical' | 'table'>('hierarchical');
