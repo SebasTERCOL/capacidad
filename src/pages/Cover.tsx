@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ReferenceManager } from "@/components/ProductionCapacity/ReferenceManager";
 
 const PROJECT_NAME = "Análisis de Capacidad de Producción";
-const DEVELOPER_NAME = "Tu Nombre"; // TODO: reemplazar por el nombre del desarrollador
+const DEVELOPER_NAME = "Sebastián Rincón García"; // TODO: reemplazar por el nombre del desarrollador
 
 export default function Cover() {
   const navigate = useNavigate();
@@ -19,7 +19,10 @@ export default function Cover() {
 
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) {
-      metaDesc.setAttribute("content", `${PROJECT_NAME} – desarrollado por ${DEVELOPER_NAME}. Cálculo y proyección de capacidad por procesos y máquinas.`);
+      metaDesc.setAttribute(
+        "content",
+        `${PROJECT_NAME} – desarrollado por ${DEVELOPER_NAME}. Cálculo y proyección de capacidad por procesos y máquinas.`,
+      );
     } else {
       const m = document.createElement("meta");
       m.name = "description";
@@ -66,16 +69,12 @@ export default function Cover() {
       <main className="mx-auto max-w-6xl px-6 py-16">
         <section className="grid md:grid-cols-2 gap-8 items-center">
           <div>
-            <h1 className="text-3xl md:text-5xl font-bold tracking-tight">
-              {PROJECT_NAME}
-            </h1>
+            <h1 className="text-3xl md:text-5xl font-bold tracking-tight">{PROJECT_NAME}</h1>
             <p className="mt-4 text-muted-foreground">
-              Plataforma para cargar demanda, configurar operarios y proyectar la
-              producción por procesos y máquinas con asignación inteligente.
+              Plataforma para cargar demanda, configurar operarios y proyectar la producción por procesos y máquinas con
+              asignación inteligente.
             </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Desarrollado por {DEVELOPER_NAME}
-            </p>
+            <p className="mt-2 text-sm text-muted-foreground">Desarrollado por {DEVELOPER_NAME}</p>
             <div className="mt-8 flex gap-3">
               <Button onClick={() => navigate("/app")}>Comenzar análisis</Button>
               <Button variant="outline" onClick={() => setIsReferenceManagerOpen(true)}>
