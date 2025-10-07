@@ -240,7 +240,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                         Cant: <span className="font-medium text-foreground">{ref.cantidadRequerida}</span>
                                       </span>
                                       <span className="text-muted-foreground">
-                                        SAM: <span className="font-medium text-foreground">{ref.sam}</span>
+                                        SAM: <span className="font-medium text-foreground">{ref.sam.toFixed(3)}</span>
                                       </span>
                                       <span className="text-muted-foreground">
                                         Tiempo: <span className="font-medium text-foreground">{formatTime(ref.tiempoTotal)}</span>

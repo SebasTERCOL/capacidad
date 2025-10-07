@@ -1424,7 +1424,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
                   <TableRow key={index}>
                     <TableCell className="font-medium">{item.referencia}</TableCell>
                     <TableCell>{item.cantidadRequerida}</TableCell>
-                    <TableCell>{item.sam}</TableCell>
+                    <TableCell>{item.sam.toFixed(3)}</TableCell>
                     <TableCell>{formatTime(item.tiempoTotal)}</TableCell>
                     <TableCell>{item.proceso}</TableCell>
                     <TableCell>{item.maquina}</TableCell>
