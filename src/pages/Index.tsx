@@ -131,6 +131,16 @@ const Index = () => {
           {renderStepContent()}
         </div>
       </div>
+
+      {/* Footer */}
+      <div className="border-t bg-card mt-8">
+        <div className="container mx-auto px-4 py-4">
+          <div className="text-center text-sm text-muted-foreground">
+            <p>Desarrollado por <span className="font-semibold text-foreground">Sebastián Rincón García</span></p>
+            <p className="text-xs">Ingeniero de Control y Automatización</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
