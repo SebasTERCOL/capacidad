@@ -454,9 +454,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             });
 
           if (existingComponent) {
-            // SUMAR cantidad cuando el componente aparece en múltiples referencias
-            existingComponent.quantity += quantity;
-            
+            // No sumar aquí: la cantidad ya fue consolidada a nivel global (evitar duplicar por cada máquina)
             if (!existingComponent.sam || existingComponent.sam === 0) {
               const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
               existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
