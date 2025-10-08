@@ -156,6 +156,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return normalizations[lowercaseName] || processName;
   };
 
+  // Normalización de referencias (IDs) para evitar problemas de espacios, guiones, mayúsculas, etc.
+  const normalizeRefId = (ref: string) => {
+    return String(ref || '')
+      .normalize('NFKC')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, ''); // dejar solo alfanuméricos
+  };
+
   // Resuelve el nombre del proceso usando normalización consistente
   const resolveProcessName = (mp: any) => {
     const original = mp?.processes?.name ?? '';
@@ -293,6 +301,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       console.log(`✅ Referencias principales consolidadas: ${mainReferences.size}`);
       console.log(`✅ Componentes consolidados: ${consolidatedComponents.size}`);
+
+      // Consolidar por referencia normalizada para unificar claves como "TAPA12R" y "TAPA 12R"
+      const consolidatedByNorm = new Map<string, { quantity: number; display: string }>();
+      for (const [id, qty] of consolidatedComponents.entries()) {
+        const norm = normalizeRefId(id);
+        const existing = consolidatedByNorm.get(norm);
+        if (existing) {
+          existing.quantity += qty;
+        } else {
+          consolidatedByNorm.set(norm, { quantity: qty, display: id });
+        }
+      }
+      console.log(`✅ Componentes consolidados normalizados: ${consolidatedByNorm.size}`);
       
       // Log all available processes from machines_processes
       console.log('\n🔍 === PROCESOS ENCONTRADOS EN BD ===');
@@ -321,7 +342,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // Incluir referencias principales
       for (const [ref, quantity] of mainReferences.entries()) {
         const machinesProcesses = machinesData.filter((mp: any) => 
-          String(mp.ref).trim().toUpperCase() === String(ref).trim().toUpperCase()
+          normalizeRefId(mp.ref) === normalizeRefId(ref)
         );
         
         for (const mp of machinesProcesses) {
@@ -396,10 +417,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         }
       }
 
-      // Incluir componentes consolidados
-      for (const [componentId, quantity] of consolidatedComponents.entries()) {
+      // Incluir componentes consolidados (normalizados)
+      for (const [normId, entry] of consolidatedByNorm.entries()) {
+        const { quantity, display } = entry;
         const machinesProcesses = machinesData.filter((mp: any) => 
-          String(mp.ref).trim().toUpperCase() === String(componentId).trim().toUpperCase()
+          normalizeRefId(mp.ref) === normId
         );
         
         for (const mp of machinesProcesses) {
@@ -412,7 +434,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             continue;
           }
           
-          console.log(`     · Componente ${componentId} - Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
+          console.log(`     · Componente ${display} - Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
           
           if (!processGroups.has(processName)) {
             const processConfig = operatorConfig.processes.find(p => 
@@ -433,7 +455,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           }
           
           const processGroup = processGroups.get(processName)!;
-          const existingComponent = processGroup.components.get(componentId);
+          const existingComponent = processGroup.components.get(display);
           const availableMachines = machinesProcesses
             .filter((machine: any) => {
               const resolved = resolveProcessName(machine);
@@ -465,7 +487,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             existingComponent.machineOptions = merged;
           } else {
             const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
-            processGroup.components.set(componentId, {
+            processGroup.components.set(display, {
               quantity,
               sam: samForProcess,
               machineOptions: availableMachines
