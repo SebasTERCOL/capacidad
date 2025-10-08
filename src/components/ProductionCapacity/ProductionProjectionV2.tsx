@@ -376,7 +376,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             });
 
           if (existingComponent) {
-            // No sumar cantidad de nuevo: solo fusionar opciones de máquinas y completar SAM si falta
+            // SUMAR cantidad cuando el componente aparece en múltiples referencias
+            existingComponent.quantity += quantity;
+            
             if (!existingComponent.sam || existingComponent.sam === 0) {
               const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
               existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
@@ -454,7 +456,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             });
 
           if (existingComponent) {
-            // No duplicar cantidad: mantener la requerida y fusionar máquinas/SAM
+            // SUMAR cantidad cuando el componente aparece en múltiples referencias
+            existingComponent.quantity += quantity;
+            
             if (!existingComponent.sam || existingComponent.sam === 0) {
               const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
               existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
