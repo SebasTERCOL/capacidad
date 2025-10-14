@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2 } from "lucide-react";
 
 interface ReferenceItem {
   referencia: string;
@@ -18,9 +19,12 @@ interface MachineGroup {
   machineId: string;
   machineName: string;
   totalTime: number;
+  totalMachineTime?: number; // Tiempo total considerando todos los procesos
   occupancy: number;
   capacity: number;
   references: ReferenceItem[];
+  isShared?: boolean; // Si la máquina es compartida con otros procesos
+  sharedWith?: string[]; // Lista de procesos que comparten esta máquina
 }
 
 interface ProcessGroup {
@@ -210,9 +214,27 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                     <Settings className="h-4 w-4" />
                                     Máquina {machine.machineName}
                                   </CardTitle>
+                                  {machine.isShared && (
+                                    <Tooltip>
+                                      <TooltipTrigger>
+                                        <Badge variant="outline" className="text-xs flex items-center gap-1">
+                                          <Link2 className="h-3 w-3" />
+                                          Compartida
+                                        </Badge>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>Compartida con: {machine.sharedWith?.join(', ')}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
                   <Badge variant={getOccupancyVariant(machine.occupancy)} className="text-xs">
                     {machine.occupancy.toFixed(1)}% - {formatTime(machine.totalTime)} / {formatTime(process.availableHours * 60)}
                   </Badge>
+                  {machine.isShared && machine.totalMachineTime && machine.totalMachineTime !== machine.totalTime && (
+                    <span className="text-xs text-muted-foreground">
+                      (Total máquina: {formatTime(machine.totalMachineTime)})
+                    </span>
+                  )}
                                 </div>
                                 <div className="text-sm text-muted-foreground">
                                   {machine.references.length} referencia{machine.references.length !== 1 ? 's' : ''}

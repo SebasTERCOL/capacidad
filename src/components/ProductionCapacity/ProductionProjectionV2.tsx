@@ -1136,40 +1136,25 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       operators: number;
     }>();
 
-    // Consolidar datos por proceso y máquina
+    // Map para rastrear tiempo total por máquina física (todas las máquinas compartidas)
+    const sharedMachineWorkload = new Map<string, number>();
+    
+    // Map para rastrear qué procesos usan cada máquina
+    const machineToProcesses = new Map<string, Set<string>>();
+
+    // Consolidar datos por proceso y máquina (SIN agrupación visual)
     projection.forEach(item => {
-      // Agrupar visualmente Inyección y RoscadoConectores
-      let displayProcessName = item.proceso;
-      if (item.proceso === 'Inyección' || item.proceso === 'RoscadoConectores') {
-        displayProcessName = 'Inyección / Roscado Conectores';
-      }
+      const displayProcessName = item.proceso; // Mantener nombre original
       
       if (!processMap.has(displayProcessName)) {
-        // Buscar configuración del proceso original (no el agrupado)
         const processConfig = operatorConfig.processes.find(p => 
           p.processName.toLowerCase() === item.proceso.toLowerCase()
         );
         
-        // Si es el proceso agrupado, sumar los operadores de ambos procesos
-        let totalOperators = processConfig?.operatorCount || 0;
-        // Aplicar eficiencia al cálculo de horas disponibles del proceso
+        const totalOperators = processConfig?.operatorCount || 0;
         const baseHours = processConfig?.availableHours || operatorConfig.availableHours;
         const efficiencyFactor = (processConfig?.efficiency ?? 100) / 100;
-        let processAvailableHours = baseHours * efficiencyFactor;
-        
-        if (displayProcessName === 'Inyección / Roscado Conectores') {
-          const inyeccionConfig = operatorConfig.processes.find(p => 
-            p.processName.toLowerCase() === 'inyección'
-          );
-          const roscadoConfig = operatorConfig.processes.find(p => 
-            p.processName.toLowerCase() === 'roscadoconectores'
-          );
-          totalOperators = (inyeccionConfig?.operatorCount || 0) + (roscadoConfig?.operatorCount || 0);
-          // Usar horas efectivas de Inyección considerando su eficiencia
-          const injBase = inyeccionConfig?.availableHours || operatorConfig.availableHours;
-          const injEff = (inyeccionConfig?.efficiency ?? 100) / 100;
-          processAvailableHours = injBase * injEff;
-        }
+        const processAvailableHours = baseHours * efficiencyFactor;
         
         processMap.set(displayProcessName, {
           processName: displayProcessName,
@@ -1203,9 +1188,29 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         alerta: item.alerta || undefined
       });
 
-      // Actualizar tiempos totales
+      // Actualizar tiempos totales del proceso
       machineGroup.totalTime += item.tiempoTotal;
       processGroup.totalTime += item.tiempoTotal;
+      
+      // NUEVO: Rastrear tiempo total de máquina compartida
+      const currentMachineTotal = sharedMachineWorkload.get(item.maquina) || 0;
+      sharedMachineWorkload.set(item.maquina, currentMachineTotal + item.tiempoTotal);
+      
+      // NUEVO: Rastrear procesos que usan esta máquina
+      if (!machineToProcesses.has(item.maquina)) {
+        machineToProcesses.set(item.maquina, new Set());
+      }
+      machineToProcesses.get(item.maquina)!.add(displayProcessName);
+      
+      console.log(`[DEBUG] ${item.maquina} - ${displayProcessName}: +${item.tiempoTotal.toFixed(2)}min (Total máquina: ${sharedMachineWorkload.get(item.maquina)!.toFixed(2)}min)`);
+    });
+
+    // Log resumen de máquinas compartidas
+    machineToProcesses.forEach((processes, machine) => {
+      if (processes.size > 1) {
+        const totalTime = sharedMachineWorkload.get(machine) || 0;
+        console.log(`[SHARED MACHINE] ${machine} usada por: ${Array.from(processes).join(', ')} | Total: ${totalTime.toFixed(2)}min`);
+      }
     });
 
     // Convertir a formato esperado por HierarchicalCapacityView
@@ -1218,15 +1223,26 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         .sort((a, b) => sortMachineNames(a.machineName, b.machineName))
         .map(machine => {
           const machineAvailableTime = processGroup.availableHours * 60; // en minutos
-          const machineOccupancy = machineAvailableTime > 0 ? (machine.totalTime / machineAvailableTime) * 100 : 0;
+          
+          // NUEVO: Usar tiempo total de todas las cargas en la máquina para ocupación real
+          const totalMachineTime = sharedMachineWorkload.get(machine.machineName) || machine.totalTime;
+          const machineOccupancy = machineAvailableTime > 0 ? (totalMachineTime / machineAvailableTime) * 100 : 0;
+          
+          // Determinar si es compartida
+          const processesUsingMachine = machineToProcesses.get(machine.machineName);
+          const isShared = processesUsingMachine && processesUsingMachine.size > 1;
+          const sharedWith = isShared ? Array.from(processesUsingMachine!).filter(p => p !== processGroup.processName) : [];
 
           return {
             machineId: machine.machineId,
             machineName: machine.machineName,
-            totalTime: machine.totalTime,
-            occupancy: machineOccupancy,
+            totalTime: machine.totalTime, // Tiempo solo de este proceso
+            totalMachineTime, // NUEVO: Tiempo total considerando todos los procesos
+            occupancy: machineOccupancy, // Ocupación considerando toda la carga
             capacity: machineAvailableTime,
-            references: machine.references
+            references: machine.references,
+            isShared, // NUEVO
+            sharedWith // NUEVO
           };
         });
 
