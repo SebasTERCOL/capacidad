@@ -664,8 +664,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       machineWorkloads.set(machine.machines.name, 0);
     });
 
-    const horasDisponiblesPorOperario = processGroup.availableHours;
+    // Obtener el factor de eficiencia del proceso
+    const processConfig = operatorConfig.processes.find(p => 
+      p.processName.toLowerCase() === processName.toLowerCase()
+    );
+    const efficiencyFactor = (processConfig?.efficiency || 100) / 100;
+    
+    // Aplicar el factor de eficiencia a las horas disponibles
+    const horasDisponiblesPorOperario = processGroup.availableHours * efficiencyFactor;
     const totalHorasDisponibles = processGroup.availableOperators * horasDisponiblesPorOperario;
+    
+    console.log(`   📊 Eficiencia del proceso: ${(efficiencyFactor * 100).toFixed(1)}%`);
+    console.log(`   ⏱️ Horas base por operario: ${processGroup.availableHours.toFixed(2)}h`);
+    console.log(`   ⏱️ Horas efectivas por operario (con eficiencia): ${horasDisponiblesPorOperario.toFixed(2)}h`);
+    console.log(`   ⏱️ Total horas disponibles: ${totalHorasDisponibles.toFixed(2)}h`);
     
     // Procesar cada componente
     for (const [componentId, componentData] of processGroup.components.entries()) {
