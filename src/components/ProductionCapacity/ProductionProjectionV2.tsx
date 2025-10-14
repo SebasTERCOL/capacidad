@@ -275,19 +275,29 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       
       console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
 
+      // Identificar si una referencia pertenece al proceso Ensamble (id_process = 90)
+      const isAssemblyRef = (ref: string) => {
+        const norm = normalizeRefId(ref);
+        const matchById = machinesData.some((mp: any) => Number(mp.id_process) === 90 && normalizeRefId(mp.ref) === norm);
+        if (matchById) return true;
+        // Fallback por nombre de proceso
+        return machinesData.some((mp: any) => normalizeRefId(mp.ref) === norm && String(mp.processes?.name || '').toLowerCase().includes('ensamble'));
+      };
+
       // Procesar cada referencia de entrada
       for (const item of data) {
         const normalizedRef = normalizeRefId(item.referencia);
         console.log(`🔍 Procesando: ${item.referencia} → Normalizada: ${normalizedRef} (cantidad: ${item.cantidad})`);
         
-        // Intentar obtener BOM para esta referencia
+        // Intentar obtener BOM para esta referencia (se usará solo si es Ensamble)
         const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
-        
-        if (allComponents.size > 0) {
-          // Si tiene BOM, agregar a referencias principales
+        const assembly = isAssemblyRef(normalizedRef);
+
+        if (assembly && allComponents.size > 0) {
+          // Si es Ensamble, tratar como referencia padre y expandir BOM
           const currentMainQty = mainReferences.get(normalizedRef) || 0;
           mainReferences.set(normalizedRef, currentMainQty + item.cantidad);
-          console.log(`   📦 Referencia padre agregada: ${normalizedRef} = ${currentMainQty} + ${item.cantidad} = ${currentMainQty + item.cantidad}`);
+          console.log(`   📦 Referencia padre (Ensamble) agregada: ${normalizedRef} = ${currentMainQty} + ${item.cantidad} = ${currentMainQty + item.cantidad}`);
           
           // Agregar componentes del BOM
           for (const [componentId, quantity] of allComponents.entries()) {
@@ -297,10 +307,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             console.log(`   ├─ Componente del BOM: ${componentId} → ${normalizedComponentId} = ${currentQty} + ${quantity} = ${currentQty + quantity}`);
           }
         } else {
-          // Si NO tiene BOM, agregar a componentes consolidados
+          // No es Ensamble: siempre sumar como componente directo (aunque tenga BOM)
           const currentComponentQty = consolidatedComponents.get(normalizedRef) || 0;
           consolidatedComponents.set(normalizedRef, currentComponentQty + item.cantidad);
-          console.log(`   📄 Referencia directa (sin BOM): ${normalizedRef} = ${currentComponentQty} + ${item.cantidad} = ${currentComponentQty + item.cantidad}`);
+          console.log(`   📄 Referencia tratada como componente: ${normalizedRef} = ${currentComponentQty} + ${item.cantidad} = ${currentComponentQty + item.cantidad}`);
         }
       }
 
