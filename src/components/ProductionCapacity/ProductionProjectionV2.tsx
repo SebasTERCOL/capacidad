@@ -275,29 +275,43 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       // Procesar cada referencia de entrada
       for (const item of data) {
-        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
+        const normalizedRef = normalizeRefId(item.referencia);
+        console.log(`🔍 Procesando: ${item.referencia} → Normalizada: ${normalizedRef} (cantidad: ${item.cantidad})`);
         
         // Intentar obtener BOM para esta referencia
         const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
         
         if (allComponents.size > 0) {
-          // Si tiene BOM, agregar a referencias principales Y expandir componentes
-          const currentMainQty = mainReferences.get(item.referencia) || 0;
-          mainReferences.set(item.referencia, currentMainQty + item.cantidad);
+          // Si tiene BOM, agregar a referencias principales
+          const currentMainQty = mainReferences.get(normalizedRef) || 0;
+          mainReferences.set(normalizedRef, currentMainQty + item.cantidad);
+          console.log(`   📦 Referencia padre agregada: ${normalizedRef} = ${currentMainQty} + ${item.cantidad} = ${currentMainQty + item.cantidad}`);
           
-          // Agregar SOLO los componentes (no la referencia principal)
+          // Agregar componentes del BOM
           for (const [componentId, quantity] of allComponents.entries()) {
-            const currentQty = consolidatedComponents.get(componentId) || 0;
-            consolidatedComponents.set(componentId, currentQty + quantity);
+            const normalizedComponentId = normalizeRefId(componentId);
+            const currentQty = consolidatedComponents.get(normalizedComponentId) || 0;
+            consolidatedComponents.set(normalizedComponentId, currentQty + quantity);
+            console.log(`   ├─ Componente del BOM: ${componentId} → ${normalizedComponentId} = ${currentQty} + ${quantity} = ${currentQty + quantity}`);
           }
-          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes (referencia principal incluida en mainReferences)`);
         } else {
-          // Si NO tiene BOM, agregar SOLO a componentes consolidados (NO duplicar)
-          const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
-          consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
-          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa (sin duplicar)`);
+          // Si NO tiene BOM, agregar a componentes consolidados
+          const currentComponentQty = consolidatedComponents.get(normalizedRef) || 0;
+          consolidatedComponents.set(normalizedRef, currentComponentQty + item.cantidad);
+          console.log(`   📄 Referencia directa (sin BOM): ${normalizedRef} = ${currentComponentQty} + ${item.cantidad} = ${currentComponentQty + item.cantidad}`);
         }
       }
+
+      // Log final de consolidación
+      console.log('\n📊 === RESUMEN DE CONSOLIDACIÓN ===');
+      console.log('Referencias principales (padres):');
+      mainReferences.forEach((qty, ref) => {
+        console.log(`   🔹 ${ref}: ${qty} unidades`);
+      });
+      console.log('\nComponentes consolidados:');
+      consolidatedComponents.forEach((qty, ref) => {
+        console.log(`   🔸 ${ref}: ${qty} unidades`);
+      });
 
       console.log(`✅ Referencias principales consolidadas: ${mainReferences.size}`);
       console.log(`✅ Componentes consolidados: ${consolidatedComponents.size}`);
