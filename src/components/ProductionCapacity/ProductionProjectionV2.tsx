@@ -182,9 +182,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     visited: Set<string> = new Set(),
     bomDataOverride?: any[]
   ): Map<string, number> => {
-    // Normalizar el productId para consistencia
-    const normalizedProductId = normalizeRefId(productId);
-    const cacheKey = `${normalizedProductId}_${quantity}`;
+    const cacheKey = `${productId}_${quantity}`;
     
     // Verificar cache
     if (bomCache.has(cacheKey)) {
@@ -192,24 +190,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
     
     // Prevenir loops infinitos
-    if (level > 10 || visited.has(normalizedProductId)) {
+    if (level > 10 || visited.has(productId)) {
       console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
       return new Map();
     }
     
-    visited.add(normalizedProductId);
+    visited.add(productId);
     const componentsMap = new Map<string, number>();
     
     // Fuente de datos: preferir override local si existe para evitar races con setState
     const source = bomDataOverride ?? allBomData;
 
-    // Buscar en datos precargados usando normalización
+    // Buscar en datos precargados
     const bomItems = source.filter((item: any) => 
-      normalizeRefId(String(item.product_id)) === normalizedProductId
+      String(item.product_id).trim().toUpperCase() === String(productId).trim().toUpperCase()
     );
     
     console.log(`🔍 Buscando BOM para ${productId}:`, {
-      productId: normalizedProductId,
+      productId: String(productId).trim().toUpperCase(),
       totalBomRecords: source.length,
       foundItems: bomItems.length,
       sampleProductIds: source.slice(0, 5).map((item: any) => item.product_id)
@@ -227,7 +225,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     
     // Procesar cada componente
     for (const bomItem of bomItems) {
-      const componentId = normalizeRefId(String(bomItem.component_id));
+      const componentId = String(bomItem.component_id).trim().toUpperCase();
       const componentQuantity = quantity * Number(bomItem.amount);
       
       // Agregar este componente al mapa
@@ -275,55 +273,31 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       
       console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
 
-      // Identificar si una referencia pertenece al proceso Ensamble (id_process = 90)
-      const isAssemblyRef = (ref: string) => {
-        const norm = normalizeRefId(ref);
-        const matchById = machinesData.some((mp: any) => Number(mp.id_process) === 90 && normalizeRefId(mp.ref) === norm);
-        if (matchById) return true;
-        // Fallback por nombre de proceso
-        return machinesData.some((mp: any) => normalizeRefId(mp.ref) === norm && String(mp.processes?.name || '').toLowerCase().includes('ensamble'));
-      };
-
       // Procesar cada referencia de entrada
       for (const item of data) {
-        const normalizedRef = normalizeRefId(item.referencia);
-        console.log(`🔍 Procesando: ${item.referencia} → Normalizada: ${normalizedRef} (cantidad: ${item.cantidad})`);
+        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
         
-        // Intentar obtener BOM para esta referencia (se usará solo si es Ensamble)
+        // Intentar obtener BOM para esta referencia
         const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
-        const assembly = isAssemblyRef(normalizedRef);
-
-        if (assembly && allComponents.size > 0) {
-          // Si es Ensamble, tratar como referencia padre y expandir BOM
-          const currentMainQty = mainReferences.get(normalizedRef) || 0;
-          mainReferences.set(normalizedRef, currentMainQty + item.cantidad);
-          console.log(`   📦 Referencia padre (Ensamble) agregada: ${normalizedRef} = ${currentMainQty} + ${item.cantidad} = ${currentMainQty + item.cantidad}`);
+        
+        if (allComponents.size > 0) {
+          // Si tiene BOM, agregar a referencias principales Y expandir componentes
+          const currentMainQty = mainReferences.get(item.referencia) || 0;
+          mainReferences.set(item.referencia, currentMainQty + item.cantidad);
           
-          // Agregar componentes del BOM
+          // Agregar SOLO los componentes (no la referencia principal)
           for (const [componentId, quantity] of allComponents.entries()) {
-            const normalizedComponentId = normalizeRefId(componentId);
-            const currentQty = consolidatedComponents.get(normalizedComponentId) || 0;
-            consolidatedComponents.set(normalizedComponentId, currentQty + quantity);
-            console.log(`   ├─ Componente del BOM: ${componentId} → ${normalizedComponentId} = ${currentQty} + ${quantity} = ${currentQty + quantity}`);
+            const currentQty = consolidatedComponents.get(componentId) || 0;
+            consolidatedComponents.set(componentId, currentQty + quantity);
           }
+          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes (referencia principal incluida en mainReferences)`);
         } else {
-          // No es Ensamble: siempre sumar como componente directo (aunque tenga BOM)
-          const currentComponentQty = consolidatedComponents.get(normalizedRef) || 0;
-          consolidatedComponents.set(normalizedRef, currentComponentQty + item.cantidad);
-          console.log(`   📄 Referencia tratada como componente: ${normalizedRef} = ${currentComponentQty} + ${item.cantidad} = ${currentComponentQty + item.cantidad}`);
+          // Si NO tiene BOM, agregar SOLO a componentes consolidados (NO duplicar)
+          const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
+          consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
+          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa (sin duplicar)`);
         }
       }
-
-      // Log final de consolidación
-      console.log('\n📊 === RESUMEN DE CONSOLIDACIÓN ===');
-      console.log('Referencias principales (padres):');
-      mainReferences.forEach((qty, ref) => {
-        console.log(`   🔹 ${ref}: ${qty} unidades`);
-      });
-      console.log('\nComponentes consolidados:');
-      consolidatedComponents.forEach((qty, ref) => {
-        console.log(`   🔸 ${ref}: ${qty} unidades`);
-      });
 
       console.log(`✅ Referencias principales consolidadas: ${mainReferences.size}`);
       console.log(`✅ Componentes consolidados: ${consolidatedComponents.size}`);
