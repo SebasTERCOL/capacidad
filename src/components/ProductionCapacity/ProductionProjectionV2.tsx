@@ -928,8 +928,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     processWorkload.set(proceso, newProcessWorkload);
 
     // Calcular ocupación
-    const horasDisponiblesPorMaquina = operatorConfig.availableHours;
-    const horasDisponiblesPorProceso = operatorConfig.availableHours * operadoresDisponibles;
+    const efficiencyFactor = (processConfig?.efficiency ?? 100) / 100;
+    const baseHours = processConfig?.availableHours || operatorConfig.availableHours;
+    const horasDisponiblesPorMaquina = baseHours * efficiencyFactor;
+    const horasDisponiblesPorProceso = horasDisponiblesPorMaquina * operadoresDisponibles;
     
     const ocupacionMaquina = (newMachineWorkload / horasDisponiblesPorMaquina) * 100;
     const ocupacionProceso = (newProcessWorkload / horasDisponiblesPorProceso) * 100;
@@ -1150,7 +1152,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         
         // Si es el proceso agrupado, sumar los operadores de ambos procesos
         let totalOperators = processConfig?.operatorCount || 0;
-        let processAvailableHours = processConfig?.availableHours || operatorConfig.availableHours;
+        // Aplicar eficiencia al cálculo de horas disponibles del proceso
+        const baseHours = processConfig?.availableHours || operatorConfig.availableHours;
+        const efficiencyFactor = (processConfig?.efficiency ?? 100) / 100;
+        let processAvailableHours = baseHours * efficiencyFactor;
         
         if (displayProcessName === 'Inyección / Roscado Conectores') {
           const inyeccionConfig = operatorConfig.processes.find(p => 
@@ -1160,8 +1165,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             p.processName.toLowerCase() === 'roscadoconectores'
           );
           totalOperators = (inyeccionConfig?.operatorCount || 0) + (roscadoConfig?.operatorCount || 0);
-          // Usar las horas de Inyección (ambos procesos deberían tener las mismas horas de 2 turnos)
-          processAvailableHours = inyeccionConfig?.availableHours || operatorConfig.availableHours;
+          // Usar horas efectivas de Inyección considerando su eficiencia
+          const injBase = inyeccionConfig?.availableHours || operatorConfig.availableHours;
+          const injEff = (inyeccionConfig?.efficiency ?? 100) / 100;
+          processAvailableHours = injBase * injEff;
         }
         
         processMap.set(displayProcessName, {
