@@ -182,7 +182,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     visited: Set<string> = new Set(),
     bomDataOverride?: any[]
   ): Map<string, number> => {
-    const cacheKey = `${productId}_${quantity}`;
+    // Normalizar el productId para consistencia
+    const normalizedProductId = normalizeRefId(productId);
+    const cacheKey = `${normalizedProductId}_${quantity}`;
     
     // Verificar cache
     if (bomCache.has(cacheKey)) {
@@ -190,24 +192,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
     
     // Prevenir loops infinitos
-    if (level > 10 || visited.has(productId)) {
+    if (level > 10 || visited.has(normalizedProductId)) {
       console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
       return new Map();
     }
     
-    visited.add(productId);
+    visited.add(normalizedProductId);
     const componentsMap = new Map<string, number>();
     
     // Fuente de datos: preferir override local si existe para evitar races con setState
     const source = bomDataOverride ?? allBomData;
 
-    // Buscar en datos precargados
+    // Buscar en datos precargados usando normalización
     const bomItems = source.filter((item: any) => 
-      String(item.product_id).trim().toUpperCase() === String(productId).trim().toUpperCase()
+      normalizeRefId(String(item.product_id)) === normalizedProductId
     );
     
     console.log(`🔍 Buscando BOM para ${productId}:`, {
-      productId: String(productId).trim().toUpperCase(),
+      productId: normalizedProductId,
       totalBomRecords: source.length,
       foundItems: bomItems.length,
       sampleProductIds: source.slice(0, 5).map((item: any) => item.product_id)
@@ -225,7 +227,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     
     // Procesar cada componente
     for (const bomItem of bomItems) {
-      const componentId = String(bomItem.component_id).trim().toUpperCase();
+      const componentId = normalizeRefId(String(bomItem.component_id));
       const componentQuantity = quantity * Number(bomItem.amount);
       
       // Agregar este componente al mapa
