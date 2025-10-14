@@ -174,6 +174,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return normalized;
   };
 
+  // Determina si una referencia pertenece a Ensamble (id_process = 90)
+  const isAssemblyRef = (ref: string, machinesData: any[]): boolean => {
+    const normRef = normalizeRefId(ref);
+    return machinesData.some((mp: any) =>
+      normalizeRefId(mp.ref) === normRef && (
+        mp.id_process === 90 || (mp.processes?.name?.toLowerCase?.() || '').includes('ensamble')
+      )
+    );
+  };
+
   // Función recursiva optimizada con cache
   const getRecursiveBOMOptimized = (
     productId: string, 
@@ -182,7 +192,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     visited: Set<string> = new Set(),
     bomDataOverride?: any[]
   ): Map<string, number> => {
-    const cacheKey = `${productId}_${quantity}`;
+    const normProductId = normalizeRefId(productId);
+    const cacheKey = `${normProductId}_${quantity}`;
     
     // Verificar cache
     if (bomCache.has(cacheKey)) {
@@ -190,24 +201,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     }
     
     // Prevenir loops infinitos
-    if (level > 10 || visited.has(productId)) {
+    if (level > 10 || visited.has(normProductId)) {
       console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
       return new Map();
     }
     
-    visited.add(productId);
+    visited.add(normProductId);
     const componentsMap = new Map<string, number>();
     
     // Fuente de datos: preferir override local si existe para evitar races con setState
     const source = bomDataOverride ?? allBomData;
 
-    // Buscar en datos precargados
+    // Buscar en datos precargados usando normalización robusta
     const bomItems = source.filter((item: any) => 
-      String(item.product_id).trim().toUpperCase() === String(productId).trim().toUpperCase()
+      normalizeRefId(item.product_id) === normProductId
     );
     
     console.log(`🔍 Buscando BOM para ${productId}:`, {
-      productId: String(productId).trim().toUpperCase(),
+      productId: normProductId,
       totalBomRecords: source.length,
       foundItems: bomItems.length,
       sampleProductIds: source.slice(0, 5).map((item: any) => item.product_id)
@@ -225,7 +236,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     
     // Procesar cada componente
     for (const bomItem of bomItems) {
-      const componentId = String(bomItem.component_id).trim().toUpperCase();
+      const componentId = normalizeRefId(String(bomItem.component_id));
       const componentQuantity = quantity * Number(bomItem.amount);
       
       // Agregar este componente al mapa
@@ -271,36 +282,39 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const consolidatedComponents = new Map<string, number>();
       const mainReferences = new Map<string, number>();
       
-      console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
+      console.log('\n🔄 === FASE DE CONSOLIDACIÓN (REGLAS ENSAMBLE id_process=90) ===');
 
       // Procesar cada referencia de entrada
       for (const item of data) {
-        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
+        const ref = item.referencia;
+        const qty = item.cantidad;
+        const normRef = normalizeRefId(ref);
+        const parent = isAssemblyRef(ref, machinesData);
+        console.log(`🔍 Ref: ${ref} (norm: ${normRef}) qty=${qty} -> ${parent ? 'PADRE (Ensamble)' : 'HIJA/DIRECTA'}`);
         
-        // Intentar obtener BOM para esta referencia
-        const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
-        
-        if (allComponents.size > 0) {
-          // Si tiene BOM, agregar a referencias principales Y expandir componentes
-          const currentMainQty = mainReferences.get(item.referencia) || 0;
-          mainReferences.set(item.referencia, currentMainQty + item.cantidad);
+        if (parent) {
+          // Marcar como referencia padre (Ensamble) y expandir BOM
+          const currentMainQty = mainReferences.get(ref) || 0;
+          mainReferences.set(ref, currentMainQty + qty);
           
-          // Agregar SOLO los componentes (no la referencia principal)
+          const allComponents = getRecursiveBOMOptimized(ref, qty, 0, new Set(), bomData);
+          console.log(`   · BOM encontrada: ${allComponents.size} componentes para ${ref}`);
+          
           for (const [componentId, quantity] of allComponents.entries()) {
             const currentQty = consolidatedComponents.get(componentId) || 0;
             consolidatedComponents.set(componentId, currentQty + quantity);
+            console.log(`     + ${componentId}: +${quantity} (acum=${(currentQty + quantity)})`);
           }
-          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes (referencia principal incluida en mainReferences)`);
         } else {
-          // Si NO tiene BOM, agregar SOLO a componentes consolidados (NO duplicar)
-          const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
-          consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
-          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa (sin duplicar)`);
+          // No es Ensamble: sumar cantidad directa sin expandir BOM
+          const currentQty = consolidatedComponents.get(normRef) || 0;
+          consolidatedComponents.set(normRef, currentQty + qty);
+          console.log(`   · Directo: ${ref} -> +${qty} (acum=${(currentQty + qty)})`);
         }
       }
 
-      console.log(`✅ Referencias principales consolidadas: ${mainReferences.size}`);
-      console.log(`✅ Componentes consolidados: ${consolidatedComponents.size}`);
+      console.log(`✅ Referencias principales (padres) consolidadas: ${mainReferences.size}`);
+      console.log(`✅ Componentes consolidados (raw): ${consolidatedComponents.size}`);
 
       // Consolidar por referencia normalizada para unificar claves como "TAPA12R" y "TAPA 12R"
       const consolidatedByNorm = new Map<string, { quantity: number; display: string }>();
