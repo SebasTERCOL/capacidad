@@ -860,12 +860,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Intento 1: Búsqueda exacta
     let config = operatorConfig.processes.find(p => p.processName === proceso);
     
-    // Intento 2: Si es Troquelado o Despunte, buscar configuración unificada
+    // Intento 2: Si es Troquelado o Despunte, buscar configuración unificada (con variaciones)
     if (!config && (proceso === 'Troquelado' || proceso === 'Despunte')) {
-      config = operatorConfig.processes.find(p => p.processName === 'Troquelado / Despunte');
+      // Buscar variaciones de "Troquelado / Despunte" o "Troquelado/Despunte"
+      config = operatorConfig.processes.find(p => {
+        const normalized = p.processName.replace(/\s/g, '').toLowerCase();
+        return normalized === 'troquelado/despunte' || normalized === 'despunte/troquelado';
+      });
+      
       if (config) {
-        console.log(`✅ Usando configuración unificada "Troquelado / Despunte" para proceso: ${proceso}`);
+        console.log(`✅ Usando configuración unificada "${config.processName}" para proceso: ${proceso}`);
+      } else {
+        console.warn(`⚠️ No se encontró configuración para ${proceso}. Configuraciones disponibles:`, 
+          operatorConfig.processes.map(p => p.processName));
       }
+    }
+    
+    if (!config) {
+      console.warn(`⚠️ No se encontró configuración para proceso: ${proceso}`);
     }
     
     return config;
@@ -936,8 +948,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const horasDisponiblesPorMaquina = baseHours * efficiencyFactor;
     const horasDisponiblesPorProceso = horasDisponiblesPorMaquina * operadoresDisponibles;
     
-    const ocupacionMaquina = (newMachineWorkload / horasDisponiblesPorMaquina) * 100;
-    const ocupacionProceso = (newProcessWorkload / horasDisponiblesPorProceso) * 100;
+    // Validar para evitar división por cero
+    const ocupacionMaquina = horasDisponiblesPorMaquina > 0 
+      ? (newMachineWorkload / horasDisponiblesPorMaquina) * 100 
+      : 0;
+    const ocupacionProceso = horasDisponiblesPorProceso > 0 
+      ? (newProcessWorkload / horasDisponiblesPorProceso) * 100 
+      : 0;
 
     // Determinar alertas
     let alerta: string | null = null;
