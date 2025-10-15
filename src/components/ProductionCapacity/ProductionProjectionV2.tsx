@@ -357,9 +357,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           console.log(`     · Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
           
           if (!processGroups.has(processName)) {
-            const processConfig = operatorConfig.processes.find(p => 
-              p.processName.toLowerCase() === processName.toLowerCase()
-            );
+            const processConfig = findProcessConfig(processName, operatorConfig);
             
             console.log(`     · Buscando configuración para: "${processName}" -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
             if (!processConfig) {
@@ -382,9 +380,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               return resolved !== null && resolved.toLowerCase() === processName.toLowerCase();
             })
             .filter((machine: any) => {
-              const processConfig = operatorConfig.processes.find(p => 
-                p.processName.toLowerCase() === processName.toLowerCase()
-              );
+              const processConfig = findProcessConfig(processName, operatorConfig);
               if (!processConfig) {
                 console.log(`     ⚠️ No hay configuración para proceso: ${processName}`);
                 return false;
@@ -436,9 +432,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           console.log(`     · Componente ${display} - Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
           
           if (!processGroups.has(processName)) {
-            const processConfig = operatorConfig.processes.find(p => 
-              p.processName.toLowerCase() === processName.toLowerCase()
-            );
+            const processConfig = findProcessConfig(processName, operatorConfig);
             
             console.log(`     · Buscando configuración para: "${processName}" -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
             if (!processConfig) {
@@ -461,9 +455,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               return resolved !== null && resolved.toLowerCase() === processName.toLowerCase();
             })
             .filter((machine: any) => {
-              const processConfig = operatorConfig.processes.find(p => 
-                p.processName.toLowerCase() === processName.toLowerCase()
-              );
+              const processConfig = findProcessConfig(processName, operatorConfig);
               if (!processConfig) {
                 console.log(`     ⚠️ No hay configuración para proceso: ${processName}`);
                 return false;
@@ -551,9 +543,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     for (const mp of availableMachineProcesses) {
       const resolvedName = resolveProcessName(mp);
       if (!resolvedName) continue;
-      const processConfig = operatorConfig.processes.find(p => 
-        p.processName.toLowerCase() === resolvedName.toLowerCase()
-      );
+      const processConfig = findProcessConfig(resolvedName, operatorConfig);
       if (!processConfig) continue;
       
       const machine = processConfig.machines.find(m => m.id === mp.id_machine);
@@ -664,9 +654,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     });
 
     // Obtener el factor de eficiencia del proceso
-    const processConfig = operatorConfig.processes.find(p => 
-      p.processName.toLowerCase() === processName.toLowerCase()
-    );
+    const processConfig = findProcessConfig(processName, operatorConfig);
     const efficiencyFactor = (processConfig?.efficiency || 100) / 100;
     
     // Aplicar el factor de eficiencia a las horas disponibles
@@ -867,6 +855,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return results;
   };
 
+  // Función helper para buscar configuración de proceso con fallback para procesos compartidos
+  const findProcessConfig = (proceso: string, operatorConfig: OperatorConfig) => {
+    // Intento 1: Búsqueda exacta
+    let config = operatorConfig.processes.find(p => p.processName === proceso);
+    
+    // Intento 2: Si es Troquelado o Despunte, buscar configuración unificada
+    if (!config && (proceso === 'Troquelado' || proceso === 'Despunte')) {
+      config = operatorConfig.processes.find(p => p.processName === 'Troquelado / Despunte');
+      if (config) {
+        console.log(`✅ Usando configuración unificada "Troquelado / Despunte" para proceso: ${proceso}`);
+      }
+    }
+    
+    return config;
+  };
+
   // Función helper para calcular tiempo de proceso
   const calculateProcessTime = (
     bestMachine: any,
@@ -891,7 +895,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Verificar si es proceso especial
     const isSpecialProcess = proceso === 'Lavado' || proceso === 'Pintura';
     
-    const processConfig = operatorConfig.processes.find(p => p.processName === proceso);
+    const processConfig = findProcessConfig(proceso, operatorConfig);
     const operadoresDisponibles = processConfig ? processConfig.operatorCount : 0;
     
     if (isSpecialProcess) {
@@ -1093,9 +1097,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     .filter(([name]) => name.toLowerCase() !== 'reclasificacion') // Excluir Reclasificacion
     .map(([name, info]) => {
       // Buscar la configuración del proceso para obtener las horas específicas
-      const processConfig = operatorConfig.processes.find(p => 
-        p.processName.toLowerCase() === name.toLowerCase()
-      );
+      const processConfig = findProcessConfig(name, operatorConfig);
       const hoursPerOperator = processConfig?.availableHours || operatorConfig.availableHours;
       const availableHours = info.effective * hoursPerOperator;
       const workloadHours = workloadByProcess[name.toLowerCase()] || 0;
@@ -1146,9 +1148,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const displayProcessName = item.proceso; // Mantener nombre original
       
       if (!processMap.has(displayProcessName)) {
-        const processConfig = operatorConfig.processes.find(p => 
-          p.processName.toLowerCase() === item.proceso.toLowerCase()
-        );
+        const processConfig = findProcessConfig(item.proceso, operatorConfig);
         
         const totalOperators = processConfig?.operatorCount || 0;
         const baseHours = processConfig?.availableHours || operatorConfig.availableHours;
