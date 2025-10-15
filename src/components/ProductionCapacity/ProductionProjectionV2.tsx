@@ -141,10 +141,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       return null; // Retornar null para procesos excluidos
     }
     
-    // Normalizaciones específicas - Unificar SOLO procesos que comparten máquinas
+    // Normalizaciones específicas - Solo capitalización consistente, mantiene procesos separados
     const normalizations: { [key: string]: string } = {
-      'despunte': 'Troquelado / Despunte',
-      'troquelado': 'Troquelado / Despunte',
+      'despunte': 'Despunte',
+      'troquelado': 'Troquelado',
       // Inyección y RoscadoConectores se mantienen separados para cálculos
       'inyeccion': 'Inyección',
       'inyección': 'Inyección',
@@ -169,8 +169,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const original = mp?.processes?.name ?? '';
     const normalized = normalizeProcessName(original);
     
-    // Usar siempre el nombre normalizado sin forzar cambios
-    // Esto asegura que "Troquelado" y "Despunte" se agrupen como "Troquelado / Despunte"
+    // Mantiene los nombres de procesos separados para análisis independiente
     return normalized;
   };
 
