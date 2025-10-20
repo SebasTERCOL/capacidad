@@ -3,8 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { Progress } from "@/components/ui/progress";
+import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock, Calendar } from "lucide-react";
+import { OvertimeShift } from "./OvertimeConfiguration";
 
 interface ReferenceItem {
   referencia: string;
@@ -25,6 +27,8 @@ interface MachineGroup {
   references: ReferenceItem[];
   isShared?: boolean; // Si la máquina es compartida con otros procesos
   sharedWith?: string[]; // Lista de procesos que comparten esta máquina
+  overtimeHours?: number; // Horas extras aplicadas
+  overtimeShifts?: OvertimeShift; // Turnos extras configurados
 }
 
 interface ProcessGroup {
@@ -230,19 +234,65 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                         <p>Compartida con: {machine.sharedWith?.join(', ')}</p>
                                       </TooltipContent>
                                     </Tooltip>
-                                  )}
+                                   )}
                   <Badge variant={getOccupancyVariant(machine.occupancy)} className="text-xs">
-                    {machine.occupancy.toFixed(1)}% - {formatTime(machine.totalTime)} / {formatTime(process.availableHours * 60)}
+                    {machine.occupancy.toFixed(1)}% - {formatTime(machine.totalTime)} / {formatTime(machine.capacity)}
                   </Badge>
                   {machine.isShared && machine.totalMachineTime && machine.totalMachineTime !== machine.totalTime && (
                     <span className="text-xs text-muted-foreground">
                       (Total máquina: {formatTime(machine.totalMachineTime)})
                     </span>
                   )}
+                  {machine.overtimeHours && machine.overtimeHours > 0 && (
+                    <>
+                      <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                        <Clock className="h-3 w-3 mr-1" />
+                        +{formatTime(machine.overtimeHours * 60)} extras
+                      </Badge>
+                      
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                              <Calendar className="h-3 w-3 mr-1" />
+                              Domingos
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="text-xs">
+                              <div className="font-semibold mb-1">Turnos extra:</div>
+                              {machine.overtimeShifts?.shift1 && <div>✓ Turno 1 (5:25am - 1:00pm)</div>}
+                              {machine.overtimeShifts?.shift2 && <div>✓ Turno 2 (1:00pm - 8:37pm)</div>}
+                              {machine.overtimeShifts?.shift3 && <div>✓ Turno 3 (8:37pm - 5:25am)</div>}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </>
+                  )}
                                 </div>
                                 <div className="text-sm text-muted-foreground">
                                   {machine.references.length} referencia{machine.references.length !== 1 ? 's' : ''}
                                 </div>
+                              </div>
+                              
+                              {/* Progress Bar de Ocupación */}
+                              <div className="space-y-1 min-w-[200px]">
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                  <span>Ocupación</span>
+                                  <span className={machine.occupancy > 100 ? 'text-red-600 font-semibold' : ''}>
+                                    {machine.occupancy.toFixed(1)}%
+                                    {machine.overtimeHours && machine.overtimeHours > 0 && (
+                                      <span className="text-purple-600 ml-1">
+                                        (con extras)
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                                <Progress 
+                                  value={Math.min(100, machine.occupancy)} 
+                                  className={`h-2 ${machine.overtimeHours && machine.overtimeHours > 0 ? 'bg-purple-100' : ''}`}
+                                />
                               </div>
                             </CardHeader>
                           </CollapsibleTrigger>

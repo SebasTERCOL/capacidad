@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
 import { Clock, Calendar, AlertCircle, CheckCircle2, Settings } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -48,7 +49,8 @@ export interface OvertimeConfig {
   processes: OvertimeProcessConfig[];
   workMonth: number;
   workYear: number;
-  sundaysInMonth: number;
+  totalSundaysInMonth: number;
+  selectedSundays: number;
 }
 
 interface OvertimeConfigurationProps {
@@ -69,6 +71,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set());
   const [overtimeConfig, setOvertimeConfig] = useState<OvertimeProcessConfig[]>([]);
   const sundaysInMonth = calculateSundaysInMonth(workMonth, workYear);
+  const [selectedSundays, setSelectedSundays] = useState<number>(sundaysInMonth);
 
   // Inicializar configuración de horas extras
   useEffect(() => {
@@ -158,7 +161,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                 newShifts,
                 machine.operators,
                 machine.efficiency,
-                sundaysInMonth
+                selectedSundays
               );
               return { ...machine, shifts: newShifts, additionalCapacity };
             }
@@ -175,7 +178,8 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
       processes: overtimeConfig,
       workMonth,
       workYear,
-      sundaysInMonth
+      totalSundaysInMonth: sundaysInMonth,
+      selectedSundays
     };
     onApply(config);
   };
@@ -229,13 +233,66 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
           <CardTitle className="text-lg">Resumen de Optimización</CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Selector de Domingos */}
+          <div className="mb-4 p-4 border rounded-lg bg-blue-50">
+            <Label className="text-sm font-medium mb-2 block">
+              Seleccionar Cantidad de Domingos a Trabajar
+            </Label>
+            
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedSundays(Math.max(0, selectedSundays - 1))}
+                  disabled={selectedSundays === 0}
+                >
+                  -
+                </Button>
+                
+                <div className="text-center min-w-[100px]">
+                  <div className="text-3xl font-bold text-primary">{selectedSundays}</div>
+                  <div className="text-xs text-muted-foreground">domingos</div>
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedSundays(Math.min(sundaysInMonth, selectedSundays + 1))}
+                  disabled={selectedSundays === sundaysInMonth}
+                >
+                  +
+                </Button>
+              </div>
+              
+              <Separator orientation="vertical" className="h-12" />
+              
+              <div className="flex-1">
+                <div className="text-sm text-muted-foreground mb-1">
+                  Domingos disponibles en {getMonthName(workMonth)} {workYear}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  <span className="font-semibold">{sundaysInMonth} domingos</span>
+                </div>
+              </div>
+            </div>
+            
+            {selectedSundays < sundaysInMonth && (
+              <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                <span>Usando {selectedSundays} de {sundaysInMonth} domingos disponibles</span>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="flex items-center justify-center gap-1 mb-1">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="text-2xl font-bold text-primary">{sundaysInMonth}</div>
-              <div className="text-sm text-muted-foreground">Domingos Disponibles</div>
+              <div className="text-2xl font-bold text-primary">{selectedSundays}</div>
+              <div className="text-sm text-muted-foreground">Domingos Seleccionados</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl font-bold text-destructive">{formatTime(totalDeficit)}</div>
@@ -437,6 +494,36 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
         ))}
       </div>
 
+      {/* Información de Domingos por Mes */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Información de Domingos por Mes ({workYear})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs">
+            {Array.from({ length: 12 }, (_, i) => {
+              const month = i + 1;
+              const sundays = calculateSundaysInMonth(month, workYear);
+              const isCurrentMonth = month === workMonth;
+              
+              return (
+                <div 
+                  key={month}
+                  className={`p-2 rounded border text-center ${
+                    isCurrentMonth 
+                      ? 'bg-primary text-primary-foreground border-primary font-semibold' 
+                      : 'bg-muted'
+                  }`}
+                >
+                  <div className="font-medium">{getMonthName(month).substring(0, 3)}</div>
+                  <div className="text-lg font-bold">{sundays}</div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Botones de Acción */}
       <div className="flex gap-2">
         <Button variant="outline" onClick={onBack}>
@@ -455,6 +542,14 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
 };
 
 // Utilidades
+function getMonthName(month: number): string {
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  return months[month - 1];
+}
+
 function calculateSundaysInMonth(month: number, year: number): number {
   const date = new Date(year, month - 1, 1);
   const lastDay = new Date(year, month, 0).getDate();

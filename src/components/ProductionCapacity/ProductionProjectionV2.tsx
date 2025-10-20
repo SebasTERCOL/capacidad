@@ -1248,7 +1248,32 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const machines = Array.from(processGroup.machines.values())
         .sort((a, b) => sortMachineNames(a.machineName, b.machineName))
         .map(machine => {
-          const machineAvailableTime = processGroup.availableHours * 60; // en minutos
+          let machineAvailableTime = processGroup.availableHours * 60; // en minutos
+          
+          // APLICAR HORAS EXTRAS SI EXISTEN
+          let overtimeHours = 0;
+          let overtimeShifts = undefined;
+          
+          if (overtimeConfig) {
+            const processOvertimeConfig = overtimeConfig.processes.find(
+              p => p.processName === processGroup.processName
+            );
+            
+            if (processOvertimeConfig) {
+              const machineOvertimeConfig = processOvertimeConfig.machines.find(
+                m => m.machineId === machine.machineId && m.enabled
+              );
+              
+              if (machineOvertimeConfig && machineOvertimeConfig.additionalCapacity > 0) {
+                // Convertir minutos adicionales a horas
+                overtimeHours = machineOvertimeConfig.additionalCapacity / 60;
+                machineAvailableTime += machineOvertimeConfig.additionalCapacity;
+                overtimeShifts = machineOvertimeConfig.shifts;
+                
+                console.log(`✅ [OVERTIME] ${machine.machineName}: +${overtimeHours.toFixed(2)}h extras (capacidad total: ${(machineAvailableTime/60).toFixed(2)}h)`);
+              }
+            }
+          }
           
           // NUEVO: Usar tiempo total de todas las cargas en la máquina para ocupación real
           const totalMachineTime = sharedMachineWorkload.get(machine.machineName) || machine.totalTime;
@@ -1266,11 +1291,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             machineName: machine.machineName,
             totalTime: machine.totalTime, // Tiempo solo de este proceso
             totalMachineTime, // NUEVO: Tiempo total considerando todos los procesos
-            occupancy: machineOccupancy, // Ocupación considerando toda la carga
+            occupancy: machineOccupancy, // Ocupación considerando toda la carga (incluyendo extras)
             capacity: machineAvailableTime,
             references: machine.references,
             isShared, // NUEVO
-            sharedWith // NUEVO
+            sharedWith, // NUEVO
+            overtimeHours, // NUEVO: Horas extras aplicadas
+            overtimeShifts // NUEVO: Turnos configurados
           };
         });
 
