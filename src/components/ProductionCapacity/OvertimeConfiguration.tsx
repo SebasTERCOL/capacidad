@@ -32,6 +32,7 @@ export interface OvertimeProcessConfig {
   processName: string;
   enabled: boolean;
   machines: OvertimeMachineConfig[];
+  selectedSundays: number; // Domingos seleccionados para este proceso específico
 }
 
 export interface DeficitInfo {
@@ -50,7 +51,6 @@ export interface OvertimeConfig {
   workMonth: number;
   workYear: number;
   totalSundaysInMonth: number;
-  selectedSundays: number;
 }
 
 interface OvertimeConfigurationProps {
@@ -71,7 +71,6 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set());
   const [overtimeConfig, setOvertimeConfig] = useState<OvertimeProcessConfig[]>([]);
   const sundaysInMonth = calculateSundaysInMonth(workMonth, workYear);
-  const [selectedSundays, setSelectedSundays] = useState<number>(sundaysInMonth);
 
   // Inicializar configuración de horas extras
   useEffect(() => {
@@ -90,6 +89,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
       initialConfig.push({
         processName,
         enabled: false,
+        selectedSundays: sundaysInMonth, // Inicializar con todos los domingos disponibles
         machines: machines.map(machine => ({
           machineId: machine.machineId,
           machineName: machine.machineName,
@@ -161,11 +161,33 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                 newShifts,
                 machine.operators,
                 machine.efficiency,
-                selectedSundays
+                process.selectedSundays // Usar domingos del proceso específico
               );
               return { ...machine, shifts: newShifts, additionalCapacity };
             }
             return machine;
+          })
+        };
+      }
+      return process;
+    }));
+  };
+
+  const handleProcessSundaysChange = (processName: string, newSundays: number) => {
+    setOvertimeConfig(prev => prev.map(process => {
+      if (process.processName === processName) {
+        return {
+          ...process,
+          selectedSundays: newSundays,
+          machines: process.machines.map(machine => {
+            // Recalcular capacidad adicional con los nuevos domingos
+            const additionalCapacity = calculateAdditionalCapacity(
+              machine.shifts,
+              machine.operators,
+              machine.efficiency,
+              newSundays
+            );
+            return { ...machine, additionalCapacity };
           })
         };
       }
@@ -178,8 +200,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
       processes: overtimeConfig,
       workMonth,
       workYear,
-      totalSundaysInMonth: sundaysInMonth,
-      selectedSundays
+      totalSundaysInMonth: sundaysInMonth
     };
     onApply(config);
   };
@@ -233,67 +254,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
           <CardTitle className="text-lg">Resumen de Optimización</CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Selector de Domingos */}
-          <div className="mb-4 p-4 border rounded-lg bg-blue-50">
-            <Label className="text-sm font-medium mb-2 block">
-              Seleccionar Cantidad de Domingos a Trabajar
-            </Label>
-            
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedSundays(Math.max(0, selectedSundays - 1))}
-                  disabled={selectedSundays === 0}
-                >
-                  -
-                </Button>
-                
-                <div className="text-center min-w-[100px]">
-                  <div className="text-3xl font-bold text-primary">{selectedSundays}</div>
-                  <div className="text-xs text-muted-foreground">domingos</div>
-                </div>
-                
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedSundays(Math.min(sundaysInMonth, selectedSundays + 1))}
-                  disabled={selectedSundays === sundaysInMonth}
-                >
-                  +
-                </Button>
-              </div>
-              
-              <Separator orientation="vertical" className="h-12" />
-              
-              <div className="flex-1">
-                <div className="text-sm text-muted-foreground mb-1">
-                  Domingos disponibles en {getMonthName(workMonth)} {workYear}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-primary" />
-                  <span className="font-semibold">{sundaysInMonth} domingos</span>
-                </div>
-              </div>
-            </div>
-            
-            {selectedSundays < sundaysInMonth && (
-              <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                <span>Usando {selectedSundays} de {sundaysInMonth} domingos disponibles</span>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 bg-muted rounded-lg">
-              <div className="flex items-center justify-center gap-1 mb-1">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-              </div>
-              <div className="text-2xl font-bold text-primary">{selectedSundays}</div>
-              <div className="text-sm text-muted-foreground">Domingos Seleccionados</div>
-            </div>
+          <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl font-bold text-destructive">{formatTime(totalDeficit)}</div>
               <div className="text-sm text-muted-foreground">Déficit Total</div>
@@ -366,7 +327,60 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
 
               <CollapsibleContent>
                 <CardContent className="pt-0">
-                  <div className="space-y-3 ml-8">
+                  <div className="space-y-4 ml-8">
+                    {/* Selector de Domingos por Proceso */}
+                    <div className="p-4 border rounded-lg bg-blue-50">
+                      <Label className="text-sm font-medium mb-2 block">
+                        Domingos a Trabajar en {process.processName}
+                      </Label>
+                      
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleProcessSundaysChange(process.processName, Math.max(0, process.selectedSundays - 1))}
+                            disabled={process.selectedSundays === 0 || !process.enabled}
+                          >
+                            -
+                          </Button>
+                          
+                          <div className="text-center min-w-[80px]">
+                            <div className="text-2xl font-bold text-primary">{process.selectedSundays}</div>
+                            <div className="text-xs text-muted-foreground">domingos</div>
+                          </div>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleProcessSundaysChange(process.processName, Math.min(sundaysInMonth, process.selectedSundays + 1))}
+                            disabled={process.selectedSundays === sundaysInMonth || !process.enabled}
+                          >
+                            +
+                          </Button>
+                        </div>
+                        
+                        <Separator orientation="vertical" className="h-12" />
+                        
+                        <div className="flex-1">
+                          <div className="text-sm text-muted-foreground mb-1">
+                            Domingos disponibles en {getMonthName(workMonth)} {workYear}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-primary" />
+                            <span className="font-semibold">{sundaysInMonth} domingos</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {process.selectedSundays < sundaysInMonth && (
+                        <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          <span>Usando {process.selectedSundays} de {sundaysInMonth} domingos disponibles</span>
+                        </div>
+                      )}
+                    </div>
+
                     {process.machines.map((machine) => (
                       <Card key={machine.machineId} className="border-l-4 border-l-amber-500">
                         <CardHeader className="pb-3">

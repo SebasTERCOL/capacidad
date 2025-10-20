@@ -836,24 +836,61 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         });
       }
 
-      // Si queda tiempo sin asignar, crear alerta
+      // Si queda tiempo sin asignar, verificar si las horas extras pueden cubrirlo
       if (tiempoRestante > 0.01) { // tolerancia para errores de redondeo
         console.log(`     ⚠️ Tiempo sin asignar: ${tiempoRestante.toFixed(2)}h`);
-        results.push({
-          referencia: componentId,
-          cantidadRequerida: Math.round(componentData.quantity * (tiempoRestante / tiempoTotalHoras)),
-          sam: componentData.sam,
-          tiempoTotal: tiempoRestante * 60,
-          maquina: 'Capacidad insuficiente',
-          estadoMaquina: 'Sobrecarga',
-          proceso: processName,
-          operadoresRequeridos: 1,
-          operadoresDisponibles: processGroup.availableOperators,
-          capacidadPorcentaje: 0,
-          ocupacionMaquina: 0,
-          ocupacionProceso: 0,
-          alerta: '🔴 Capacidad insuficiente - Requiere más operarios o máquinas'
-        });
+        
+        // Calcular capacidad extra disponible para este componente
+        let overtimeCapacityAvailableHours = 0;
+        
+        if (overtimeConfig) {
+          const processOvertimeConfig = overtimeConfig.processes.find(
+            p => p.processName === processName
+          );
+          
+          if (processOvertimeConfig && processOvertimeConfig.enabled) {
+            // Sumar capacidad extra de todas las máquinas compatibles habilitadas
+            for (const machine of compatibleMachines) {
+              const machineOvertimeConfig = processOvertimeConfig.machines.find(
+                m => m.machineId === machine.machines.id && m.enabled
+              );
+              
+              if (machineOvertimeConfig && machineOvertimeConfig.additionalCapacity > 0) {
+                const overtimeHours = machineOvertimeConfig.additionalCapacity / 60;
+                overtimeCapacityAvailableHours += overtimeHours;
+                console.log(`     ✅ [OVERTIME COVERAGE] ${machine.machines.name}: +${overtimeHours.toFixed(2)}h extras disponibles`);
+              }
+            }
+          }
+        }
+        
+        // Calcular déficit después de aplicar horas extras
+        const deficitAfterOvertime = Math.max(0, tiempoRestante - overtimeCapacityAvailableHours);
+        
+        console.log(`     📊 Capacidad extra disponible: ${overtimeCapacityAvailableHours.toFixed(2)}h`);
+        console.log(`     📊 Déficit después de extras: ${deficitAfterOvertime.toFixed(2)}h`);
+        
+        // Solo crear máquina imaginaria si aún hay déficit después de aplicar horas extras
+        if (deficitAfterOvertime > 0.01) {
+          console.log(`     🔴 Creando máquina imaginaria con déficit de ${deficitAfterOvertime.toFixed(2)}h`);
+          results.push({
+            referencia: componentId,
+            cantidadRequerida: Math.round(componentData.quantity * (deficitAfterOvertime / tiempoTotalHoras)),
+            sam: componentData.sam,
+            tiempoTotal: deficitAfterOvertime * 60,
+            maquina: 'Capacidad insuficiente',
+            estadoMaquina: 'Sobrecarga',
+            proceso: processName,
+            operadoresRequeridos: 1,
+            operadoresDisponibles: processGroup.availableOperators,
+            capacidadPorcentaje: 0,
+            ocupacionMaquina: 0,
+            ocupacionProceso: 0,
+            alerta: '🔴 Capacidad insuficiente - Requiere más operarios o máquinas'
+          });
+        } else {
+          console.log(`     ✅ Horas extras cubren completamente el déficit. No se crea máquina imaginaria.`);
+        }
       }
     }
 
