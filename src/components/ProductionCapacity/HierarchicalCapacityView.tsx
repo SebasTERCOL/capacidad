@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock } from "lucide-react";
 
 interface ReferenceItem {
   referencia: string;
@@ -41,12 +41,16 @@ interface HierarchicalCapacityViewProps {
   processGroups: ProcessGroup[];
   onBack: () => void;
   onStartOver: () => void;
+  hasDeficits?: boolean;
+  onOptimizeWithOvertime?: () => void;
 }
 
 const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
   processGroups,
   onBack,
-  onStartOver
+  onStartOver,
+  hasDeficits = false,
+  onOptimizeWithOvertime
 }) => {
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set());
   const [expandedMachines, setExpandedMachines] = useState<Set<string>>(new Set());
@@ -303,9 +307,17 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
         <Button variant="outline" onClick={onBack}>
           Volver a Configuración
         </Button>
-        <Button onClick={onStartOver} className="flex-1">
-          Nuevo Análisis
-        </Button>
+        {hasDeficits && onOptimizeWithOvertime && (
+          <Button variant="secondary" onClick={onOptimizeWithOvertime} className="flex-1">
+            <Clock className="h-4 w-4 mr-2" />
+            Optimizar con Horas Extras
+          </Button>
+        )}
+        {!hasDeficits && (
+          <Button onClick={onStartOver} className="flex-1">
+            Nuevo Análisis
+          </Button>
+        )}
       </div>
     </div>
   );

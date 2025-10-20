@@ -7,19 +7,23 @@ import { Factory, ArrowRight, ArrowLeft } from "lucide-react";
 import { FileUpload, ProductionRequest } from "@/components/ProductionCapacity/FileUpload";
 import { OperatorConfiguration, OperatorConfig } from "@/components/ProductionCapacity/OperatorConfiguration";
 import { ProductionProjectionV2 } from "@/components/ProductionCapacity/ProductionProjectionV2";
+import { OvertimeConfiguration, DeficitInfo, OvertimeConfig } from "@/components/ProductionCapacity/OvertimeConfiguration";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [productionData, setProductionData] = useState<ProductionRequest[]>([]);
   const [operatorConfig, setOperatorConfig] = useState<OperatorConfig | null>(null);
   const [projectionData, setProjectionData] = useState<any[]>([]);
+  const [deficits, setDeficits] = useState<DeficitInfo[]>([]);
+  const [overtimeConfig, setOvertimeConfig] = useState<OvertimeConfig | null>(null);
 
   const steps = [
     { id: 1, title: 'Carga de Archivo', description: 'Subir CSV con referencias' },
     { id: 2, title: 'Configurar Operarios', description: 'Definir personal disponible' },
-    { id: 3, title: 'Capacidad por Proceso', description: 'Análisis detallado' }
+    { id: 3, title: 'Capacidad por Proceso', description: 'Análisis detallado' },
+    { id: 4, title: 'Optimizar con Extras', description: 'Configurar horas extras' }
   ];
 
   const handleDataProcessed = (data: ProductionRequest[]) => {
@@ -34,11 +38,25 @@ const Index = () => {
     setProjectionData(projection);
   };
 
+  const handleDeficitsIdentified = (identifiedDeficits: DeficitInfo[]) => {
+    setDeficits(identifiedDeficits);
+    if (identifiedDeficits.length > 0) {
+      setCurrentStep(4); // Ir a configuración de horas extras
+    }
+  };
+
+  const handleOvertimeApplied = (config: OvertimeConfig) => {
+    setOvertimeConfig(config);
+    setCurrentStep(3); // Volver a vista de capacidad con extras aplicadas
+  };
+
   const handleStartOver = () => {
     setCurrentStep(1);
     setProductionData([]);
     setOperatorConfig(null);
     setProjectionData([]);
+    setDeficits([]);
+    setOvertimeConfig(null);
   };
 
   const renderStepContent = () => {
@@ -63,12 +81,24 @@ const Index = () => {
           <ProductionProjectionV2
             data={productionData}
             operatorConfig={operatorConfig}
+            overtimeConfig={overtimeConfig}
             onNext={() => {}}
             onBack={() => setCurrentStep(2)}
             onProjectionComplete={handleProjectionComplete}
+            onDeficitsIdentified={handleDeficitsIdentified}
             onStartOver={handleStartOver}
           />
         ) : null;
+      case 4:
+        return (
+          <OvertimeConfiguration
+            deficits={deficits}
+            workMonth={operatorConfig?.workMonth || new Date().getMonth() + 1}
+            workYear={operatorConfig?.workYear || new Date().getFullYear()}
+            onBack={() => setCurrentStep(3)}
+            onApply={handleOvertimeApplied}
+          />
+        );
       default:
         return null;
     }

@@ -7,6 +7,7 @@ import { Activity, Calendar, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { OperatorConfig } from "./OperatorConfiguration";
 import HierarchicalCapacityView from './HierarchicalCapacityView';
+import { DeficitInfo, OvertimeConfig } from "./OvertimeConfiguration";
 
 export interface ProjectionInfo {
   referencia: string;
@@ -28,18 +29,22 @@ export interface ProjectionInfo {
 interface ProductionProjectionV2Props {
   data: { referencia: string; cantidad: number }[];
   operatorConfig: OperatorConfig;
+  overtimeConfig?: OvertimeConfig | null;
   onNext: () => void;
   onBack: () => void;
   onProjectionComplete: (projectionData: ProjectionInfo[]) => void;
+  onDeficitsIdentified?: (deficits: DeficitInfo[]) => void;
   onStartOver: () => void;
 }
 
 export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({ 
   data, 
   operatorConfig,
+  overtimeConfig,
   onNext, 
   onBack, 
   onProjectionComplete,
+  onDeficitsIdentified,
   onStartOver
 }) => {
   const [projection, setProjection] = useState<ProjectionInfo[]>([]);
@@ -1334,11 +1339,44 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
   // Renderizar vista jerárquica o tabla según el modo
   if (viewMode === 'hierarchical') {
+    const processGroups = createHierarchicalData();
+    
+    // Identificar déficits
+    const identifiedDeficits: DeficitInfo[] = [];
+    processGroups.forEach(process => {
+      process.machines.forEach(machine => {
+        if (machine.occupancy > 100) {
+          const availableMinutes = machine.capacity * 60;
+          const requiredMinutes = machine.totalTime;
+          const deficitMinutes = requiredMinutes - availableMinutes;
+          
+          identifiedDeficits.push({
+            processName: process.processName,
+            machineName: machine.machineName,
+            machineId: machine.machineId,
+            deficitMinutes,
+            deficitPercentage: machine.occupancy - 100,
+            currentOccupancy: machine.occupancy,
+            operators: process.operators,
+            efficiency: operatorConfig.processes.find(p => p.processName === process.processName)?.efficiency || 100
+          });
+        }
+      });
+    });
+    
+    const handleOptimizeWithOvertime = () => {
+      if (onDeficitsIdentified && identifiedDeficits.length > 0) {
+        onDeficitsIdentified(identifiedDeficits);
+      }
+    };
+    
     return (
       <HierarchicalCapacityView
-        processGroups={createHierarchicalData()}
+        processGroups={processGroups}
         onBack={onBack}
         onStartOver={onStartOver}
+        hasDeficits={identifiedDeficits.length > 0}
+        onOptimizeWithOvertime={handleOptimizeWithOvertime}
       />
     );
   }
