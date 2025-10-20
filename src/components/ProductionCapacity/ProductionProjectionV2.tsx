@@ -836,12 +836,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         });
       }
 
-      // Si queda tiempo sin asignar, verificar si las horas extras pueden cubrirlo
+      // Si queda tiempo sin asignar, intentar asignar a máquinas con horas extras
       if (tiempoRestante > 0.01) { // tolerancia para errores de redondeo
         console.log(`     ⚠️ Tiempo sin asignar: ${tiempoRestante.toFixed(2)}h`);
         
-        // Calcular capacidad extra disponible para este componente
-        let overtimeCapacityAvailableHours = 0;
+        // Buscar máquinas compatibles con horas extras disponibles
+        const machinesWithOvertime: { machine: any; overtimeHours: number }[] = [];
         
         if (overtimeConfig) {
           const processOvertimeConfig = overtimeConfig.processes.find(
@@ -849,7 +849,6 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           );
           
           if (processOvertimeConfig && processOvertimeConfig.enabled) {
-            // Sumar capacidad extra de todas las máquinas compatibles habilitadas
             for (const machine of compatibleMachines) {
               const machineOvertimeConfig = processOvertimeConfig.machines.find(
                 m => m.machineId === machine.machines.id && m.enabled
@@ -857,27 +856,58 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               
               if (machineOvertimeConfig && machineOvertimeConfig.additionalCapacity > 0) {
                 const overtimeHours = machineOvertimeConfig.additionalCapacity / 60;
-                overtimeCapacityAvailableHours += overtimeHours;
-                console.log(`     ✅ [OVERTIME COVERAGE] ${machine.machines.name}: +${overtimeHours.toFixed(2)}h extras disponibles`);
+                machinesWithOvertime.push({ machine, overtimeHours });
+                console.log(`     ✅ [OVERTIME AVAILABLE] ${machine.machines.name}: +${overtimeHours.toFixed(2)}h extras`);
               }
             }
           }
         }
         
-        // Calcular déficit después de aplicar horas extras
-        const deficitAfterOvertime = Math.max(0, tiempoRestante - overtimeCapacityAvailableHours);
+        // Intentar asignar el tiempo restante a máquinas con horas extras
+        for (const { machine, overtimeHours } of machinesWithOvertime) {
+          if (tiempoRestante <= 0.01) break;
+          
+          const tiempoAsignado = Math.min(tiempoRestante, overtimeHours);
+          
+          if (tiempoAsignado > 0) {
+            // Calcular cantidad proporcional
+            const proporcion = tiempoAsignado / tiempoTotalHoras;
+            const cantidadAsignada = Math.round(componentData.quantity * proporcion);
+            
+            // Obtener la carga actual de la máquina (sin extras)
+            const currentLoad = machineWorkloads.get(machine.machines.name) || 0;
+            const ocupacionBase = (currentLoad / horasDisponiblesPorOperario) * 100;
+            const ocupacionConExtra = ((currentLoad + tiempoAsignado) / (horasDisponiblesPorOperario + overtimeHours)) * 100;
+            
+            results.push({
+              referencia: componentId,
+              cantidadRequerida: cantidadAsignada,
+              sam: componentData.sam,
+              tiempoTotal: tiempoAsignado * 60, // convertir a minutos
+              maquina: machine.machines.name,
+              estadoMaquina: machine.machines.status,
+              proceso: processName,
+              operadoresRequeridos: 1,
+              operadoresDisponibles: processGroup.availableOperators,
+              capacidadPorcentaje: (tiempoAsignado / (horasDisponiblesPorOperario + overtimeHours)) * 100,
+              ocupacionMaquina: ocupacionConExtra,
+              ocupacionProceso: ((currentLoad + tiempoAsignado) / totalHorasDisponibles) * 100,
+              alerta: `⏰ Asignado en horas extras (ocupación: ${ocupacionBase.toFixed(1)}% → ${ocupacionConExtra.toFixed(1)}%)`
+            });
+            
+            tiempoRestante -= tiempoAsignado;
+            console.log(`     ✅ [OVERTIME ASSIGNED] ${machine.machines.name}: ${cantidadAsignada} unidades en ${tiempoAsignado.toFixed(2)}h extras`);
+          }
+        }
         
-        console.log(`     📊 Capacidad extra disponible: ${overtimeCapacityAvailableHours.toFixed(2)}h`);
-        console.log(`     📊 Déficit después de extras: ${deficitAfterOvertime.toFixed(2)}h`);
-        
-        // Solo crear máquina imaginaria si aún hay déficit después de aplicar horas extras
-        if (deficitAfterOvertime > 0.01) {
-          console.log(`     🔴 Creando máquina imaginaria con déficit de ${deficitAfterOvertime.toFixed(2)}h`);
+        // Si aún queda tiempo sin asignar después de usar horas extras, crear máquina imaginaria
+        if (tiempoRestante > 0.01) {
+          console.log(`     🔴 Déficit final después de extras: ${tiempoRestante.toFixed(2)}h`);
           results.push({
             referencia: componentId,
-            cantidadRequerida: Math.round(componentData.quantity * (deficitAfterOvertime / tiempoTotalHoras)),
+            cantidadRequerida: Math.round(componentData.quantity * (tiempoRestante / tiempoTotalHoras)),
             sam: componentData.sam,
-            tiempoTotal: deficitAfterOvertime * 60,
+            tiempoTotal: tiempoRestante * 60,
             maquina: 'Capacidad insuficiente',
             estadoMaquina: 'Sobrecarga',
             proceso: processName,
@@ -886,10 +916,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             capacidadPorcentaje: 0,
             ocupacionMaquina: 0,
             ocupacionProceso: 0,
-            alerta: '🔴 Capacidad insuficiente - Requiere más operarios o máquinas'
+            alerta: '🔴 Capacidad insuficiente - Requiere más operarios, máquinas o horas extras'
           });
         } else {
-          console.log(`     ✅ Horas extras cubren completamente el déficit. No se crea máquina imaginaria.`);
+          console.log(`     ✅ Todo el déficit fue cubierto con horas extras`);
         }
       }
     }
