@@ -1405,12 +1405,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   if (viewMode === 'hierarchical') {
     const processGroups = createHierarchicalData();
     
-    // Identificar déficits
+    // Identificar déficits (sin considerar horas extras para permitir reconfiguración)
     const identifiedDeficits: DeficitInfo[] = [];
     processGroups.forEach(process => {
       process.machines.forEach(machine => {
-        if (machine.occupancy > 100) {
-          const availableMinutes = machine.capacity * 60;
+        // Buscar déficit considerando capacidad base (sin extras)
+        const baseCapacity = machine.capacity - (machine.overtimeHours || 0) * 60; // Restar extras si existen
+        const occupancyWithoutOvertime = baseCapacity > 0 ? (machine.totalTime / baseCapacity) * 100 : machine.occupancy;
+        
+        if (occupancyWithoutOvertime > 100) {
+          const availableMinutes = baseCapacity;
           const requiredMinutes = machine.totalTime;
           const deficitMinutes = requiredMinutes - availableMinutes;
           
@@ -1419,8 +1423,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             machineName: machine.machineName,
             machineId: machine.machineId,
             deficitMinutes,
-            deficitPercentage: machine.occupancy - 100,
-            currentOccupancy: machine.occupancy,
+            deficitPercentage: occupancyWithoutOvertime - 100,
+            currentOccupancy: occupancyWithoutOvertime,
             operators: process.operators,
             efficiency: operatorConfig.processes.find(p => p.processName === process.processName)?.efficiency || 100
           });
@@ -1434,12 +1438,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
     };
     
+    // Mostrar botón si hay déficits O si ya hay configuración de extras (para ajustar)
+    const shouldShowOvertimeButton = identifiedDeficits.length > 0 || overtimeConfig !== null;
+    
     return (
       <HierarchicalCapacityView
         processGroups={processGroups}
         onBack={onBack}
         onStartOver={onStartOver}
-        hasDeficits={identifiedDeficits.length > 0}
+        hasDeficits={shouldShowOvertimeButton}
         onOptimizeWithOvertime={handleOptimizeWithOvertime}
       />
     );
