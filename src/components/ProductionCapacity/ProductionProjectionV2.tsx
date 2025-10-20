@@ -1208,17 +1208,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       machineGroup.totalTime += item.tiempoTotal;
       processGroup.totalTime += item.tiempoTotal;
       
-      // NUEVO: Rastrear tiempo total de máquina compartida
-      const currentMachineTotal = sharedMachineWorkload.get(item.maquina) || 0;
-      sharedMachineWorkload.set(item.maquina, currentMachineTotal + item.tiempoTotal);
+      // NUEVO: Rastrear tiempo total de máquina compartida (EXCEPTO máquinas virtuales)
+      const isVirtualMachine = item.maquina === 'Capacidad insuficiente' || 
+                               item.maquina === 'Sin máquina compatible';
       
-      // NUEVO: Rastrear procesos que usan esta máquina
-      if (!machineToProcesses.has(item.maquina)) {
-        machineToProcesses.set(item.maquina, new Set());
+      if (!isVirtualMachine) {
+        const currentMachineTotal = sharedMachineWorkload.get(item.maquina) || 0;
+        sharedMachineWorkload.set(item.maquina, currentMachineTotal + item.tiempoTotal);
+        
+        // NUEVO: Rastrear procesos que usan esta máquina (solo máquinas reales)
+        if (!machineToProcesses.has(item.maquina)) {
+          machineToProcesses.set(item.maquina, new Set());
+        }
+        machineToProcesses.get(item.maquina)!.add(displayProcessName);
+        
+        console.log(`[DEBUG] ${item.maquina} - ${displayProcessName}: +${item.tiempoTotal.toFixed(2)}min (Total máquina: ${sharedMachineWorkload.get(item.maquina)!.toFixed(2)}min)`);
       }
-      machineToProcesses.get(item.maquina)!.add(displayProcessName);
-      
-      console.log(`[DEBUG] ${item.maquina} - ${displayProcessName}: +${item.tiempoTotal.toFixed(2)}min (Total máquina: ${sharedMachineWorkload.get(item.maquina)!.toFixed(2)}min)`);
     });
 
     // Log resumen de máquinas compartidas
@@ -1244,9 +1249,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const totalMachineTime = sharedMachineWorkload.get(machine.machineName) || machine.totalTime;
           const machineOccupancy = machineAvailableTime > 0 ? (totalMachineTime / machineAvailableTime) * 100 : 0;
           
-          // Determinar si es compartida
+          // Determinar si es compartida (solo para máquinas reales)
+          const isVirtualMachine = machine.machineName === 'Capacidad insuficiente' || 
+                                   machine.machineName === 'Sin máquina compatible';
           const processesUsingMachine = machineToProcesses.get(machine.machineName);
-          const isShared = processesUsingMachine && processesUsingMachine.size > 1;
+          const isShared = !isVirtualMachine && processesUsingMachine && processesUsingMachine.size > 1;
           const sharedWith = isShared ? Array.from(processesUsingMachine!).filter(p => p !== processGroup.processName) : [];
 
           return {
