@@ -666,10 +666,29 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const horasDisponiblesPorOperario = processGroup.availableHours * efficiencyFactor;
     const totalHorasDisponibles = processGroup.availableOperators * horasDisponiblesPorOperario;
     
+    // Calcular horas extras totales disponibles para este proceso
+    let totalHorasExtrasDisponibles = 0;
+    if (overtimeConfig) {
+      const processOvertimeConfig = overtimeConfig.processes.find(
+        p => p.processName === processName
+      );
+      if (processOvertimeConfig && processOvertimeConfig.enabled) {
+        processOvertimeConfig.machines.forEach(m => {
+          if (m.enabled && m.additionalCapacity > 0) {
+            totalHorasExtrasDisponibles += m.additionalCapacity / 60; // convertir a horas
+          }
+        });
+      }
+    }
+    
+    const totalHorasConExtras = totalHorasDisponibles + totalHorasExtrasDisponibles;
+    
     console.log(`   📊 Eficiencia del proceso: ${(efficiencyFactor * 100).toFixed(1)}%`);
     console.log(`   ⏱️ Horas base por operario: ${processGroup.availableHours.toFixed(2)}h`);
     console.log(`   ⏱️ Horas efectivas por operario (con eficiencia): ${horasDisponiblesPorOperario.toFixed(2)}h`);
-    console.log(`   ⏱️ Total horas disponibles: ${totalHorasDisponibles.toFixed(2)}h`);
+    console.log(`   ⏱️ Total horas disponibles (base): ${totalHorasDisponibles.toFixed(2)}h`);
+    console.log(`   ⏰ Total horas extras disponibles: ${totalHorasExtrasDisponibles.toFixed(2)}h`);
+    console.log(`   ⏱️ Total horas con extras: ${totalHorasConExtras.toFixed(2)}h`);
     
     // Procesar cada componente
     for (const [componentId, componentData] of processGroup.components.entries()) {
@@ -891,7 +910,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               operadoresDisponibles: processGroup.availableOperators,
               capacidadPorcentaje: (tiempoAsignado / (horasDisponiblesPorOperario + overtimeHours)) * 100,
               ocupacionMaquina: ocupacionConExtra,
-              ocupacionProceso: ((currentLoad + tiempoAsignado) / totalHorasDisponibles) * 100,
+              ocupacionProceso: ((currentLoad + tiempoAsignado) / totalHorasConExtras) * 100,
               alerta: `⏰ Asignado en horas extras (ocupación: ${ocupacionBase.toFixed(1)}% → ${ocupacionConExtra.toFixed(1)}%)`
             });
             
@@ -1309,7 +1328,26 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Convertir a formato esperado por HierarchicalCapacityView
     return Array.from(processMap.values()).map(processGroup => {
       const totalAvailableHours = processGroup.operators * processGroup.availableHours * 60; // en minutos
-      const totalOccupancy = totalAvailableHours > 0 ? (processGroup.totalTime / totalAvailableHours) * 100 : 0;
+      
+      // Calcular horas extras totales para este proceso
+      let totalOvertimeMinutes = 0;
+      if (overtimeConfig) {
+        const processOvertimeConfig = overtimeConfig.processes.find(
+          p => p.processName === processGroup.processName
+        );
+        if (processOvertimeConfig && processOvertimeConfig.enabled) {
+          processOvertimeConfig.machines.forEach(m => {
+            if (m.enabled && m.additionalCapacity > 0) {
+              totalOvertimeMinutes += m.additionalCapacity;
+            }
+          });
+        }
+      }
+      
+      const totalAvailableWithOvertime = totalAvailableHours + totalOvertimeMinutes;
+      const totalOccupancy = totalAvailableWithOvertime > 0 ? (processGroup.totalTime / totalAvailableWithOvertime) * 100 : 0;
+      
+      console.log(`[PROCESS ${processGroup.processName}] Base: ${totalAvailableHours.toFixed(2)}min | Extras: ${totalOvertimeMinutes.toFixed(2)}min | Total: ${totalAvailableWithOvertime.toFixed(2)}min | Ocupación: ${totalOccupancy.toFixed(1)}%`);
 
       // Ordenar máquinas de manera natural
       const machines = Array.from(processGroup.machines.values())
