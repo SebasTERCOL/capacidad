@@ -565,16 +565,23 @@ function getMonthName(month: number): string {
 }
 
 function calculateSundaysInMonth(month: number, year: number): number {
-  const date = new Date(year, month - 1, 1);
+  console.log(`🔍 [SUNDAYS CALC] Calculando domingos para mes: ${month}, año: ${year}`);
+  
   const lastDay = new Date(year, month, 0).getDate();
+  console.log(`📅 [SUNDAYS CALC] Último día del mes: ${lastDay}`);
   
   let sundays = 0;
+  const sundayDates: number[] = [];
+  
   for (let day = 1; day <= lastDay; day++) {
     const currentDate = new Date(year, month - 1, day);
     if (currentDate.getDay() === 0) { // Domingo
       sundays++;
+      sundayDates.push(day);
     }
   }
+  
+  console.log(`✅ [SUNDAYS CALC] Total domingos encontrados: ${sundays}`, sundayDates);
   
   return sundays;
 }
