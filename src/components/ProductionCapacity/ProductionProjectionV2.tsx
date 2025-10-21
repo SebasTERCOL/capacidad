@@ -803,22 +803,40 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const baseCapacity = horasDisponiblesPorOperario;
         let extraCapacity = 0;
         
-        // Buscar si esta máquina tiene horas extras configuradas
-        if (overtimeConfig) {
-          const processOvertimeConfig = overtimeConfig.processes.find(
-            p => p.processName === processName
-          );
-          
-          if (processOvertimeConfig && processOvertimeConfig.enabled) {
-            const machineOvertimeConfig = processOvertimeConfig.machines.find(
-              m => m.machineId === machine.machines.id && m.enabled
+          // Buscar si esta máquina tiene horas extras configuradas
+          if (overtimeConfig) {
+            const processOvertimeConfig = overtimeConfig.processes.find(
+              p => p.processName === processName
             );
             
-            if (machineOvertimeConfig && machineOvertimeConfig.additionalCapacity > 0) {
-              extraCapacity = machineOvertimeConfig.additionalCapacity / 60; // convertir a horas
+            console.log(`     🔍 [OVERTIME LOOKUP] Proceso: ${processName}, Máquina: ${machine.machines.name} (ID: ${machine.machines.id})`);
+            console.log(`     🔍 [OVERTIME CONFIG] Found process config:`, processOvertimeConfig ? 'YES' : 'NO');
+            
+            if (processOvertimeConfig && processOvertimeConfig.enabled) {
+              console.log(`     🔍 [OVERTIME MACHINES] Configuraciones disponibles:`, 
+                processOvertimeConfig.machines.map(m => `${m.machineName} (ID: ${m.machineId}, enabled: ${m.enabled})`));
+              
+              // Buscar por ID exacto primero
+              let machineOvertimeConfig = processOvertimeConfig.machines.find(
+                m => m.machineId === machine.machines.id.toString() && m.enabled
+              );
+              
+              // Si no encuentra por ID, buscar por nombre
+              if (!machineOvertimeConfig) {
+                machineOvertimeConfig = processOvertimeConfig.machines.find(
+                  m => m.machineName === machine.machines.name && m.enabled
+                );
+                console.log(`     🔍 [OVERTIME FALLBACK] Buscar por nombre "${machine.machines.name}":`, machineOvertimeConfig ? 'FOUND' : 'NOT FOUND');
+              }
+              
+              if (machineOvertimeConfig && machineOvertimeConfig.additionalCapacity > 0) {
+                extraCapacity = machineOvertimeConfig.additionalCapacity / 60; // convertir a horas
+                console.log(`     ✅ [OVERTIME FOUND] ${machine.machines.name}: +${extraCapacity.toFixed(2)}h extras`);
+              } else {
+                console.log(`     ❌ [OVERTIME NOT FOUND] No se encontró configuración de extras para ${machine.machines.name}`);
+              }
             }
           }
-        }
         
         const totalCapacity = baseCapacity + extraCapacity;
         const currentLoad = machineWorkloads.get(machine.machines.name) || 0;
