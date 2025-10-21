@@ -470,7 +470,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                 </div>
 
                                 {/* Resumen de Capacidad */}
-                                {machine.additionalCapacity > 0 && (
+                                {(machine.shifts.shift1 || machine.shifts.shift2 || machine.shifts.shift3) && (
                                   <div className="p-3 bg-muted rounded-lg space-y-2">
                                     <div className="flex items-center justify-between text-sm">
                                       <span className="font-medium">Horas extras totales:</span>
@@ -481,29 +481,33 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                     <div className="text-xs text-muted-foreground text-center">
                                       {formatTime(calculateSundayHours(machine.shifts) * 60)} por domingo × {process.selectedSundays} {process.selectedSundays === 1 ? 'domingo' : 'domingos'}
                                     </div>
-                                    <Separator className="my-2" />
-                                    <div className="flex items-center justify-between text-sm">
-                                      <span className="font-medium">Cobertura del Déficit:</span>
-                                      <span className="font-bold">
-                                        {getCoveragePercentage(machine.currentDeficit, machine.additionalCapacity).toFixed(1)}%
-                                      </span>
-                                    </div>
-                                    <Progress 
-                                      value={getCoveragePercentage(machine.currentDeficit, machine.additionalCapacity)} 
-                                      className="h-2"
-                                    />
-                                    {getCoveragePercentage(machine.currentDeficit, machine.additionalCapacity) >= 100 ? (
-                                      <div className="flex items-center gap-2 text-sm text-green-600">
-                                        <CheckCircle2 className="h-4 w-4" />
-                                        <span className="font-medium">Déficit cubierto completamente</span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-2 text-sm text-amber-600">
-                                        <AlertCircle className="h-4 w-4" />
-                                        <span className="font-medium">
-                                          Déficit cubierto parcialmente ({getCoveragePercentage(machine.currentDeficit, machine.additionalCapacity).toFixed(0)}%)
-                                        </span>
-                                      </div>
+                                    {machine.additionalCapacity > 0 && (
+                                      <>
+                                        <Separator className="my-2" />
+                                        <div className="flex items-center justify-between text-sm">
+                                          <span className="font-medium">Cobertura del Déficit:</span>
+                                          <span className="font-bold">
+                                            {getCoveragePercentage(machine.currentDeficit, machine.additionalCapacity).toFixed(1)}%
+                                          </span>
+                                        </div>
+                                        <Progress 
+                                          value={getCoveragePercentage(machine.currentDeficit, machine.additionalCapacity)} 
+                                          className="h-2"
+                                        />
+                                        {getCoveragePercentage(machine.currentDeficit, machine.additionalCapacity) >= 100 ? (
+                                          <div className="flex items-center gap-2 text-sm text-green-600">
+                                            <CheckCircle2 className="h-4 w-4" />
+                                            <span className="font-medium">Déficit cubierto completamente</span>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center gap-2 text-sm text-amber-600">
+                                            <AlertCircle className="h-4 w-4" />
+                                            <span className="font-medium">
+                                              Déficit cubierto parcialmente ({getCoveragePercentage(machine.currentDeficit, machine.additionalCapacity).toFixed(0)}%)
+                                            </span>
+                                          </div>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                 )}
