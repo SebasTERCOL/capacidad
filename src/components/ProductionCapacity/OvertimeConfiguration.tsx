@@ -74,6 +74,13 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
 
   // Inicializar configuración de horas extras
   useEffect(() => {
+    console.log(`🔧 [INIT OVERTIME] Inicializando configuración`, {
+      workMonth,
+      workYear,
+      sundaysInMonth,
+      deficitsCount: deficits.length
+    });
+    
     const groupedByProcess = new Map<string, DeficitInfo[]>();
     
     deficits.forEach(deficit => {
@@ -86,6 +93,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
     const initialConfig: OvertimeProcessConfig[] = [];
     
     groupedByProcess.forEach((machines, processName) => {
+      console.log(`📦 [INIT OVERTIME] Configurando proceso: ${processName} con ${sundaysInMonth} domingos`);
       initialConfig.push({
         processName,
         enabled: false,
@@ -103,8 +111,9 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
       });
     });
 
+    console.log(`✅ [INIT OVERTIME] Configuración inicial completada:`, initialConfig);
     setOvertimeConfig(initialConfig);
-  }, [deficits]);
+  }, [deficits, sundaysInMonth]);
 
   const toggleProcess = (processName: string) => {
     const newExpanded = new Set(expandedProcesses);
@@ -606,8 +615,19 @@ function calculateAdditionalCapacity(
   const hoursPerSunday = calculateSundayHours(shifts);
   const totalSundayHours = hoursPerSunday * sundaysInMonth;
   
+  console.log(`💡 [ADDITIONAL CAPACITY]`, {
+    shifts,
+    hoursPerSunday,
+    sundaysInMonth,
+    totalSundayHours,
+    operators,
+    efficiency,
+  });
+  
   // Convertir a minutos y aplicar operadores y eficiencia
   const additionalMinutes = totalSundayHours * 60 * operators * (efficiency / 100);
+  
+  console.log(`✅ [ADDITIONAL CAPACITY] Resultado: ${additionalMinutes} minutos (${(additionalMinutes/60).toFixed(2)}h)`);
   
   return additionalMinutes;
 }
