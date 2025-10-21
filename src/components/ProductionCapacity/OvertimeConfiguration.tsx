@@ -473,9 +473,9 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                 {machine.additionalCapacity > 0 && (
                                   <div className="p-3 bg-muted rounded-lg space-y-2">
                                     <div className="flex items-center justify-between text-sm">
-                                      <span className="font-medium">Capacidad Adicional:</span>
+                                      <span className="font-medium">Horas netas (por domingo):</span>
                                       <span className="font-bold text-green-600">
-                                        +{formatTime(machine.additionalCapacity)}
+                                        +{formatTime(calculateSundayHours(machine.shifts) * 60)}
                                       </span>
                                     </div>
                                     <div className="flex items-center justify-between text-sm">
