@@ -62,7 +62,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     if (data.length > 0) {
       calculateProjection();
     }
-  }, [data, operatorConfig]);
+  }, [data, operatorConfig, overtimeConfig]);
 
   // Función optimizada para cargar todos los datos BOM con paginación
   const loadAllBomData = async () => {
@@ -798,148 +798,119 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       let tiempoRestante = tiempoTotalHoras;
       const distribucionPorMaquina: { machine: any; tiempoAsignado: number; cantidad: number }[] = [];
 
-      // Ordenar máquinas por carga actual (las menos cargadas primero)
-      const machinesOrderedByLoad = compatibleMachines.sort((a, b) => {
-        const loadA = machineWorkloads.get(a.machines.name) || 0;
-        const loadB = machineWorkloads.get(b.machines.name) || 0;
-        return loadA - loadB;
-      });
-
-      for (let i = 0; i < machinesOrderedByLoad.length && tiempoRestante > 0; i++) {
-        const machine = machinesOrderedByLoad[i];
-        const currentLoad = machineWorkloads.get(machine.machines.name) || 0;
-        const availableCapacity = Math.max(0, horasDisponiblesPorOperario - currentLoad);
+      // PASO 1: Calcular capacidad total (base + extras) de cada máquina compatible
+      const machineCapacities = compatibleMachines.map(machine => {
+        const baseCapacity = horasDisponiblesPorOperario;
+        let extraCapacity = 0;
         
-        const tiempoAsignado = Math.min(tiempoRestante, availableCapacity);
-        
-        if (tiempoAsignado > 0) {
-          // Calcular cantidad proporcional
-          const proporcion = tiempoAsignado / tiempoTotalHoras;
-          const cantidadAsignada = Math.round(componentData.quantity * proporcion);
-          
-          distribucionPorMaquina.push({
-            machine,
-            tiempoAsignado,
-            cantidad: cantidadAsignada
-          });
-
-          // Actualizar carga de la máquina
-          machineWorkloads.set(machine.machines.name, currentLoad + tiempoAsignado);
-          tiempoRestante -= tiempoAsignado;
-          
-          console.log(`     ✅ ${machine.machines.name}: ${cantidadAsignada} unidades, ${tiempoAsignado.toFixed(2)}h`);
-        }
-      }
-
-      // Crear entradas de resultado para cada distribución
-      for (const distribucion of distribucionPorMaquina) {
-        const currentMachineLoad = machineWorkloads.get(distribucion.machine.machines.name) || 0;
-        const ocupacionMaquina = (currentMachineLoad / horasDisponiblesPorOperario) * 100;
-        const contribucionPorcentaje = (distribucion.tiempoAsignado / horasDisponiblesPorOperario) * 100;
-
-        results.push({
-          referencia: componentId,
-          cantidadRequerida: distribucion.cantidad,
-          sam: componentData.sam,
-          tiempoTotal: distribucion.tiempoAsignado * 60, // convertir de vuelta a minutos
-          maquina: distribucion.machine.machines.name,
-          estadoMaquina: distribucion.machine.machines.status,
-          proceso: processName,
-          operadoresRequeridos: 1,
-          operadoresDisponibles: processGroup.availableOperators,
-          capacidadPorcentaje: contribucionPorcentaje,
-          ocupacionMaquina: ocupacionMaquina,
-          ocupacionProceso: (currentMachineLoad / totalHorasDisponibles) * 100,
-          alerta: ocupacionMaquina > 100 ? '🔴 Sobrecarga de máquina' : 
-                   ocupacionMaquina > 90 ? '⚠️ Capacidad casi al límite' : null
-        });
-      }
-
-      // Si queda tiempo sin asignar, intentar asignar a máquinas con horas extras
-      if (tiempoRestante > 0.01) { // tolerancia para errores de redondeo
-        console.log(`     ⚠️ Tiempo sin asignar: ${tiempoRestante.toFixed(2)}h`);
-        
-        // Buscar máquinas compatibles con horas extras disponibles
-        const machinesWithOvertime: { machine: any; overtimeHours: number }[] = [];
-        
+        // Buscar si esta máquina tiene horas extras configuradas
         if (overtimeConfig) {
           const processOvertimeConfig = overtimeConfig.processes.find(
             p => p.processName === processName
           );
           
           if (processOvertimeConfig && processOvertimeConfig.enabled) {
-            for (const machine of compatibleMachines) {
-              const machineOvertimeConfig = processOvertimeConfig.machines.find(
-                m => m.machineId === machine.machines.id && m.enabled
-              );
-              
-              if (machineOvertimeConfig && machineOvertimeConfig.additionalCapacity > 0) {
-                const overtimeHours = machineOvertimeConfig.additionalCapacity / 60;
-                machinesWithOvertime.push({ machine, overtimeHours });
-                console.log(`     ✅ [OVERTIME AVAILABLE] ${machine.machines.name}: +${overtimeHours.toFixed(2)}h extras`);
-              }
+            const machineOvertimeConfig = processOvertimeConfig.machines.find(
+              m => m.machineId === machine.machines.id && m.enabled
+            );
+            
+            if (machineOvertimeConfig && machineOvertimeConfig.additionalCapacity > 0) {
+              extraCapacity = machineOvertimeConfig.additionalCapacity / 60; // convertir a horas
             }
           }
         }
         
-        // Intentar asignar el tiempo restante a máquinas con horas extras
-        for (const { machine, overtimeHours } of machinesWithOvertime) {
-          if (tiempoRestante <= 0.01) break;
-          
-          const tiempoAsignado = Math.min(tiempoRestante, overtimeHours);
-          
-          if (tiempoAsignado > 0) {
-            // Calcular cantidad proporcional
-            const proporcion = tiempoAsignado / tiempoTotalHoras;
-            const cantidadAsignada = Math.round(componentData.quantity * proporcion);
-            
-            // Obtener la carga actual de la máquina (sin extras)
-            const currentLoad = machineWorkloads.get(machine.machines.name) || 0;
-            const ocupacionBase = (currentLoad / horasDisponiblesPorOperario) * 100;
-            const ocupacionConExtra = ((currentLoad + tiempoAsignado) / (horasDisponiblesPorOperario + overtimeHours)) * 100;
-            
-            results.push({
-              referencia: componentId,
-              cantidadRequerida: cantidadAsignada,
-              sam: componentData.sam,
-              tiempoTotal: tiempoAsignado * 60, // convertir a minutos
-              maquina: machine.machines.name,
-              estadoMaquina: machine.machines.status,
-              proceso: processName,
-              operadoresRequeridos: 1,
-              operadoresDisponibles: processGroup.availableOperators,
-              capacidadPorcentaje: (tiempoAsignado / (horasDisponiblesPorOperario + overtimeHours)) * 100,
-              ocupacionMaquina: ocupacionConExtra,
-              ocupacionProceso: ((currentLoad + tiempoAsignado) / totalHorasConExtras) * 100,
-              alerta: `⏰ Asignado en horas extras (ocupación: ${ocupacionBase.toFixed(1)}% → ${ocupacionConExtra.toFixed(1)}%)`
-            });
-            
-            tiempoRestante -= tiempoAsignado;
-            console.log(`     ✅ [OVERTIME ASSIGNED] ${machine.machines.name}: ${cantidadAsignada} unidades en ${tiempoAsignado.toFixed(2)}h extras`);
-          }
-        }
+        const totalCapacity = baseCapacity + extraCapacity;
+        const currentLoad = machineWorkloads.get(machine.machines.name) || 0;
+        const availableCapacity = Math.max(0, totalCapacity - currentLoad);
         
-        // Si aún queda tiempo sin asignar después de usar horas extras, crear máquina imaginaria
-        if (tiempoRestante > 0.01) {
-          console.log(`     🔴 Déficit final después de extras: ${tiempoRestante.toFixed(2)}h`);
+        return {
+          machine,
+          baseCapacity,
+          extraCapacity,
+          totalCapacity,
+          currentLoad,
+          availableCapacity
+        };
+      });
+
+      // PASO 2: Ordenar máquinas por capacidad disponible total (mayor a menor)
+      machineCapacities.sort((a, b) => b.availableCapacity - a.availableCapacity);
+      
+      console.log(`     📊 Capacidades disponibles:`);
+      machineCapacities.forEach(mc => {
+        console.log(`       - ${mc.machine.machines.name}: ${mc.availableCapacity.toFixed(2)}h disponibles (base: ${mc.baseCapacity.toFixed(2)}h, extras: ${mc.extraCapacity.toFixed(2)}h)`);
+      });
+
+      // PASO 3: Distribuir tiempo considerando toda la capacidad (base + extras)
+      for (const machineInfo of machineCapacities) {
+        if (tiempoRestante <= 0.01) break; // tolerancia para errores de redondeo
+        
+        if (machineInfo.availableCapacity > 0) {
+          const tiempoAsignado = Math.min(tiempoRestante, machineInfo.availableCapacity);
+          const proporcion = tiempoAsignado / tiempoTotalHoras;
+          const cantidadAsignada = Math.round(componentData.quantity * proporcion);
+          
+          const nuevaCarga = machineInfo.currentLoad + tiempoAsignado;
+          const ocupacionTotal = (nuevaCarga / machineInfo.totalCapacity) * 100;
+          
+          // Determinar si esta asignación usa horas extras
+          const usaExtras = nuevaCarga > machineInfo.baseCapacity;
+          const horasEnExtras = usaExtras ? Math.min(tiempoAsignado, nuevaCarga - machineInfo.baseCapacity) : 0;
+          
+          let alertaTexto = null;
+          if (usaExtras) {
+            const minutosExtras = horasEnExtras * 60;
+            alertaTexto = `⏰ Utiliza ${minutosExtras.toFixed(0)} min de horas extras`;
+          } else if (ocupacionTotal > 90) {
+            alertaTexto = '⚠️ Capacidad casi al límite';
+          }
+          
           results.push({
             referencia: componentId,
-            cantidadRequerida: Math.round(componentData.quantity * (tiempoRestante / tiempoTotalHoras)),
+            cantidadRequerida: cantidadAsignada,
             sam: componentData.sam,
-            tiempoTotal: tiempoRestante * 60,
-            maquina: 'Capacidad insuficiente',
-            estadoMaquina: 'Sobrecarga',
+            tiempoTotal: tiempoAsignado * 60, // convertir a minutos
+            maquina: machineInfo.machine.machines.name,
+            estadoMaquina: machineInfo.machine.machines.status,
             proceso: processName,
             operadoresRequeridos: 1,
             operadoresDisponibles: processGroup.availableOperators,
-            capacidadPorcentaje: 0,
-            ocupacionMaquina: 0,
-            ocupacionProceso: 0,
-            alerta: '🔴 Capacidad insuficiente - Requiere más operarios, máquinas o horas extras'
+            capacidadPorcentaje: (tiempoAsignado / machineInfo.totalCapacity) * 100,
+            ocupacionMaquina: ocupacionTotal,
+            ocupacionProceso: (nuevaCarga / totalHorasConExtras) * 100,
+            alerta: alertaTexto
           });
-        } else {
-          console.log(`     ✅ Todo el déficit fue cubierto con horas extras`);
+          
+          // Actualizar cargas
+          machineWorkloads.set(machineInfo.machine.machines.name, nuevaCarga);
+          tiempoRestante -= tiempoAsignado;
+          
+          const extraIndicator = usaExtras ? ` (${horasEnExtras.toFixed(2)}h EN EXTRAS)` : '';
+          console.log(`     ✅ [ASSIGNED] ${machineInfo.machine.machines.name}: ${cantidadAsignada} unidades, ${tiempoAsignado.toFixed(2)}h${extraIndicator}`);
         }
+      }
+
+      // PASO 4: Si aún queda tiempo sin asignar, crear "Capacidad insuficiente"
+      if (tiempoRestante > 0.01) {
+        console.log(`     🔴 Déficit final: ${tiempoRestante.toFixed(2)}h`);
+        results.push({
+          referencia: componentId,
+          cantidadRequerida: Math.round(componentData.quantity * (tiempoRestante / tiempoTotalHoras)),
+          sam: componentData.sam,
+          tiempoTotal: tiempoRestante * 60,
+          maquina: 'Capacidad insuficiente',
+          estadoMaquina: 'Sobrecarga',
+          proceso: processName,
+          operadoresRequeridos: 1,
+          operadoresDisponibles: processGroup.availableOperators,
+          capacidadPorcentaje: 0,
+          ocupacionMaquina: 0,
+          ocupacionProceso: 0,
+          alerta: '🔴 Capacidad insuficiente - Requiere más operarios, máquinas o horas extras'
+        });
+      } else {
+        console.log(`     ✅ Toda la producción fue asignada correctamente`);
       }
     }
 
