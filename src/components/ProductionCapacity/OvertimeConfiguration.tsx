@@ -473,11 +473,15 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                 {machine.additionalCapacity > 0 && (
                                   <div className="p-3 bg-muted rounded-lg space-y-2">
                                     <div className="flex items-center justify-between text-sm">
-                                      <span className="font-medium">Horas netas (por domingo):</span>
+                                      <span className="font-medium">Horas extras totales:</span>
                                       <span className="font-bold text-green-600">
-                                        +{formatTime(calculateSundayHours(machine.shifts) * 60)}
+                                        +{formatTime(calculateSundayHours(machine.shifts) * process.selectedSundays * 60)}
                                       </span>
                                     </div>
+                                    <div className="text-xs text-muted-foreground text-center">
+                                      {formatTime(calculateSundayHours(machine.shifts) * 60)} por domingo × {process.selectedSundays} {process.selectedSundays === 1 ? 'domingo' : 'domingos'}
+                                    </div>
+                                    <Separator className="my-2" />
                                     <div className="flex items-center justify-between text-sm">
                                       <span className="font-medium">Cobertura del Déficit:</span>
                                       <span className="font-bold">
