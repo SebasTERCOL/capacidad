@@ -49,7 +49,15 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
   const [selectedMachine, setSelectedMachine] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editValues, setEditValues] = useState<{ sam: number; frequency: number; sam_unit: 'min_per_unit' | 'units_per_min' }>({ 
+  const [editValues, setEditValues] = useState<{ 
+    ref: string;
+    id_process: number;
+    sam: number; 
+    frequency: number; 
+    sam_unit: 'min_per_unit' | 'units_per_min' 
+  }>({ 
+    ref: '',
+    id_process: 0,
     sam: 0, 
     frequency: 0,
     sam_unit: 'units_per_min'
@@ -164,6 +172,8 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
   const handleEdit = (ref: MachineProcess) => {
     setEditingId(ref.id);
     setEditValues({ 
+      ref: ref.ref,
+      id_process: ref.id_process,
       sam: ref.sam, 
       frequency: ref.frequency,
       sam_unit: ref.sam_unit || 'units_per_min'
@@ -175,6 +185,8 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
       const { error } = await supabase
         .from('machines_processes')
         .update({
+          ref: editValues.ref,
+          id_process: editValues.id_process,
           sam: editValues.sam,
           frequency: editValues.frequency,
           sam_unit: editValues.sam_unit
@@ -515,9 +527,38 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
               ) : (
                 paginatedReferences.map((ref) => (
                   <TableRow key={ref.id}>
-                    <TableCell className="font-medium">{ref.ref}</TableCell>
+                    <TableCell className="font-medium">
+                      {editingId === ref.id ? (
+                        <Input
+                          type="text"
+                          value={editValues.ref}
+                          onChange={(e) => setEditValues({ ...editValues, ref: e.target.value })}
+                          className="h-8"
+                        />
+                      ) : (
+                        ref.ref
+                      )}
+                    </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{ref.process_name}</Badge>
+                      {editingId === ref.id ? (
+                        <Select 
+                          value={editValues.id_process.toString()}
+                          onValueChange={(value) => setEditValues({ ...editValues, id_process: parseInt(value) })}
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {processes.map(process => (
+                              <SelectItem key={process.id} value={process.id.toString()}>
+                                {process.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge variant="outline">{ref.process_name}</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {editingId === ref.id ? (
