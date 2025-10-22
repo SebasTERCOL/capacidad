@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Activity, Calendar, AlertCircle } from "lucide-react";
+import { Activity, Calendar, AlertCircle, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { OperatorConfig } from "./OperatorConfiguration";
 import HierarchicalCapacityView from './HierarchicalCapacityView';
@@ -249,6 +249,59 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Cachear resultado
     bomCache.set(cacheKey, componentsMap);
     return componentsMap;
+  };
+
+  const exportToCSV = () => {
+    const headers = [
+      'Referencia',
+      'Cantidad Requerida',
+      'SAM',
+      'Tiempo Total (min)',
+      'Proceso',
+      'Máquina',
+      'Estado Máquina',
+      'Operarios Requeridos',
+      'Operarios Disponibles',
+      'Capacidad %',
+      'Ocupación Máquina %',
+      'Ocupación Proceso %',
+      'Alertas',
+      'Proceso Especial'
+    ];
+
+    const rows = projection.map(item => [
+      item.referencia,
+      item.cantidadRequerida,
+      item.sam.toFixed(3),
+      item.tiempoTotal.toFixed(2),
+      item.proceso,
+      item.maquina,
+      item.estadoMaquina,
+      item.operadoresRequeridos,
+      item.operadoresDisponibles,
+      item.capacidadPorcentaje.toFixed(1),
+      item.ocupacionMaquina.toFixed(1),
+      item.ocupacionProceso.toFixed(1),
+      item.alerta || '',
+      item.especial ? 'Sí' : 'No'
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => 
+        typeof cell === 'string' && cell.includes(',') ? `"${cell}"` : cell
+      ).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `proyeccion_capacidad_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const calculateProjection = async () => {
@@ -1753,6 +1806,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       <div className="flex gap-2">
         <Button variant="outline" onClick={onBack}>
           Volver
+        </Button>
+        <Button variant="outline" onClick={exportToCSV}>
+          <Download className="mr-2 h-4 w-4" />
+          Exportar CSV
         </Button>
         <Button onClick={onStartOver} className="flex-1">
           Nuevo Análisis
