@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
-import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock, Calendar } from "lucide-react";
+import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock, Calendar, Download } from "lucide-react";
 import { OvertimeShift } from "./OvertimeConfiguration";
 
 interface ReferenceItem {
@@ -47,6 +47,7 @@ interface HierarchicalCapacityViewProps {
   onStartOver: () => void;
   hasDeficits?: boolean;
   onOptimizeWithOvertime?: () => void;
+  onExportCSV?: () => void;
 }
 
 const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
@@ -54,7 +55,8 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
   onBack,
   onStartOver,
   hasDeficits = false,
-  onOptimizeWithOvertime
+  onOptimizeWithOvertime,
+  onExportCSV
 }) => {
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set());
   const [expandedMachines, setExpandedMachines] = useState<Set<string>>(new Set());
@@ -357,6 +359,12 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
         <Button variant="outline" onClick={onBack}>
           Volver a Configuración
         </Button>
+        {onExportCSV && (
+          <Button variant="outline" onClick={onExportCSV}>
+            <Download className="h-4 w-4 mr-2" />
+            Exportar CSV
+          </Button>
+        )}
         {hasDeficits && onOptimizeWithOvertime && (
           <Button variant="secondary" onClick={onOptimizeWithOvertime} className="flex-1">
             <Clock className="h-4 w-4 mr-2" />

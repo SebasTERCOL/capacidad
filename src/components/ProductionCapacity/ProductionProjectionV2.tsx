@@ -1587,6 +1587,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         onStartOver={onStartOver}
         hasDeficits={shouldShowOvertimeButton}
         onOptimizeWithOvertime={handleOptimizeWithOvertime}
+        onExportCSV={exportToCSV}
       />
     );
   }
@@ -1806,10 +1807,6 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       <div className="flex gap-2">
         <Button variant="outline" onClick={onBack}>
           Volver
-        </Button>
-        <Button variant="outline" onClick={exportToCSV}>
-          <Download className="mr-2 h-4 w-4" />
-          Exportar CSV
         </Button>
         <Button onClick={onStartOver} className="flex-1">
           Nuevo Análisis
