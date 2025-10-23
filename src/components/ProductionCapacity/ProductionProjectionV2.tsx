@@ -146,18 +146,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       return null; // Retornar null para procesos excluidos
     }
     
-    // Normalizaciones específicas - Solo capitalización consistente, mantiene procesos separados
+    // UNIFICACIÓN: Troquelado y Despunte comparten operarios
+    const lowercaseName = processName.toLowerCase();
+    if (lowercaseName === 'troquelado' || lowercaseName === 'despunte') {
+      return 'Troquelado / Despunte';
+    }
+    
+    // Normalizaciones específicas - Solo capitalización consistente
     const normalizations: { [key: string]: string } = {
-      'despunte': 'Despunte',
-      'troquelado': 'Troquelado',
-      // Inyección y RoscadoConectores se mantienen separados para cálculos
       'inyeccion': 'Inyección',
       'inyección': 'Inyección',
       'roscadoconectores': 'RoscadoConectores',
       'ensambleint': 'EnsambleInt'
     };
     
-    const lowercaseName = processName.toLowerCase();
     return normalizations[lowercaseName] || processName;
   };
 
@@ -1322,12 +1324,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Map para rastrear qué procesos usan cada máquina
     const machineToProcesses = new Map<string, Set<string>>();
 
-    // Consolidar datos por proceso y máquina (SIN agrupación visual)
+    // Consolidar datos por proceso y máquina (CON normalización para unificar Troquelado/Despunte)
     projection.forEach(item => {
-      const displayProcessName = item.proceso; // Mantener nombre original
+      // Normalizar el nombre del proceso para unificar Troquelado y Despunte
+      const displayProcessName = normalizeProcessName(item.proceso) || item.proceso;
       
       if (!processMap.has(displayProcessName)) {
-        const processConfig = findProcessConfig(item.proceso, operatorConfig);
+        const processConfig = findProcessConfig(displayProcessName, operatorConfig);
         
         const totalOperators = processConfig?.operatorCount || 0;
         const baseHours = processConfig?.availableHours || operatorConfig.availableHours;
