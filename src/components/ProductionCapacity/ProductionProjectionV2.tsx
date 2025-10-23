@@ -1324,13 +1324,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Map para rastrear qué procesos usan cada máquina
     const machineToProcesses = new Map<string, Set<string>>();
 
-    // Consolidar datos por proceso y máquina (CON normalización para unificar Troquelado/Despunte)
+    // Consolidar datos por proceso y máquina (SIN normalización - mantener procesos separados)
     projection.forEach(item => {
-      // Normalizar el nombre del proceso para unificar Troquelado y Despunte
-      const displayProcessName = normalizeProcessName(item.proceso) || item.proceso;
+      // Mantener el nombre original del proceso (NO normalizar)
+      const displayProcessName = item.proceso;
       
       if (!processMap.has(displayProcessName)) {
-        const processConfig = findProcessConfig(displayProcessName, operatorConfig);
+        // Para buscar la configuración, sí necesitamos normalizar porque en OperatorConfiguration están unificados
+        const configSearchName = normalizeProcessName(item.proceso) || item.proceso;
+        const processConfig = findProcessConfig(configSearchName, operatorConfig);
         
         const totalOperators = processConfig?.operatorCount || 0;
         const baseHours = processConfig?.availableHours || operatorConfig.availableHours;
@@ -1480,6 +1482,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           };
         });
 
+      // Detectar si este proceso comparte operarios con otro
+      const sharesOperatorsWith = (processGroup.processName === 'Troquelado' || processGroup.processName === 'Despunte') 
+        ? 'Troquelado y Despunte comparten los mismos operarios'
+        : undefined;
+
       return {
         processName: processGroup.processName,
         totalOccupancy,
@@ -1487,7 +1494,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         availableHours: processGroup.availableHours,
         machines,
         effectiveStations: processGroup.operators,
-        operators: processGroup.operators
+        operators: processGroup.operators,
+        sharedOperatorsWith: sharesOperatorsWith
       };
     })
     .filter(p => p.machines.length > 0 || p.totalTime > 0) // Solo procesos con trabajo asignado
