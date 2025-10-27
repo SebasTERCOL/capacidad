@@ -1555,41 +1555,47 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   if (viewMode === 'hierarchical') {
     const processGroups = createHierarchicalData();
     
-    // Identificar déficits (sin considerar horas extras para permitir reconfiguración)
+    // Identificar TODAS las máquinas operacionales (incluyendo las que tienen y no tienen déficit)
     const identifiedDeficits: DeficitInfo[] = [];
     processGroups.forEach(process => {
       process.machines.forEach(machine => {
-        // Buscar déficit considerando capacidad base (sin extras)
+        // Excluir máquinas virtuales (Capacidad insuficiente, Sin máquina compatible)
+        const isVirtualMachine = machine.machineName === 'Capacidad insuficiente' || 
+                                 machine.machineName === 'Sin máquina compatible';
+        
+        if (isVirtualMachine) return; // No incluir máquinas virtuales en configuración de extras
+        
+        // Calcular capacidad base (sin extras)
         const baseCapacity = machine.capacity - (machine.overtimeHours || 0) * 60; // Restar extras si existen
         const occupancyWithoutOvertime = baseCapacity > 0 ? (machine.totalTime / baseCapacity) * 100 : machine.occupancy;
         
-        if (occupancyWithoutOvertime > 100) {
-          const availableMinutes = baseCapacity;
-          const requiredMinutes = machine.totalTime;
-          const deficitMinutes = requiredMinutes - availableMinutes;
-          
-          identifiedDeficits.push({
-            processName: process.processName,
-            machineName: machine.machineName,
-            machineId: machine.machineId,
-            deficitMinutes,
-            deficitPercentage: occupancyWithoutOvertime - 100,
-            currentOccupancy: occupancyWithoutOvertime,
-            operators: process.operators,
-            efficiency: operatorConfig.processes.find(p => p.processName === process.processName)?.efficiency || 100
-          });
-        }
+        // Calcular déficit (puede ser negativo si hay capacidad sobrante)
+        const availableMinutes = baseCapacity;
+        const requiredMinutes = machine.totalTime;
+        const deficitMinutes = Math.max(0, requiredMinutes - availableMinutes); // Solo positivo si hay déficit real
+        
+        // INCLUIR TODAS las máquinas (con y sin déficit) para permitir configuración flexible
+        identifiedDeficits.push({
+          processName: process.processName,
+          machineName: machine.machineName,
+          machineId: machine.machineId,
+          deficitMinutes, // 0 si no hay déficit
+          deficitPercentage: Math.max(0, occupancyWithoutOvertime - 100), // 0 si no hay déficit
+          currentOccupancy: occupancyWithoutOvertime,
+          operators: process.operators,
+          efficiency: operatorConfig.processes.find(p => p.processName === process.processName)?.efficiency || 100
+        });
       });
     });
     
     const handleOptimizeWithOvertime = () => {
-      if (onDeficitsIdentified && identifiedDeficits.length > 0) {
+      if (onDeficitsIdentified) {
         onDeficitsIdentified(identifiedDeficits);
       }
     };
     
-    // Mostrar botón si hay déficits O si ya hay configuración de extras (para ajustar)
-    const shouldShowOvertimeButton = identifiedDeficits.length > 0 || overtimeConfig !== null;
+    // Siempre mostrar botón de horas extras (permite configurar incluso sin déficit)
+    const shouldShowOvertimeButton = identifiedDeficits.length > 0;
     
     return (
       <HierarchicalCapacityView

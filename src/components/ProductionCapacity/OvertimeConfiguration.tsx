@@ -72,7 +72,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
   const [overtimeConfig, setOvertimeConfig] = useState<OvertimeProcessConfig[]>([]);
   const sundaysInMonth = calculateSundaysInMonth(workMonth, workYear);
 
-  // Inicializar configuración de horas extras
+  // Inicializar configuración de horas extras - INCLUYE TODOS LOS PROCESOS
   useEffect(() => {
     console.log(`🔧 [INIT OVERTIME] Inicializando configuración`, {
       workMonth,
@@ -93,11 +93,16 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
     const initialConfig: OvertimeProcessConfig[] = [];
     
     groupedByProcess.forEach((machines, processName) => {
-      console.log(`📦 [INIT OVERTIME] Configurando proceso: ${processName} con ${sundaysInMonth} domingos`);
+      // Calcular si tiene déficit crítico
+      const hasCriticalDeficit = machines.some(m => m.currentOccupancy > 100);
+      const hasModerateDeficit = machines.some(m => m.currentOccupancy > 80);
+      
+      console.log(`📦 [INIT OVERTIME] Configurando proceso: ${processName} con ${sundaysInMonth} domingos (Crítico: ${hasCriticalDeficit}, Moderado: ${hasModerateDeficit})`);
+      
       initialConfig.push({
         processName,
         enabled: false,
-        selectedSundays: sundaysInMonth, // Inicializar con todos los domingos disponibles
+        selectedSundays: sundaysInMonth,
         machines: machines.map(machine => ({
           machineId: machine.machineId,
           machineName: machine.machineName,
@@ -252,7 +257,8 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
             Configuración de Horas Extras
           </CardTitle>
           <CardDescription>
-            Configure turnos extra (domingos) para los procesos y máquinas con déficit de capacidad
+            Configure turnos extra (domingos) para optimizar la capacidad de producción. 
+            Los procesos con déficit crítico se muestran primero, pero puede configurar horas extras en cualquier proceso.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -297,42 +303,76 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
 
       {/* Configuración por Proceso */}
       <div className="space-y-4">
-        {overtimeConfig.map((process) => (
-          <Card key={process.processName}>
-            <Collapsible
-              open={expandedProcesses.has(process.processName)}
-              onOpenChange={() => toggleProcess(process.processName)}
-            >
-              <CollapsibleTrigger asChild>
-                <CardHeader className="hover:bg-muted/50 cursor-pointer transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {expandedProcesses.has(process.processName) ? 
-                        <ChevronDown className="h-5 w-5" /> : 
-                        <ChevronRight className="h-5 w-5" />
-                      }
+        {overtimeConfig
+          .sort((a, b) => {
+            // Ordenar por urgencia: Crítico > Con Déficit > Sin Déficit
+            const getCriticalityScore = (process: OvertimeProcessConfig) => {
+              const hasCritical = process.machines.some(m => m.currentDeficit > 0 && (m.currentDeficit / (m.operators * 160)) > 0.2);
+              const hasDeficit = process.machines.some(m => m.currentDeficit > 0);
+              
+              if (hasCritical) return 3;
+              if (hasDeficit) return 2;
+              return 1;
+            };
+            
+            return getCriticalityScore(b) - getCriticalityScore(a);
+          })
+          .map((process) => {
+          // Calcular nivel de urgencia del proceso
+          const hasCriticalDeficit = process.machines.some(m => m.currentDeficit > 0 && (m.currentDeficit / (m.operators * 160)) > 0.2); // >20% de déficit
+          const hasDeficit = process.machines.some(m => m.currentDeficit > 0);
+          
+          const urgencyBadge = hasCriticalDeficit ? (
+            <Badge variant="destructive" className="text-xs">
+              🔴 Déficit Crítico
+            </Badge>
+          ) : hasDeficit ? (
+            <Badge variant="secondary" className="text-xs">
+              🟡 Capacidad Ajustada
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
+              🟢 Capacidad Disponible
+            </Badge>
+          );
+          
+          return (
+            <Card key={process.processName}>
+              <Collapsible
+                open={expandedProcesses.has(process.processName)}
+                onOpenChange={() => toggleProcess(process.processName)}
+              >
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="hover:bg-muted/50 cursor-pointer transition-colors">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <Switch
-                          checked={process.enabled}
-                          onCheckedChange={(checked) => {
-                            handleProcessToggle(process.processName, checked);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <CardTitle className="text-lg">{process.processName}</CardTitle>
+                        {expandedProcesses.has(process.processName) ? 
+                          <ChevronDown className="h-5 w-5" /> : 
+                          <ChevronRight className="h-5 w-5" />
+                        }
+                        <div className="flex items-center gap-3">
+                          <Switch
+                            checked={process.enabled}
+                            onCheckedChange={(checked) => {
+                              handleProcessToggle(process.processName, checked);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <CardTitle className="text-lg">{process.processName}</CardTitle>
+                        </div>
+                        {urgencyBadge}
+                        {process.enabled && (
+                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                            Activo
+                          </Badge>
+                        )}
                       </div>
-                      {process.enabled && (
-                        <Badge variant="outline" className="bg-green-50 text-green-700">
-                          Activo
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span>{process.machines.length} máquina{process.machines.length !== 1 ? 's' : ''}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span>{process.machines.length} máquinas con déficit</span>
-                    </div>
-                  </div>
-                </CardHeader>
-              </CollapsibleTrigger>
+                  </CardHeader>
+                </CollapsibleTrigger>
 
               <CollapsibleContent>
                 <CardContent className="pt-0">
@@ -406,9 +446,15 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                 />
                                 <Settings className="h-4 w-4 text-muted-foreground" />
                                 <span className="font-semibold">{machine.machineName}</span>
-                                <Badge variant="destructive" className="text-xs">
-                                  Déficit: {formatTime(machine.currentDeficit)}
-                                </Badge>
+                                 {machine.currentDeficit > 0 ? (
+                                   <Badge variant="destructive" className="text-xs">
+                                     Déficit: {formatTime(machine.currentDeficit)}
+                                   </Badge>
+                                 ) : (
+                                   <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
+                                     Sin Déficit
+                                   </Badge>
+                                 )}
                               </div>
                             </div>
 
@@ -473,13 +519,23 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                 {(machine.shifts.shift1 || machine.shifts.shift2 || machine.shifts.shift3) && (
                                   <div className="p-3 bg-muted rounded-lg space-y-2">
                                     <div className="flex items-center justify-between text-sm">
-                                      <span className="font-medium">Horas extras totales:</span>
-                                      <span className="font-bold text-green-600">
-                                        +{formatTime(calculateSundayHours(machine.shifts) * process.selectedSundays * 60)}
+                                      <span className="font-medium">Horas extras por operario:</span>
+                                      <span className="font-bold text-blue-600">
+                                        {formatTime(calculateSundayHours(machine.shifts) * process.selectedSundays * 60)}
                                       </span>
                                     </div>
                                     <div className="text-xs text-muted-foreground text-center">
                                       {formatTime(calculateSundayHours(machine.shifts) * 60)} por domingo × {process.selectedSundays} {process.selectedSundays === 1 ? 'domingo' : 'domingos'}
+                                    </div>
+                                    <Separator className="my-2" />
+                                    <div className="flex items-center justify-between text-sm">
+                                      <span className="font-medium">Capacidad adicional total:</span>
+                                      <span className="font-bold text-green-600">
+                                        +{formatTime(machine.additionalCapacity)}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground text-center">
+                                      ({machine.operators} operarios × {machine.efficiency}% eficiencia)
                                     </div>
                                     {machine.additionalCapacity > 0 && (
                                       <>
@@ -522,7 +578,8 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
               </CollapsibleContent>
             </Collapsible>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       {/* Información de Domingos por Mes */}
