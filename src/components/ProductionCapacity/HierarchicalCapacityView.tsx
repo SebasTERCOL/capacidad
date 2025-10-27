@@ -228,7 +228,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>}
-          <Badge variant={getOccupancyVariant(process.totalOccupancy)} className="text-sm rounded-md">
+          <Badge variant={getOccupancyVariant(process.totalOccupancy)} className="text-sm my-0 rounded-none">
             {process.totalOccupancy.toFixed(1)}% Ocupación
             {process.sharedOperatorsWith ? <>
                 {' '}({formatTime(process.totalTime)} requerido)
