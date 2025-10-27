@@ -160,8 +160,12 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
               <div className="text-sm text-muted-foreground">Estaciones Productivas</div>
             </div>
             <div className="text-center p-3 bg-muted rounded-lg">
-              <div className="text-2xl font-bold text-primary">
-                {formatTime(processGroups.reduce((sum, p) => sum + p.totalTime, 0))}
+              <div className="text-2xl font-bold">
+                {(() => {
+                  // Sumar tiempos sin duplicar (ya cada proceso tiene su tiempo individual)
+                  const totalTime = processGroups.reduce((sum, p) => sum + p.totalTime, 0);
+                  return formatTime(totalTime);
+                })()}
               </div>
               <div className="text-sm text-muted-foreground">Tiempo Total Requerido</div>
             </div>
@@ -189,6 +193,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl font-bold text-amber-600">
                 {(() => {
+                  // Sumar todos los tiempos requeridos (ya incluye Troquelado + Despunte correctamente)
                   const totalRequired = processGroups.reduce((sum, p) => sum + p.totalTime, 0);
                   
                   // Calcular tiempo disponible sin duplicar Troquelado/Despunte
@@ -250,7 +255,16 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                         </TooltipProvider>
                       )}
           <Badge variant={getOccupancyVariant(process.totalOccupancy)} className="text-sm">
-            {process.totalOccupancy.toFixed(1)}% Ocupación ({formatTime(process.totalTime)} / {formatTime(process.availableHours * process.operators * 60)})
+            {process.totalOccupancy.toFixed(1)}% Ocupación
+            {process.sharedOperatorsWith ? (
+              <>
+                {' '}({formatTime(process.totalTime)} requerido)
+              </>
+            ) : (
+              <>
+                {' '}({formatTime(process.totalTime)} / {formatTime(process.availableHours * process.operators * 60)})
+              </>
+            )}
           </Badge>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">

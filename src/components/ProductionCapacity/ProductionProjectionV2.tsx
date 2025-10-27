@@ -1402,7 +1402,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     });
 
     // Convertir a formato esperado por HierarchicalCapacityView
-    return Array.from(processMap.values()).map(processGroup => {
+    const processGroupsArray = Array.from(processMap.values()).map(processGroup => {
       const totalAvailableHours = processGroup.operators * processGroup.availableHours * 60; // en minutos
       
       // Calcular horas extras totales para este proceso
@@ -1497,7 +1497,49 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         operators: processGroup.operators,
         sharedOperatorsWith: sharesOperatorsWith
       };
-    })
+    });
+
+    // AJUSTAR OCUPACIÓN PARA TROQUELADO/DESPUNTE SI AMBOS EXISTEN
+    const troquelado = processGroupsArray.find(p => p.processName === 'Troquelado');
+    const despunte = processGroupsArray.find(p => p.processName === 'Despunte');
+    
+    if (troquelado && despunte) {
+      console.log(`[SHARED OPERATORS] Detectados Troquelado y Despunte - Recalculando ocupación combinada`);
+      
+      // Sumar tiempos de ambos procesos
+      const combinedTime = troquelado.totalTime + despunte.totalTime;
+      
+      // Calcular horas extras combinadas
+      let combinedOvertimeMinutes = 0;
+      if (overtimeConfig) {
+        ['Troquelado', 'Despunte'].forEach(processName => {
+          const processOvertimeConfig = overtimeConfig.processes.find(p => p.processName === processName);
+          if (processOvertimeConfig && processOvertimeConfig.enabled) {
+            processOvertimeConfig.machines.forEach(m => {
+              if (m.enabled && m.additionalCapacity > 0) {
+                combinedOvertimeMinutes += m.additionalCapacity;
+              }
+            });
+          }
+        });
+      }
+      
+      // Usar operarios de uno solo (no duplicar) - tomamos de Troquelado
+      const totalAvailableHours = troquelado.operators * troquelado.availableHours * 60; // en minutos
+      const totalAvailableWithOvertime = totalAvailableHours + combinedOvertimeMinutes;
+      
+      // Calcular ocupación combinada
+      const combinedOccupancy = totalAvailableWithOvertime > 0 ? (combinedTime / totalAvailableWithOvertime) * 100 : 0;
+      
+      console.log(`[SHARED OPERATORS] Tiempo Troquelado: ${troquelado.totalTime.toFixed(2)}min | Tiempo Despunte: ${despunte.totalTime.toFixed(2)}min`);
+      console.log(`[SHARED OPERATORS] Tiempo Combinado: ${combinedTime.toFixed(2)}min | Disponible: ${totalAvailableWithOvertime.toFixed(2)}min | Ocupación: ${combinedOccupancy.toFixed(1)}%`);
+      
+      // Actualizar ocupación de ambos procesos con el valor combinado
+      troquelado.totalOccupancy = combinedOccupancy;
+      despunte.totalOccupancy = combinedOccupancy;
+    }
+
+    return processGroupsArray
     .filter(p => p.machines.length > 0 || p.totalTime > 0) // Solo procesos con trabajo asignado
     .sort((a, b) => getProcessOrder(a.processName) - getProcessOrder(b.processName));
   };

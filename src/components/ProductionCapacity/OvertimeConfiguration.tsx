@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -25,6 +26,7 @@ export interface OvertimeMachineConfig {
   currentDeficit: number; // minutos de déficit actual
   additionalCapacity: number; // minutos que se agregarían
   operators: number;
+  selectedOperators: number; // operarios que trabajarán en horas extras
   efficiency: number;
 }
 
@@ -111,6 +113,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
           currentDeficit: machine.deficitMinutes,
           additionalCapacity: 0,
           operators: machine.operators,
+          selectedOperators: machine.operators, // Inicializar con todos los operarios
           efficiency: machine.efficiency
         }))
       });
@@ -173,7 +176,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
               const newShifts = { ...machine.shifts, [shift]: !machine.shifts[shift] };
               const additionalCapacity = calculateAdditionalCapacity(
                 newShifts,
-                machine.operators,
+                machine.selectedOperators, // Usar operarios seleccionados
                 machine.efficiency,
                 process.selectedSundays // Usar domingos del proceso específico
               );
@@ -197,11 +200,35 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
             // Recalcular capacidad adicional con los nuevos domingos
             const additionalCapacity = calculateAdditionalCapacity(
               machine.shifts,
-              machine.operators,
+              machine.selectedOperators, // Usar operarios seleccionados
               machine.efficiency,
               newSundays
             );
             return { ...machine, additionalCapacity };
+          })
+        };
+      }
+      return process;
+    }));
+  };
+
+  const handleOperatorsChange = (processName: string, machineId: string, newOperators: number) => {
+    setOvertimeConfig(prev => prev.map(process => {
+      if (process.processName === processName) {
+        return {
+          ...process,
+          machines: process.machines.map(machine => {
+            if (machine.machineId === machineId) {
+              // Recalcular capacidad adicional con los nuevos operarios
+              const additionalCapacity = calculateAdditionalCapacity(
+                machine.shifts,
+                newOperators,
+                machine.efficiency,
+                process.selectedSundays
+              );
+              return { ...machine, selectedOperators: newOperators, additionalCapacity };
+            }
+            return machine;
           })
         };
       }
@@ -515,6 +542,52 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                   </div>
                                 </div>
 
+                                {/* Selección de Operarios para Horas Extras */}
+                                <div className="mt-4 p-3 border rounded-lg bg-blue-50/50">
+                                  <Label className="text-sm font-medium mb-2 block">
+                                    Operarios que trabajarán en horas extras
+                                  </Label>
+                                  <div className="flex items-center gap-3">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleOperatorsChange(process.processName, machine.machineId, Math.max(1, machine.selectedOperators - 1))}
+                                      disabled={machine.selectedOperators <= 1}
+                                    >
+                                      -
+                                    </Button>
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      max={machine.operators}
+                                      value={machine.selectedOperators}
+                                      onChange={(e) => {
+                                        const value = parseInt(e.target.value) || 1;
+                                        const clampedValue = Math.min(Math.max(1, value), machine.operators);
+                                        handleOperatorsChange(process.processName, machine.machineId, clampedValue);
+                                      }}
+                                      className="w-20 text-center"
+                                    />
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleOperatorsChange(process.processName, machine.machineId, Math.min(machine.operators, machine.selectedOperators + 1))}
+                                      disabled={machine.selectedOperators >= machine.operators}
+                                    >
+                                      +
+                                    </Button>
+                                    <span className="text-sm text-muted-foreground">
+                                      de {machine.operators} operarios disponibles
+                                    </span>
+                                  </div>
+                                  {machine.selectedOperators < machine.operators && (
+                                    <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+                                      <AlertCircle className="h-3 w-3" />
+                                      <span>No todos los operarios trabajarán en horas extras</span>
+                                    </div>
+                                  )}
+                                </div>
+
                                 {/* Resumen de Capacidad */}
                                 {(machine.shifts.shift1 || machine.shifts.shift2 || machine.shifts.shift3) && (
                                   <div className="p-3 bg-muted rounded-lg space-y-2">
@@ -535,7 +608,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                       </span>
                                     </div>
                                     <div className="text-xs text-muted-foreground text-center">
-                                      ({machine.operators} operarios × {machine.efficiency}% eficiencia)
+                                      ({machine.selectedOperators} operarios × {machine.efficiency}% eficiencia)
                                     </div>
                                     {machine.additionalCapacity > 0 && (
                                       <>
@@ -673,7 +746,7 @@ function calculateSundayHours(shifts: OvertimeShift): number {
 
 function calculateAdditionalCapacity(
   shifts: OvertimeShift,
-  operators: number,
+  selectedOperators: number,
   efficiency: number,
   sundaysInMonth: number
 ): number {
@@ -685,12 +758,12 @@ function calculateAdditionalCapacity(
     hoursPerSunday,
     sundaysInMonth,
     totalSundayHours,
-    operators,
+    selectedOperators,
     efficiency,
   });
   
-  // Convertir a minutos y aplicar operadores y eficiencia
-  const additionalMinutes = totalSundayHours * 60 * operators * (efficiency / 100);
+  // Convertir a minutos y aplicar operadores SELECCIONADOS y eficiencia
+  const additionalMinutes = totalSundayHours * 60 * selectedOperators * (efficiency / 100);
   
   console.log(`✅ [ADDITIONAL CAPACITY] Resultado: ${additionalMinutes} minutos (${(additionalMinutes/60).toFixed(2)}h)`);
   
