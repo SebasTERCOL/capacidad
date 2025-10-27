@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ReferenceManager } from "./ReferenceManager";
+import { getColombianHolidays, isColombianHoliday, formatHolidayDate } from "@/lib/colombianHolidays";
 
 export interface MachineConfig {
   id: number;
@@ -60,6 +61,9 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
     const date = new Date(year, month - 1, 1);
     const lastDay = new Date(year, month, 0).getDate();
     
+    // Obtener todos los festivos del año
+    const holidays = getColombianHolidays(year);
+    
     let weekdays = 0;
     let saturdays = 0;
     
@@ -67,12 +71,23 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
       const currentDate = new Date(year, month - 1, day);
       const dayOfWeek = currentDate.getDay();
       
+      // Verificar si es festivo
+      const isFestivo = isColombianHoliday(currentDate, holidays);
+      
+      // Si es festivo, no contarlo como día laboral
+      if (isFestivo) {
+        console.log(`🎉 Día festivo detectado: ${currentDate.toLocaleDateString('es-CO')}`);
+        continue;
+      }
+      
       if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Lunes a Viernes
         weekdays++;
       } else if (dayOfWeek === 6) { // Sábado
         saturdays++;
       }
     }
+    
+    console.log(`📅 ${month}/${year} - Días laborales: ${weekdays} entre semana, ${saturdays} sábados (festivos excluidos)`);
     
     // Horas brutas por turno (sin descanso)
     const weekdayHours = 8 + 8 + 8; // Mañana + Tarde + Noche (8h cada uno)
@@ -97,12 +112,23 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
     const date = new Date(year, month - 1, 1);
     const lastDay = new Date(year, month, 0).getDate();
     
+    // Obtener todos los festivos del año
+    const holidays = getColombianHolidays(year);
+    
     let weekdays = 0;
     let saturdays = 0;
     
     for (let day = 1; day <= lastDay; day++) {
       const currentDate = new Date(year, month - 1, day);
       const dayOfWeek = currentDate.getDay();
+      
+      // Verificar si es festivo
+      const isFestivo = isColombianHoliday(currentDate, holidays);
+      
+      // Si es festivo, no contarlo como día laboral
+      if (isFestivo) {
+        continue;
+      }
       
       if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Lunes a Viernes
         weekdays++;
@@ -435,6 +461,24 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                 <div className="text-2xl font-bold text-primary">{availableHours.toFixed(1)}h</div>
                 <div className="text-xs text-muted-foreground">por operario</div>
               </div>
+            </div>
+          </div>
+          
+          <div className="col-span-full mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-600">
+                Días festivos en {new Date(workYear, workMonth - 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
+              </span>
+            </div>
+            <div className="text-xs text-blue-800 dark:text-blue-200">
+              {(() => {
+                const holidays = getColombianHolidays(workYear);
+                const monthHolidays = holidays.filter(h => h.getMonth() === workMonth - 1);
+                return monthHolidays.length > 0 
+                  ? monthHolidays.map(h => formatHolidayDate(h)).join('; ')
+                  : 'No hay días festivos este mes';
+              })()}
             </div>
           </div>
         </CardContent>
