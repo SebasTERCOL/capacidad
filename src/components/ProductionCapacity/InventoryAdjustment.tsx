@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Package, Minus, ArrowRight, Database } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Package, Minus, ArrowRight, Database, ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ProductionRequest } from "./FileUpload";
 import { toast } from "sonner";
@@ -50,6 +51,7 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [currentReference, setCurrentReference] = useState<string>('');
+  const [openReferences, setOpenReferences] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (data.length > 0) {
@@ -240,7 +242,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             });
             
             // Solo agregar a producción lo que falta
-            if (cantidadAProducir > 0) {
+            // Excepto MP (Materia Prima) que no se produce
+            if (cantidadAProducir > 0 && productData.type !== 'MP') {
               itemAdjusted.push({
                 referencia: componentId,
                 cantidad: cantidadAProducir
@@ -357,64 +360,94 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
         </CardHeader>
       </Card>
 
-      {adjustedReferences.map((item, index) => (
-        <Card key={index}>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              {item.referencia} - {item.cantidad_original.toLocaleString()} unidades solicitadas
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Componente</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="text-right">Requerido</TableHead>
-                  <TableHead className="text-right">Disponible</TableHead>
-                  <TableHead className="text-center">
-                    <Minus className="h-4 w-4 inline" />
-                  </TableHead>
-                  <TableHead className="text-right font-bold">A Producir</TableHead>
-                  <TableHead className="text-right">Quedará</TableHead>
-                  <TableHead>Estado</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {item.componentes.map((comp, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="font-medium">{comp.component_id}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{comp.type}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right">{comp.cantidad_requerida.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{comp.cantidad_disponible.toLocaleString()}</TableCell>
-                    <TableCell className="text-center">
-                      <ArrowRight className="h-4 w-4 inline text-muted-foreground" />
-                    </TableCell>
-                    <TableCell className="text-right font-bold text-primary">
-                      {comp.cantidad_a_producir.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span className={comp.quedara_disponible < 0 ? 'text-destructive' : ''}>
-                        {comp.quedara_disponible.toLocaleString()}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={getAlertVariant(comp.alerta)}>
-                        {comp.alerta === 'ok' ? '✓ OK' : 
-                         comp.alerta === 'warning' ? '⚠ Bajo mínimo' : 
-                         '✗ Falta stock'}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ))}
+      {adjustedReferences.map((item, index) => {
+        const isOpen = openReferences.has(index);
+        const toggleOpen = () => {
+          const newOpen = new Set(openReferences);
+          if (isOpen) {
+            newOpen.delete(index);
+          } else {
+            newOpen.add(index);
+          }
+          setOpenReferences(newOpen);
+        };
+
+        return (
+          <Card key={index}>
+            <Collapsible open={isOpen} onOpenChange={toggleOpen}>
+              <CollapsibleTrigger className="w-full">
+                <CardHeader className="cursor-pointer hover:bg-accent/50 transition-colors">
+                  <CardTitle className="text-lg flex items-center gap-2 justify-between">
+                    <div className="flex items-center gap-2">
+                      <Package className="h-5 w-5" />
+                      {item.referencia} - {item.cantidad_original.toLocaleString()} unidades solicitadas
+                    </div>
+                    {isOpen ? (
+                      <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </CardTitle>
+                </CardHeader>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Componente</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead className="text-right">Requerido</TableHead>
+                        <TableHead className="text-right">Disponible</TableHead>
+                        <TableHead className="text-center">
+                          <Minus className="h-4 w-4 inline" />
+                        </TableHead>
+                        <TableHead className="text-right font-bold">A Producir</TableHead>
+                        <TableHead className="text-right">Quedará</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {item.componentes.map((comp, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium">{comp.component_id}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{comp.type}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">{comp.cantidad_requerida.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{comp.cantidad_disponible.toLocaleString()}</TableCell>
+                          <TableCell className="text-center">
+                            <ArrowRight className="h-4 w-4 inline text-muted-foreground" />
+                          </TableCell>
+                          <TableCell className="text-right font-bold text-primary">
+                            {comp.type === 'MP' ? (
+                              <span className="text-muted-foreground">N/A</span>
+                            ) : (
+                              comp.cantidad_a_producir.toLocaleString()
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className={comp.quedara_disponible < 0 ? 'text-destructive' : ''}>
+                              {comp.quedara_disponible.toLocaleString()}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={getAlertVariant(comp.alerta)}>
+                              {comp.alerta === 'ok' ? '✓ OK' : 
+                               comp.alerta === 'warning' ? '⚠ Bajo mínimo' : 
+                               '✗ Falta stock'}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
+        );
+      })}
 
       <div className="flex gap-2">
         <Button variant="outline" onClick={onBack}>
