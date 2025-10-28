@@ -559,11 +559,10 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                     <Input
                                       type="number"
                                       min="1"
-                                      max={machine.operators}
                                       value={machine.selectedOperators}
                                       onChange={(e) => {
                                         const value = parseInt(e.target.value) || 1;
-                                        const clampedValue = Math.min(Math.max(1, value), machine.operators);
+                                        const clampedValue = Math.max(1, value);
                                         handleOperatorsChange(process.processName, machine.machineId, clampedValue);
                                       }}
                                       className="w-20 text-center"
@@ -571,21 +570,14 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      onClick={() => handleOperatorsChange(process.processName, machine.machineId, Math.min(machine.operators, machine.selectedOperators + 1))}
-                                      disabled={machine.selectedOperators >= machine.operators}
+                                      onClick={() => handleOperatorsChange(process.processName, machine.machineId, machine.selectedOperators + 1)}
                                     >
                                       +
                                     </Button>
-                                    <span className="text-sm text-muted-foreground">
-                                      de {machine.operators} operarios disponibles
-                                    </span>
-                                  </div>
-                                  {machine.selectedOperators < machine.operators && (
-                                    <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
-                                      <AlertCircle className="h-3 w-3" />
-                                      <span>No todos los operarios trabajarán en horas extras</span>
+                                    <div className="text-xs text-muted-foreground ml-2">
+                                      Operarios base: {machine.operators}
                                     </div>
-                                  )}
+                                  </div>
                                 </div>
 
                                 {/* Resumen de Capacidad */}

@@ -38,13 +38,15 @@ interface InventoryAdjustmentProps {
   onNext: () => void;
   onBack: () => void;
   onAdjustmentComplete: (adjustedData: AdjustedProductionData[]) => void;
+  useInventory: boolean;
 }
 
 export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
   data,
   onNext,
   onBack,
-  onAdjustmentComplete
+  onAdjustmentComplete,
+  useInventory
 }) => {
   const [adjustedReferences, setAdjustedReferences] = useState<AdjustedReference[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,9 +57,21 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
 
   useEffect(() => {
     if (data.length > 0) {
-      processInventoryAdjustment();
+      if (useInventory) {
+        processInventoryAdjustment();
+      } else {
+        // Si no se usa inventario, pasar los datos directamente
+        const directData = data.map(item => ({
+          referencia: item.referencia,
+          cantidad: item.cantidad
+        }));
+        onAdjustmentComplete(directData);
+        setAdjustedReferences([]);
+        setLoading(false);
+        setProgress(100);
+      }
     }
-  }, [data]);
+  }, [data, useInventory]);
 
   // Cache para BOMs ya consultados
   const bomCache = new Map<string, { component_id: string; amount: number }[]>();
@@ -346,6 +360,32 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
     );
   }
 
+  if (!useInventory) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            Ajuste de Inventario
+          </CardTitle>
+          <CardDescription>
+            El cálculo con inventario está desactivado. Se usarán las cantidades originales.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onBack}>
+              Volver
+            </Button>
+            <Button onClick={onNext} className="flex-1">
+              Continuar a Configuración de Operarios
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -358,6 +398,16 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             Resta automática de cantidades disponibles en inventario para determinar producción real necesaria
           </CardDescription>
         </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onBack}>
+              Volver
+            </Button>
+            <Button onClick={onNext} className="flex-1">
+              Continuar a Configuración de Operarios
+            </Button>
+          </div>
+        </CardContent>
       </Card>
 
       {adjustedReferences.map((item, index) => {
@@ -408,7 +458,15 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {item.componentes.map((comp, idx) => (
+                      {item.componentes
+                        .sort((a, b) => {
+                          // Ordenar: PP primero, luego MP
+                          const typeOrder = { 'PP': 1, 'MP': 2, 'PT': 3 };
+                          const orderA = typeOrder[a.type as keyof typeof typeOrder] || 99;
+                          const orderB = typeOrder[b.type as keyof typeof typeOrder] || 99;
+                          return orderA - orderB;
+                        })
+                        .map((comp, idx) => (
                         <TableRow key={idx}>
                           <TableCell className="font-medium">{comp.component_id}</TableCell>
                           <TableCell>

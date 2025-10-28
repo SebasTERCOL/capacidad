@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Upload, FileSpreadsheet, Trash2 } from "lucide-react";
 import { toast } from "@/components/ui/sonner";
+import { Switch } from "@/components/ui/switch";
 
 export interface ProductionRequest {
   referencia: string;
@@ -15,12 +16,14 @@ export interface ProductionRequest {
 interface FileUploadProps {
   onDataProcessed: (data: ProductionRequest[]) => void;
   onNext: () => void;
+  onInventoryToggle: (useInventory: boolean) => void;
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext, onInventoryToggle }) => {
   const [file, setFile] = useState<File | null>(null);
   const [data, setData] = useState<ProductionRequest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [useInventory, setUseInventory] = useState(true);
 
   const detectSeparator = (content: string): string => {
     const firstLine = content.split(/\r?\n/)[0];
@@ -210,6 +213,25 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext 
             <p className="text-sm text-muted-foreground">
               El archivo debe contener columnas: Referencia, Cantidad
             </p>
+          </div>
+
+          <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
+            <div className="space-y-1">
+              <Label htmlFor="inventory-toggle" className="text-sm font-medium">
+                Calcular con Inventario Disponible
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Cuando está activo, se resta el inventario disponible para calcular la producción necesaria
+              </p>
+            </div>
+            <Switch
+              id="inventory-toggle"
+              checked={useInventory}
+              onCheckedChange={(checked) => {
+                setUseInventory(checked);
+                onInventoryToggle(checked);
+              }}
+            />
           </div>
           
           <div className="flex gap-2">

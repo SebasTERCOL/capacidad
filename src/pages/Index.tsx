@@ -20,6 +20,7 @@ const Index = () => {
   const [projectionData, setProjectionData] = useState<any[]>([]);
   const [deficits, setDeficits] = useState<DeficitInfo[]>([]);
   const [overtimeConfig, setOvertimeConfig] = useState<OvertimeConfig | null>(null);
+  const [useInventory, setUseInventory] = useState(true);
 
   const steps = [
     { id: 1, title: 'Carga de Archivo', description: 'Subir CSV con referencias' },
@@ -74,6 +75,7 @@ const Index = () => {
           <FileUpload
             onDataProcessed={handleDataProcessed}
             onNext={() => setCurrentStep(2)}
+            onInventoryToggle={setUseInventory}
           />
         );
       case 2:
@@ -83,6 +85,7 @@ const Index = () => {
             onNext={() => setCurrentStep(3)}
             onBack={() => setCurrentStep(1)}
             onAdjustmentComplete={handleAdjustmentComplete}
+            useInventory={useInventory}
           />
         );
       case 3:
