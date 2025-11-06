@@ -1446,6 +1446,105 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       
       console.log(`[OVERTIME DISTRIBUTION] Distribuyendo ${totalProcessOvertimeMinutes.toFixed(2)}min entre ${operationalCount} máquinas = ${overtimePerMachine.toFixed(2)}min por máquina`);
 
+      // NUEVO: REDISTRIBUIR REFERENCIAS cuando hay horas extras
+      if (overtimePerMachine > 0 && operationalCount > 1) {
+        console.log(`[REBALANCING] Redistribuyendo referencias entre ${operationalCount} máquinas del proceso ${processGroup.processName}`);
+        
+        // Recolectar todas las referencias del proceso
+        const allReferences = new Map<string, {
+          referencia: string;
+          cantidadRequerida: number;
+          sam: number;
+          tiempoTotal: number;
+        }>();
+        
+        processGroup.machines.forEach(machine => {
+          if (machine.machineName !== 'Capacidad insuficiente' && machine.machineName !== 'Sin máquina compatible') {
+            machine.references.forEach(ref => {
+              const key = ref.referencia;
+              if (allReferences.has(key)) {
+                const existing = allReferences.get(key)!;
+                existing.cantidadRequerida += ref.cantidadRequerida;
+                existing.tiempoTotal += ref.tiempoTotal;
+              } else {
+                allReferences.set(key, {
+                  referencia: ref.referencia,
+                  cantidadRequerida: ref.cantidadRequerida,
+                  sam: ref.sam,
+                  tiempoTotal: ref.tiempoTotal
+                });
+              }
+            });
+          }
+        });
+        
+        console.log(`[REBALANCING] ${allReferences.size} referencias únicas a redistribuir`);
+        
+        // Calcular capacidad total de cada máquina (base + extras)
+        const machineCapacities = operationalMachines.map(m => ({
+          machineName: m.machineName,
+          baseCapacity: processGroup.availableHours * 60,
+          overtimeCapacity: overtimePerMachine,
+          totalCapacity: processGroup.availableHours * 60 + overtimePerMachine,
+          currentLoad: 0 // Reset para redistribución
+        }));
+        
+        // Redistribuir referencias proporcionalmente
+        processGroup.machines.forEach(machine => {
+          if (machine.machineName !== 'Capacidad insuficiente' && machine.machineName !== 'Sin máquina compatible') {
+            machine.references = [];
+            machine.totalTime = 0;
+          }
+        });
+        
+        // Distribuir cada referencia entre las máquinas disponibles
+        allReferences.forEach(refData => {
+          let tiempoRestante = refData.tiempoTotal;
+          let cantidadRestante = refData.cantidadRequerida;
+          
+          // Ordenar máquinas por menor carga actual
+          machineCapacities.sort((a, b) => a.currentLoad - b.currentLoad);
+          
+          machineCapacities.forEach((machineCapacity, index) => {
+            if (tiempoRestante <= 0) return;
+            
+            const machineGroup = processGroup.machines.get(machineCapacity.machineName);
+            if (!machineGroup) return;
+            
+            // Calcular cuánto tiempo asignar a esta máquina
+            const capacidadDisponible = machineCapacity.totalCapacity - machineCapacity.currentLoad;
+            const tiempoAsignar = index === machineCapacities.length - 1
+              ? tiempoRestante // Última máquina toma todo lo restante
+              : Math.min(tiempoRestante, capacidadDisponible * 0.8); // Otras máquinas toman hasta 80% de su disponible
+            
+            if (tiempoAsignar > 0) {
+              const proporcion = tiempoAsignar / refData.tiempoTotal;
+              const cantidadAsignar = Math.round(cantidadRestante * proporcion);
+              
+              machineGroup.references.push({
+                referencia: refData.referencia,
+                cantidadRequerida: cantidadAsignar,
+                sam: refData.sam,
+                tiempoTotal: tiempoAsignar,
+                ocupacionPorcentaje: (tiempoAsignar / machineCapacity.totalCapacity) * 100
+              });
+              
+              machineGroup.totalTime += tiempoAsignar;
+              machineCapacity.currentLoad += tiempoAsignar;
+              tiempoRestante -= tiempoAsignar;
+              cantidadRestante -= cantidadAsignar;
+              
+              console.log(`  ✓ ${machineCapacity.machineName}: ${cantidadAsignar} unidades de ${refData.referencia} (${(tiempoAsignar/60).toFixed(2)}h)`);
+            }
+          });
+        });
+        
+        console.log(`[REBALANCING] Redistribución completada. Nueva carga por máquina:`);
+        machineCapacities.forEach(mc => {
+          console.log(`  - ${mc.machineName}: ${(mc.currentLoad/60).toFixed(2)}h / ${(mc.totalCapacity/60).toFixed(2)}h (${(mc.currentLoad/mc.totalCapacity*100).toFixed(1)}%)`);
+        });
+      }
+
       // Ordenar máquinas de manera natural
       const machines = Array.from(processGroup.machines.values())
         .sort((a, b) => sortMachineNames(a.machineName, b.machineName))
@@ -1478,9 +1577,21 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             console.log(`✅ [OVERTIME APPLIED] ${machine.machineName}: +${overtimeHours.toFixed(2)}h (capacidad total: ${(machineAvailableTime/60).toFixed(2)}h)`);
           }
           
-          // NUEVO: Usar tiempo total de todas las cargas en la máquina para ocupación real
-          const totalMachineTime = sharedMachineWorkload.get(machine.machineName) || machine.totalTime;
+          // Calcular ocupación usando el tiempo REDISTRIBUIDO
+          // Si hay redistribución, machine.totalTime ya fue actualizado
+          // Si no hay redistribución, usamos el workload compartido original
+          let totalMachineTime = machine.totalTime;
+          if (!isVirtualMachine && overtimePerMachine === 0) {
+            // Solo usar sharedMachineWorkload si NO hubo redistribución
+            const sharedWorkload = sharedMachineWorkload.get(machine.machineName);
+            if (sharedWorkload) {
+              totalMachineTime = sharedWorkload;
+            }
+          }
+          
           const machineOccupancy = machineAvailableTime > 0 ? (totalMachineTime / machineAvailableTime) * 100 : 0;
+          
+          console.log(`  📊 [MACHINE FINAL] ${machine.machineName}: ${totalMachineTime.toFixed(2)}min / ${machineAvailableTime.toFixed(2)}min = ${machineOccupancy.toFixed(1)}%`);
           
           // Determinar si es compartida (solo para máquinas reales, reutilizar isVirtualMachine de arriba)
           const processesUsingMachine = machineToProcesses.get(machine.machineName);
@@ -1490,15 +1601,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           return {
             machineId: machine.machineId,
             machineName: machine.machineName,
-            totalTime: machine.totalTime, // Tiempo solo de este proceso
-            totalMachineTime, // NUEVO: Tiempo total considerando todos los procesos
-            occupancy: machineOccupancy, // Ocupación considerando toda la carga (incluyendo extras)
+            totalTime: machine.totalTime, // Tiempo redistribuido de este proceso
+            totalMachineTime, // Tiempo total (redistribuido si aplica)
+            occupancy: machineOccupancy, // Ocupación con capacidad total (base + extras)
             capacity: machineAvailableTime,
             references: machine.references,
-            isShared, // NUEVO
-            sharedWith, // NUEVO
-            overtimeHours, // NUEVO: Horas extras aplicadas
-            overtimeShifts // NUEVO: Turnos configurados
+            isShared,
+            sharedWith,
+            overtimeHours,
+            overtimeShifts
           };
         });
 
@@ -1512,6 +1623,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         totalOccupancy,
         totalTime: processGroup.totalTime,
         availableHours: processGroup.availableHours,
+        totalAvailableMinutes: totalAvailableWithOvertime, // NUEVO: Incluye extras
         machines,
         effectiveStations: processGroup.operators,
         operators: processGroup.operators,

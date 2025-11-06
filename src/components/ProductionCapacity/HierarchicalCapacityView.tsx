@@ -33,6 +33,7 @@ interface ProcessGroup {
   totalOccupancy: number;
   totalTime: number;
   availableHours: number;
+  totalAvailableMinutes: number; // NUEVO: Tiempo total disponible incluyendo extras
   machines: MachineGroup[];
   effectiveStations: number;
   operators: number;
@@ -159,7 +160,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl font-bold text-green-600">
                 {(() => {
-                // Calcular tiempo disponible sin duplicar Troquelado/Despunte
+                // Calcular tiempo disponible incluyendo extras, sin duplicar Troquelado/Despunte
                 const hasTroquelado = processGroups.some(p => p.processName === 'Troquelado');
                 const hasDespunte = processGroups.some(p => p.processName === 'Despunte');
                 let totalTime = 0;
@@ -168,7 +169,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                   if (p.processName === 'Despunte' && hasTroquelado) {
                     return;
                   }
-                  totalTime += p.effectiveStations * p.availableHours * 60;
+                  totalTime += p.totalAvailableMinutes;
                 });
                 return formatTime(totalTime);
               })()}
@@ -181,7 +182,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                 // Sumar todos los tiempos requeridos (ya incluye Troquelado + Despunte correctamente)
                 const totalRequired = processGroups.reduce((sum, p) => sum + p.totalTime, 0);
 
-                // Calcular tiempo disponible sin duplicar Troquelado/Despunte
+                // Calcular tiempo disponible incluyendo extras, sin duplicar Troquelado/Despunte
                 const hasTroquelado = processGroups.some(p => p.processName === 'Troquelado');
                 const hasDespunte = processGroups.some(p => p.processName === 'Despunte');
                 let totalAvailable = 0;
@@ -190,7 +191,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                   if (p.processName === 'Despunte' && hasTroquelado) {
                     return;
                   }
-                  totalAvailable += p.effectiveStations * p.availableHours * 60;
+                  totalAvailable += p.totalAvailableMinutes;
                 });
                 const occupancyPercentage = totalAvailable > 0 ? totalRequired / totalAvailable * 100 : 0;
                 return `${occupancyPercentage.toFixed(1)}%`;
@@ -233,7 +234,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
             {process.sharedOperatorsWith ? <>
                 {' '}({formatTime(process.totalTime)} requerido)
               </> : <>
-                {' '}({formatTime(process.totalTime)} / {formatTime(process.availableHours * process.operators * 60)})
+                {' '}({formatTime(process.totalTime)} / {formatTime(process.totalAvailableMinutes)})
               </>}
           </Badge>
                     </div>
