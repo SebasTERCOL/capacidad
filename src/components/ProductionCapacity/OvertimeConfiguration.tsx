@@ -589,16 +589,36 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                         {formatTime(calculateSundayHours(machine.shifts) * process.selectedSundays * 60)}
                                       </span>
                                     </div>
-                                    <div className="text-xs text-muted-foreground text-center">
-                                      {formatTime(calculateSundayHours(machine.shifts) * 60)} por domingo × {process.selectedSundays} {process.selectedSundays === 1 ? 'domingo' : 'domingos'}
-                                    </div>
-                                    <Separator className="my-2" />
-                                    <div className="flex items-center justify-between text-sm">
-                                      <span className="font-medium">Capacidad adicional total:</span>
-                                      <span className="font-bold text-green-600">
-                                        +{formatTime(machine.additionalCapacity)}
-                                      </span>
-                                    </div>
+                                     <div className="text-xs text-muted-foreground text-center">
+                                       {formatTime(calculateSundayHours(machine.shifts) * 60)} por domingo × {process.selectedSundays} {process.selectedSundays === 1 ? 'domingo' : 'domingos'}
+                                     </div>
+                                     
+                                     {/* Extensión de sábados */}
+                                     {process.selectedSundays > 0 && (
+                                       <>
+                                         <Separator className="my-2" />
+                                         <div className="flex items-center justify-between text-sm">
+                                           <span className="font-medium">Extensión de sábados:</span>
+                                           <span className="font-bold text-purple-600">
+                                             {formatTime((22.75 - 11.9) * process.selectedSundays * 60)}
+                                           </span>
+                                         </div>
+                                         <div className="text-xs text-muted-foreground text-center">
+                                           {formatTime((22.75 - 11.9) * 60)} por sábado × {process.selectedSundays} sábado{process.selectedSundays !== 1 ? 's' : ''}
+                                         </div>
+                                         <div className="text-xs text-muted-foreground text-center italic">
+                                           Cuando se trabaja domingo, el sábado anterior tiene 3 turnos completos
+                                         </div>
+                                       </>
+                                     )}
+                                     
+                                     <Separator className="my-2" />
+                                     <div className="flex items-center justify-between text-sm">
+                                       <span className="font-medium">Capacidad adicional total:</span>
+                                       <span className="font-bold text-green-600">
+                                         +{formatTime(machine.additionalCapacity)}
+                                       </span>
+                                     </div>
                                     <div className="text-xs text-muted-foreground text-center">
                                       ({machine.selectedOperators} operarios × {machine.efficiency}% eficiencia)
                                     </div>
@@ -742,22 +762,45 @@ function calculateAdditionalCapacity(
   efficiency: number,
   sundaysInMonth: number
 ): number {
-  const hoursPerSunday = calculateSundayHours(shifts);
-  const totalSundayHours = hoursPerSunday * sundaysInMonth;
+  let totalExtraHours = 0;
+  
+  // 1. Horas de domingos
+  const sundayHours = calculateSundayHours(shifts);
+  const totalSundayHours = sundayHours * sundaysInMonth;
+  
+  // 2. Horas adicionales de sábados (cuando se trabaja domingo)
+  let saturdayExtensionHours = 0;
+  if (sundaysInMonth > 0) {
+    // Por cada domingo trabajado, el sábado anterior se extiende
+    // Diferencia entre sábado normal (2 turnos reducidos) y sábado extendido (3 turnos completos)
+    const normalSaturdayHours = 6.0834 + 5.917; // 11.9004 horas (2 turnos reducidos)
+    const extendedSaturdayHours = 7.17 + 7.20 + 8.38; // 22.75 horas (3 turnos completos)
+    const extraSaturdayHoursPerWeekend = extendedSaturdayHours - normalSaturdayHours; // ~10.85 horas
+    
+    saturdayExtensionHours = extraSaturdayHoursPerWeekend * sundaysInMonth;
+    
+    console.log(`📅 [SATURDAY EXTENSION] ${sundaysInMonth} domingos → ${sundaysInMonth} sábados extendidos`);
+    console.log(`   Horas extra por sábado: ${extraSaturdayHoursPerWeekend.toFixed(2)}h`);
+    console.log(`   Total extensión sábados: ${saturdayExtensionHours.toFixed(2)}h`);
+  }
+  
+  totalExtraHours = totalSundayHours + saturdayExtensionHours;
   
   console.log(`💡 [ADDITIONAL CAPACITY]`, {
     shifts,
-    hoursPerSunday,
+    sundayHoursPerDay: sundayHours.toFixed(2),
     sundaysInMonth,
-    totalSundayHours,
+    totalSundayHours: totalSundayHours.toFixed(2),
+    saturdayExtensionHours: saturdayExtensionHours.toFixed(2),
+    totalExtraHours: totalExtraHours.toFixed(2),
     selectedOperators,
     efficiency,
   });
   
-  // Convertir a minutos y aplicar operadores SELECCIONADOS y eficiencia
-  const additionalMinutes = totalSundayHours * 60 * selectedOperators * (efficiency / 100);
+  // Convertir a minutos y aplicar operadores y eficiencia
+  const additionalMinutes = totalExtraHours * 60 * selectedOperators * (efficiency / 100);
   
-  console.log(`✅ [ADDITIONAL CAPACITY] Resultado: ${additionalMinutes} minutos (${(additionalMinutes/60).toFixed(2)}h)`);
+  console.log(`✅ [ADDITIONAL CAPACITY] Resultado: ${additionalMinutes.toFixed(2)} minutos (${(additionalMinutes/60).toFixed(2)}h)`);
   
   return additionalMinutes;
 }

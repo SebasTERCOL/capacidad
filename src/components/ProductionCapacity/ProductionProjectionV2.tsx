@@ -1405,64 +1405,84 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const processGroupsArray = Array.from(processMap.values()).map(processGroup => {
       const totalAvailableHours = processGroup.operators * processGroup.availableHours * 60; // en minutos
       
-      // Calcular horas extras totales para este proceso
-      let totalOvertimeMinutes = 0;
+      // Calcular horas extras totales del proceso (SUMA de todas las máquinas con extras)
+      let totalProcessOvertimeMinutes = 0;
+      let overtimeMachinesCount = 0;
       if (overtimeConfig) {
         const processOvertimeConfig = overtimeConfig.processes.find(
           p => p.processName === processGroup.processName
         );
+        
         if (processOvertimeConfig && processOvertimeConfig.enabled) {
           processOvertimeConfig.machines.forEach(m => {
             if (m.enabled && m.additionalCapacity > 0) {
-              totalOvertimeMinutes += m.additionalCapacity;
+              totalProcessOvertimeMinutes += m.additionalCapacity;
+              overtimeMachinesCount++;
             }
           });
+          
+          console.log(`[OVERTIME POOL] ${processGroup.processName}: ${overtimeMachinesCount} máquinas con extras = ${totalProcessOvertimeMinutes.toFixed(2)}min totales`);
         }
       }
       
-      const totalAvailableWithOvertime = totalAvailableHours + totalOvertimeMinutes;
+      const totalAvailableWithOvertime = totalAvailableHours + totalProcessOvertimeMinutes;
       const totalOccupancy = totalAvailableWithOvertime > 0 ? (processGroup.totalTime / totalAvailableWithOvertime) * 100 : 0;
       
-      console.log(`[PROCESS ${processGroup.processName}] Base: ${totalAvailableHours.toFixed(2)}min | Extras: ${totalOvertimeMinutes.toFixed(2)}min | Total: ${totalAvailableWithOvertime.toFixed(2)}min | Ocupación: ${totalOccupancy.toFixed(1)}%`);
+      console.log(`[PROCESS ${processGroup.processName}]`);
+      console.log(`  Base: ${totalAvailableHours.toFixed(2)}min`);
+      console.log(`  Extras: ${totalProcessOvertimeMinutes.toFixed(2)}min`);
+      console.log(`  Total disponible: ${totalAvailableWithOvertime.toFixed(2)}min`);
+      console.log(`  Tiempo requerido: ${processGroup.totalTime.toFixed(2)}min`);
+      console.log(`  Ocupación: ${totalOccupancy.toFixed(1)}%`);
+
+      // Contar máquinas operativas en el proceso (excluyendo virtuales)
+      const operationalMachines = Array.from(processGroup.machines.values())
+        .filter(m => m.machineName !== 'Capacidad insuficiente' && m.machineName !== 'Sin máquina compatible');
+      
+      const operationalCount = operationalMachines.length;
+      
+      // Distribuir las horas extras entre TODAS las máquinas operativas
+      const overtimePerMachine = operationalCount > 0 ? totalProcessOvertimeMinutes / operationalCount : 0;
+      
+      console.log(`[OVERTIME DISTRIBUTION] Distribuyendo ${totalProcessOvertimeMinutes.toFixed(2)}min entre ${operationalCount} máquinas = ${overtimePerMachine.toFixed(2)}min por máquina`);
 
       // Ordenar máquinas de manera natural
       const machines = Array.from(processGroup.machines.values())
         .sort((a, b) => sortMachineNames(a.machineName, b.machineName))
         .map(machine => {
           let machineAvailableTime = processGroup.availableHours * 60; // en minutos
-          
-          // APLICAR HORAS EXTRAS SI EXISTEN
           let overtimeHours = 0;
           let overtimeShifts = undefined;
           
-          if (overtimeConfig) {
-            const processOvertimeConfig = overtimeConfig.processes.find(
-              p => p.processName === processGroup.processName
-            );
+          const isVirtualMachine = machine.machineName === 'Capacidad insuficiente' || 
+                                   machine.machineName === 'Sin máquina compatible';
+          
+          // NUEVA LÓGICA: Aplicar extras solo a máquinas operativas
+          if (!isVirtualMachine && overtimePerMachine > 0) {
+            overtimeHours = overtimePerMachine / 60; // Convertir a horas
+            machineAvailableTime += overtimePerMachine;
             
-            if (processOvertimeConfig) {
-              const machineOvertimeConfig = processOvertimeConfig.machines.find(
-                m => m.machineId === machine.machineId && m.enabled
+            // Obtener configuración de turnos de la primera máquina con extras habilitada
+            if (overtimeConfig) {
+              const processOvertimeConfig = overtimeConfig.processes.find(
+                p => p.processName === processGroup.processName
               );
-              
-              if (machineOvertimeConfig && machineOvertimeConfig.additionalCapacity > 0) {
-                // Convertir minutos adicionales a horas
-                overtimeHours = machineOvertimeConfig.additionalCapacity / 60;
-                machineAvailableTime += machineOvertimeConfig.additionalCapacity;
-                overtimeShifts = machineOvertimeConfig.shifts;
-                
-                console.log(`✅ [OVERTIME] ${machine.machineName}: +${overtimeHours.toFixed(2)}h extras (capacidad total: ${(machineAvailableTime/60).toFixed(2)}h)`);
+              if (processOvertimeConfig) {
+                const anyEnabledMachine = processOvertimeConfig.machines.find(m => m.enabled);
+                if (anyEnabledMachine) {
+                  overtimeShifts = anyEnabledMachine.shifts;
+                }
               }
             }
+            
+            console.log(`✅ [OVERTIME APPLIED] ${machine.machineName}: +${overtimeHours.toFixed(2)}h (capacidad total: ${(machineAvailableTime/60).toFixed(2)}h)`);
           }
           
           // NUEVO: Usar tiempo total de todas las cargas en la máquina para ocupación real
           const totalMachineTime = sharedMachineWorkload.get(machine.machineName) || machine.totalTime;
           const machineOccupancy = machineAvailableTime > 0 ? (totalMachineTime / machineAvailableTime) * 100 : 0;
           
-          // Determinar si es compartida (solo para máquinas reales)
-          const isVirtualMachine = machine.machineName === 'Capacidad insuficiente' || 
-                                   machine.machineName === 'Sin máquina compatible';
+          // Determinar si es compartida (solo para máquinas reales, reutilizar isVirtualMachine de arriba)
           const processesUsingMachine = machineToProcesses.get(machine.machineName);
           const isShared = !isVirtualMachine && processesUsingMachine && processesUsingMachine.size > 1;
           const sharedWith = isShared ? Array.from(processesUsingMachine!).filter(p => p !== processGroup.processName) : [];

@@ -25,7 +25,6 @@ export interface ProcessConfig {
   processName: string;
   operatorCount: number;
   efficiency: number; // Nuevo: porcentaje de eficiencia (0-100)
-  missingOperators: number; // Nuevo: operarios faltantes
   machines: MachineConfig[];
   effectivenessPercentage?: number; // Calculado: efectividad real
   availableHours?: number; // Horas disponibles específicas por proceso
@@ -257,7 +256,6 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
               processName: processName,
               operatorCount: 1,
               efficiency: 100,
-              missingOperators: 0,
               machines: machines.sort((a, b) => a.name.localeCompare(b.name)),
               availableHours: is2ShiftProcess ? undefined : undefined, // Se asignará dinámicamente
             });
@@ -312,21 +310,12 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
     ));
   };
 
-  const handleMissingOperatorsChange = (processId: number, missingOperators: number) => {
-    setProcesses(prev => prev.map(process => 
-      process.processId === processId 
-        ? { ...process, missingOperators: Math.max(0, missingOperators) }
-        : process
-    ));
-  };
-
   // Función para calcular la efectividad de un proceso
   const calculateEffectiveness = (process: ProcessConfig) => {
     const operationalMachines = process.machines.filter(m => m.isOperational).length;
     if (operationalMachines === 0) return 0;
     
-    const effectiveOperators = Math.max(0, process.operatorCount - process.missingOperators);
-    const utilizationRate = effectiveOperators / operationalMachines;
+    const utilizationRate = process.operatorCount / operationalMachines;
     const effectiveness = Math.min(utilizationRate, 1) * (process.efficiency / 100) * 100;
     
     return effectiveness;
@@ -581,21 +570,6 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor={`missing-${process.processId}`} className="text-sm font-medium">
-                      Operarios Faltantes
-                    </Label>
-                    <Input
-                      id={`missing-${process.processId}`}
-                      type="number"
-                      min="0"
-                      max={process.operatorCount}
-                      value={process.missingOperators}
-                      onChange={(e) => handleMissingOperatorsChange(process.processId, parseInt(e.target.value) || 0)}
-                      className="text-center"
-                    />
-                  </div>
-
                   <div className="flex items-center justify-center p-2 bg-muted/50 rounded">
                     <div className="text-center">
                       <div className="text-lg font-bold">{(capacityMinutes/60).toFixed(1)}h</div>
@@ -605,14 +579,10 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                 </div>
 
                 {/* Métricas del proceso */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-lg font-bold text-green-600">{operationalCount}</div>
                     <div className="text-xs text-muted-foreground">Máq. Operativas</div>
-                  </div>
-                  <div className="text-center p-2 bg-muted/50 rounded">
-                    <div className="text-lg font-bold text-blue-600">{Math.max(0, process.operatorCount - process.missingOperators)}</div>
-                    <div className="text-xs text-muted-foreground">Operarios Efectivos</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-lg font-bold text-primary">{effectiveStations}</div>
@@ -645,12 +615,6 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                       <div className="text-sm text-blue-600 flex items-center gap-1">
                         <Users className="h-4 w-4" />
                         {process.operatorCount - operationalCount} operario(s) adicional(es) disponible(s)
-                      </div>
-                    )}
-                    {process.missingOperators > 0 && (
-                      <div className="text-sm text-orange-600 flex items-center gap-1">
-                        <AlertTriangle className="h-4 w-4" />
-                        {process.missingOperators} operario(s) faltante(s) - Reduce la capacidad efectiva
                       </div>
                     )}
                   </div>
@@ -780,21 +744,6 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor={`missing-${process.processId}`} className="text-sm font-medium">
-                      Operarios Faltantes
-                    </Label>
-                    <Input
-                      id={`missing-${process.processId}`}
-                      type="number"
-                      min="0"
-                      max={process.operatorCount}
-                      value={process.missingOperators}
-                      onChange={(e) => handleMissingOperatorsChange(process.processId, parseInt(e.target.value) || 0)}
-                      className="text-center"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
                     <Label className="text-sm font-medium">Capacidad (minutos)</Label>
                     <div className="text-center p-2 bg-muted rounded-md">
                       <div className="text-lg font-bold">
@@ -805,16 +754,10 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                 </div>
 
                 {/* Métricas en el header */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-4">
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-lg font-bold text-green-600">{operationalCount}</div>
                     <div className="text-xs text-muted-foreground">Máq. Operativas</div>
-                  </div>
-                  <div className="text-center p-2 bg-muted/50 rounded">
-                    <div className="text-lg font-bold text-blue-600">
-                      {Math.max(0, process.operatorCount - process.missingOperators)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Operarios Efectivos</div>
                   </div>
                   <div className="text-center p-2 bg-muted/50 rounded">
                     <div className="text-lg font-bold text-primary">{effectiveStations}</div>
@@ -847,12 +790,6 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                       <div className="text-sm text-blue-600 flex items-center gap-1">
                         <Users className="h-4 w-4" />
                         {process.operatorCount - operationalCount} operario(s) adicional(es) disponible(s)
-                      </div>
-                    )}
-                    {process.missingOperators > 0 && (
-                      <div className="text-sm text-orange-600 flex items-center gap-1">
-                        <AlertTriangle className="h-4 w-4" />
-                        {process.missingOperators} operario(s) faltante(s) - Reduce la capacidad efectiva
                       </div>
                     )}
                   </div>
