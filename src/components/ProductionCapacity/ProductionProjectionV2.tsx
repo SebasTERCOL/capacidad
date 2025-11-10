@@ -1401,6 +1401,49 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
     });
 
+    // EXCEPCIÓN ESPECIAL: Proceso PPOLVO1 solo en CB-02
+    processMap.forEach((processGroup, processName) => {
+      if (processName.includes('PPOLVO1')) {
+        console.log(`🎨 [PINTURA ESPECIAL] Proceso ${processName} debe ir exclusivamente a CB-02`);
+        
+        // Encontrar máquina CB-02
+        const cb02Machine = Array.from(processGroup.machines.values())
+          .find(m => m.machineName === 'CB-02');
+        
+        if (cb02Machine) {
+          // Recolectar todas las referencias del proceso
+          const allReferencesInProcess: typeof cb02Machine.references = [];
+          let totalTimeForCB02 = 0;
+          
+          processGroup.machines.forEach(machine => {
+            machine.references.forEach(ref => {
+              allReferencesInProcess.push(ref);
+              totalTimeForCB02 += ref.tiempoTotal;
+            });
+            // Limpiar referencias de otras máquinas
+            if (machine.machineName !== 'CB-02') {
+              machine.references = [];
+              machine.totalTime = 0;
+            }
+          });
+          
+          // Asignar todas las referencias a CB-02
+          cb02Machine.references = allReferencesInProcess;
+          cb02Machine.totalTime = totalTimeForCB02;
+          
+          // Actualizar workload compartido
+          sharedMachineWorkload.set('CB-02', totalTimeForCB02);
+          
+          console.log(`✅ [PINTURA] ${allReferencesInProcess.length} referencias asignadas exclusivamente a CB-02 (${(totalTimeForCB02/60).toFixed(2)}h)`);
+          
+          // Marcar el proceso como "bloqueado" para evitar redistribución
+          (processGroup as any).locked = true;
+        } else {
+          console.error(`❌ [PINTURA] Máquina CB-02 no encontrada para proceso PPOLVO1`);
+        }
+      }
+    });
+
     // Convertir a formato esperado por HierarchicalCapacityView
     const processGroupsArray = Array.from(processMap.values()).map(processGroup => {
       const totalAvailableHours = processGroup.operators * processGroup.availableHours * 60; // en minutos
@@ -1447,7 +1490,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       console.log(`[OVERTIME DISTRIBUTION] Distribuyendo ${totalProcessOvertimeMinutes.toFixed(2)}min entre ${operationalCount} máquinas = ${overtimePerMachine.toFixed(2)}min por máquina`);
 
       // NUEVO: REDISTRIBUIR REFERENCIAS cuando hay horas extras
-      if (overtimePerMachine > 0 && operationalCount > 1) {
+      // PERO NO si el proceso está bloqueado (ej: PPOLVO1)
+      if (overtimePerMachine > 0 && operationalCount > 1 && !(processGroup as any).locked) {
         console.log(`[REBALANCING] Redistribuyendo referencias entre ${operationalCount} máquinas del proceso ${processGroup.processName}`);
         
         // Recolectar todas las referencias del proceso

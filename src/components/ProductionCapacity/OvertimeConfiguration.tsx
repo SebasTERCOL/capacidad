@@ -13,9 +13,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 export interface OvertimeShift {
-  shift1: boolean; // Turno mañana 5:25am - 1:00pm
-  shift2: boolean; // Turno tarde 1:00pm - 8:37pm
-  shift3: boolean; // Turno noche 8:37pm - 5:25am
+  turno1: boolean; // Turno 1: 5am - 1pm (8 horas)
+  turno2: boolean; // Turno 2: 1pm - 9pm (8 horas)
+  turno3: boolean; // Turno 3: 9pm - 5am (8 horas)
 }
 
 export interface OvertimeMachineConfig {
@@ -109,7 +109,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
           machineId: machine.machineId,
           machineName: machine.machineName,
           enabled: false,
-          shifts: { shift1: false, shift2: false, shift3: false },
+          shifts: { turno1: false, turno2: false, turno3: false },
           currentDeficit: machine.deficitMinutes,
           additionalCapacity: 0,
           operators: machine.operators,
@@ -493,51 +493,51 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                   {/* Turno 1 */}
                                   <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50">
                                     <Checkbox
-                                      id={`${machine.machineId}-shift1`}
-                                      checked={machine.shifts.shift1}
-                                      onCheckedChange={() => handleShiftToggle(process.processName, machine.machineId, 'shift1')}
+                                      id={`${machine.machineId}-turno1`}
+                                      checked={machine.shifts.turno1}
+                                      onCheckedChange={() => handleShiftToggle(process.processName, machine.machineId, 'turno1')}
                                     />
                                     <Label 
-                                      htmlFor={`${machine.machineId}-shift1`}
+                                      htmlFor={`${machine.machineId}-turno1`}
                                       className="flex-1 cursor-pointer"
                                     >
                                       <div className="font-medium">Turno 1 - Mañana</div>
-                                      <div className="text-xs text-muted-foreground">5:25am - 1:00pm</div>
-                                      <div className="text-xs font-semibold text-primary">7.17h netas</div>
+                                      <div className="text-xs text-muted-foreground">5:00am - 1:00pm</div>
+                                      <div className="text-xs font-semibold text-primary">8h completas</div>
                                     </Label>
                                   </div>
 
                                   {/* Turno 2 */}
                                   <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50">
                                     <Checkbox
-                                      id={`${machine.machineId}-shift2`}
-                                      checked={machine.shifts.shift2}
-                                      onCheckedChange={() => handleShiftToggle(process.processName, machine.machineId, 'shift2')}
+                                      id={`${machine.machineId}-turno2`}
+                                      checked={machine.shifts.turno2}
+                                      onCheckedChange={() => handleShiftToggle(process.processName, machine.machineId, 'turno2')}
                                     />
                                     <Label 
-                                      htmlFor={`${machine.machineId}-shift2`}
+                                      htmlFor={`${machine.machineId}-turno2`}
                                       className="flex-1 cursor-pointer"
                                     >
                                       <div className="font-medium">Turno 2 - Tarde</div>
-                                      <div className="text-xs text-muted-foreground">1:00pm - 8:37pm</div>
-                                      <div className="text-xs font-semibold text-primary">7.20h netas</div>
+                                      <div className="text-xs text-muted-foreground">1:00pm - 9:00pm</div>
+                                      <div className="text-xs font-semibold text-primary">8h completas</div>
                                     </Label>
                                   </div>
 
                                   {/* Turno 3 */}
                                   <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50">
                                     <Checkbox
-                                      id={`${machine.machineId}-shift3`}
-                                      checked={machine.shifts.shift3}
-                                      onCheckedChange={() => handleShiftToggle(process.processName, machine.machineId, 'shift3')}
+                                      id={`${machine.machineId}-turno3`}
+                                      checked={machine.shifts.turno3}
+                                      onCheckedChange={() => handleShiftToggle(process.processName, machine.machineId, 'turno3')}
                                     />
                                     <Label 
-                                      htmlFor={`${machine.machineId}-shift3`}
+                                      htmlFor={`${machine.machineId}-turno3`}
                                       className="flex-1 cursor-pointer"
                                     >
                                       <div className="font-medium">Turno 3 - Noche</div>
-                                      <div className="text-xs text-muted-foreground">8:37pm - 5:25am</div>
-                                      <div className="text-xs font-semibold text-primary">8.38h netas</div>
+                                      <div className="text-xs text-muted-foreground">9:00pm - 5:00am</div>
+                                      <div className="text-xs font-semibold text-primary">8h completas</div>
                                     </Label>
                                   </div>
                                 </div>
@@ -581,7 +581,7 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                 </div>
 
                                 {/* Resumen de Capacidad */}
-                                {(machine.shifts.shift1 || machine.shifts.shift2 || machine.shifts.shift3) && (
+                                {(machine.shifts.turno1 || machine.shifts.turno2 || machine.shifts.turno3) && (
                                   <div className="p-3 bg-muted rounded-lg space-y-2">
                                     <div className="flex items-center justify-between text-sm">
                                       <span className="font-medium">Horas extras por operario:</span>
@@ -748,11 +748,12 @@ function calculateSundaysInMonth(month: number, year: number): number {
 function calculateSundayHours(shifts: OvertimeShift): number {
   let totalHours = 0;
   
-  // Domingos trabajan igual que días de semana (sin reducción de sábado)
-  if (shifts.shift1) totalHours += 7.17; // Turno 1 neto
-  if (shifts.shift2) totalHours += 7.20; // Turno 2 neto
-  if (shifts.shift3) totalHours += 8.38; // Turno 3 neto
+  // Turnos de domingo de 8 horas completas cada uno
+  if (shifts.turno1) totalHours += 8; // 5am-1pm
+  if (shifts.turno2) totalHours += 8; // 1pm-9pm
+  if (shifts.turno3) totalHours += 8; // 9pm-5am
   
+  console.log('[SUNDAY HOURS]', { shifts, totalHours });
   return totalHours;
 }
 
@@ -762,43 +763,21 @@ function calculateAdditionalCapacity(
   efficiency: number,
   sundaysInMonth: number
 ): number {
-  let totalExtraHours = 0;
-  
-  // 1. Horas de domingos
+  // Solo horas de domingos (sin extensión de sábados)
   const sundayHours = calculateSundayHours(shifts);
   const totalSundayHours = sundayHours * sundaysInMonth;
-  
-  // 2. Horas adicionales de sábados (cuando se trabaja domingo)
-  let saturdayExtensionHours = 0;
-  if (sundaysInMonth > 0) {
-    // Por cada domingo trabajado, el sábado anterior se extiende
-    // Diferencia entre sábado normal (2 turnos reducidos) y sábado extendido (3 turnos completos)
-    const normalSaturdayHours = 6.0834 + 5.917; // 11.9004 horas (2 turnos reducidos)
-    const extendedSaturdayHours = 7.17 + 7.20 + 8.38; // 22.75 horas (3 turnos completos)
-    const extraSaturdayHoursPerWeekend = extendedSaturdayHours - normalSaturdayHours; // ~10.85 horas
-    
-    saturdayExtensionHours = extraSaturdayHoursPerWeekend * sundaysInMonth;
-    
-    console.log(`📅 [SATURDAY EXTENSION] ${sundaysInMonth} domingos → ${sundaysInMonth} sábados extendidos`);
-    console.log(`   Horas extra por sábado: ${extraSaturdayHoursPerWeekend.toFixed(2)}h`);
-    console.log(`   Total extensión sábados: ${saturdayExtensionHours.toFixed(2)}h`);
-  }
-  
-  totalExtraHours = totalSundayHours + saturdayExtensionHours;
   
   console.log(`💡 [ADDITIONAL CAPACITY]`, {
     shifts,
     sundayHoursPerDay: sundayHours.toFixed(2),
     sundaysInMonth,
     totalSundayHours: totalSundayHours.toFixed(2),
-    saturdayExtensionHours: saturdayExtensionHours.toFixed(2),
-    totalExtraHours: totalExtraHours.toFixed(2),
     selectedOperators,
     efficiency,
   });
   
   // Convertir a minutos y aplicar operadores y eficiencia
-  const additionalMinutes = totalExtraHours * 60 * selectedOperators * (efficiency / 100);
+  const additionalMinutes = totalSundayHours * 60 * selectedOperators * (efficiency / 100);
   
   console.log(`✅ [ADDITIONAL CAPACITY] Resultado: ${additionalMinutes.toFixed(2)} minutos (${(additionalMinutes/60).toFixed(2)}h)`);
   

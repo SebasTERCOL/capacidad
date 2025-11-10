@@ -295,9 +295,9 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                           <TooltipContent>
                             <div className="text-xs">
                               <div className="font-semibold mb-1">Turnos extra:</div>
-                              {machine.overtimeShifts?.shift1 && <div>✓ Turno 1 (5:25am - 1:00pm)</div>}
-                              {machine.overtimeShifts?.shift2 && <div>✓ Turno 2 (1:00pm - 8:37pm)</div>}
-                              {machine.overtimeShifts?.shift3 && <div>✓ Turno 3 (8:37pm - 5:25am)</div>}
+                              {machine.overtimeShifts?.turno1 && <div>✓ Turno 1 (5:00am - 1:00pm - 8h)</div>}
+                              {machine.overtimeShifts?.turno2 && <div>✓ Turno 2 (1:00pm - 9:00pm - 8h)</div>}
+                              {machine.overtimeShifts?.turno3 && <div>✓ Turno 3 (9:00pm - 5:00am - 8h)</div>}
                             </div>
                           </TooltipContent>
                         </Tooltip>

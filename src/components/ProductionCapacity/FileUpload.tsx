@@ -13,15 +13,24 @@ export interface ProductionRequest {
   cantidad: number;
 }
 
+export interface FileUploadData {
+  ptData: ProductionRequest[];
+  ppData: ProductionRequest[];
+  combinedData: ProductionRequest[];
+}
+
 interface FileUploadProps {
-  onDataProcessed: (data: ProductionRequest[]) => void;
+  onDataProcessed: (data: FileUploadData) => void;
   onNext: () => void;
   onInventoryToggle: (useInventory: boolean) => void;
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext, onInventoryToggle }) => {
-  const [file, setFile] = useState<File | null>(null);
-  const [data, setData] = useState<ProductionRequest[]>([]);
+  const [ptFile, setPtFile] = useState<File | null>(null);
+  const [ppFile, setPpFile] = useState<File | null>(null);
+  const [ptData, setPtData] = useState<ProductionRequest[]>([]);
+  const [ppData, setPpData] = useState<ProductionRequest[]>([]);
+  const [combinedData, setCombinedData] = useState<ProductionRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [useInventory, setUseInventory] = useState(true);
 
@@ -149,33 +158,85 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
     return parsed;
   };
 
-  const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const combineData = (pt: ProductionRequest[], pp: ProductionRequest[]): ProductionRequest[] => {
+    const combined = new Map<string, number>();
+    
+    // Agregar PT
+    pt.forEach(item => {
+      combined.set(item.referencia, (combined.get(item.referencia) || 0) + item.cantidad);
+    });
+    
+    // Agregar PP (sumando si ya existe)
+    pp.forEach(item => {
+      combined.set(item.referencia, (combined.get(item.referencia) || 0) + item.cantidad);
+    });
+    
+    return Array.from(combined.entries()).map(([referencia, cantidad]) => ({
+      referencia,
+      cantidad
+    }));
+  };
+
+  const handlePtFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0] || null;
-    setFile(selectedFile);
+    setPtFile(selectedFile);
     if (!selectedFile) {
-      setData([]);
+      setPtData([]);
+      setCombinedData([]);
     }
   }, []);
 
-  const processFile = async () => {
-    if (!file) return;
+  const handlePpFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0] || null;
+    setPpFile(selectedFile);
+    if (!selectedFile) {
+      setPpData([]);
+    }
+  }, []);
+
+  const processFiles = async () => {
+    if (!ptFile) {
+      toast.error("Error", {
+        description: "Debe cargar al menos el archivo de Productos Terminados (PT)",
+      });
+      return;
+    }
     
     setLoading(true);
     try {
-      const content = await file.text();
-      const parsed = parseCSV(content);
+      // Procesar archivo PT (obligatorio)
+      const contentPt = await ptFile.text();
+      const parsedPt = parseCSV(contentPt);
       
-      if (parsed.length === 0) {
-        throw new Error('No se encontraron datos válidos en el archivo');
+      if (parsedPt.length === 0) {
+        throw new Error('No se encontraron datos válidos en el archivo PT');
       }
       
-      setData(parsed);
-      onDataProcessed(parsed);
-      toast.success("Archivo procesado", {
-        description: `Se cargaron ${parsed.length} referencias correctamente`,
+      // Procesar archivo PP (opcional)
+      let parsedPp: ProductionRequest[] = [];
+      if (ppFile) {
+        const contentPp = await ppFile.text();
+        parsedPp = parseCSV(contentPp);
+      }
+      
+      // Combinar datos
+      const combined = combineData(parsedPt, parsedPp);
+      
+      setPtData(parsedPt);
+      setPpData(parsedPp);
+      setCombinedData(combined);
+      
+      onDataProcessed({
+        ptData: parsedPt,
+        ppData: parsedPp,
+        combinedData: combined
+      });
+      
+      toast.success("Archivos procesados", {
+        description: `PT: ${parsedPt.length} refs, PP: ${parsedPp.length} refs, Total único: ${combined.length} refs`,
       });
     } catch (error) {
-      toast.error("Error al procesar archivo", {
+      toast.error("Error al procesar archivos", {
         description: error instanceof Error ? error.message : "Error desconocido",
       });
     }
@@ -183,9 +244,16 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
   };
 
   const clearData = () => {
-    setFile(null);
-    setData([]);
-    onDataProcessed([]);
+    setPtFile(null);
+    setPpFile(null);
+    setPtData([]);
+    setPpData([]);
+    setCombinedData([]);
+    onDataProcessed({
+      ptData: [],
+      ppData: [],
+      combinedData: []
+    });
   };
 
   return (
@@ -201,17 +269,37 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Archivo PT */}
           <div className="space-y-2">
-            <Label htmlFor="file-upload">Archivo CSV</Label>
+            <Label htmlFor="pt-file-upload" className="font-semibold">
+              Archivo PT (Productos Terminados) *
+            </Label>
             <Input
-              id="file-upload"
+              id="pt-file-upload"
               type="file"
               accept=".csv"
-              onChange={handleFileChange}
+              onChange={handlePtFileChange}
               className="cursor-pointer"
             />
             <p className="text-sm text-muted-foreground">
-              El archivo debe contener columnas: Referencia, Cantidad
+              Archivo principal con productos finales. Este hará el desglose BOM completo.
+            </p>
+          </div>
+          
+          {/* Archivo PP */}
+          <div className="space-y-2">
+            <Label htmlFor="pp-file-upload" className="font-semibold">
+              Archivo PP (Productos en Proceso) - Opcional
+            </Label>
+            <Input
+              id="pp-file-upload"
+              type="file"
+              accept=".csv"
+              onChange={handlePpFileChange}
+              className="cursor-pointer"
+            />
+            <p className="text-sm text-muted-foreground">
+              Insumos adicionales que se suman a lo requerido por el PT.
             </p>
           </div>
 
@@ -236,15 +324,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
           
           <div className="flex gap-2">
             <Button 
-              onClick={processFile} 
-              disabled={!file || loading}
+              onClick={processFiles} 
+              disabled={!ptFile || loading}
               className="flex items-center gap-2"
             >
               <FileSpreadsheet className="h-4 w-4" />
-              {loading ? 'Procesando...' : 'Procesar Archivo'}
+              {loading ? 'Procesando...' : 'Procesar Archivos'}
             </Button>
             
-            {data.length > 0 && (
+            {combinedData.length > 0 && (
               <Button 
                 variant="outline" 
                 onClick={clearData}
@@ -258,10 +346,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
         </CardContent>
       </Card>
 
-      {data.length > 0 && (
+      {combinedData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Datos Cargados ({data.length} referencias)</CardTitle>
+            <CardTitle>Datos Cargados</CardTitle>
+            <CardDescription>
+              {ptData.length > 0 && <div>PT: {ptData.length} referencias</div>}
+              {ppData.length > 0 && <div>PP: {ppData.length} referencias</div>}
+              <div className="font-semibold">Total único: {combinedData.length} referencias</div>
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -272,16 +365,16 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.slice(0, 10).map((item, index) => (
+                {combinedData.slice(0, 10).map((item, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-medium">{item.referencia}</TableCell>
                     <TableCell className="text-right">{item.cantidad.toLocaleString()}</TableCell>
                   </TableRow>
                 ))}
-                {data.length > 10 && (
+                {combinedData.length > 10 && (
                   <TableRow>
                     <TableCell colSpan={2} className="text-center text-muted-foreground">
-                      ... y {data.length - 10} referencias más
+                      ... y {combinedData.length - 10} referencias más
                     </TableCell>
                   </TableRow>
                 )}

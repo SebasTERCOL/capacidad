@@ -4,18 +4,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Factory, ArrowRight, ArrowLeft } from "lucide-react";
-import { FileUpload, ProductionRequest } from "@/components/ProductionCapacity/FileUpload";
+import { FileUpload, ProductionRequest, FileUploadData } from "@/components/ProductionCapacity/FileUpload";
 import { InventoryAdjustment, AdjustedProductionData } from "@/components/ProductionCapacity/InventoryAdjustment";
+import { ComboConfiguration, ComboSuggestion } from "@/components/ProductionCapacity/ComboConfiguration";
 import { OperatorConfiguration, OperatorConfig } from "@/components/ProductionCapacity/OperatorConfiguration";
 import { ProductionProjectionV2 } from "@/components/ProductionCapacity/ProductionProjectionV2";
 import { OvertimeConfiguration, DeficitInfo, OvertimeConfig } from "@/components/ProductionCapacity/OvertimeConfiguration";
 
-type Step = 1 | 2 | 3 | 4 | 5;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [productionData, setProductionData] = useState<ProductionRequest[]>([]);
   const [adjustedData, setAdjustedData] = useState<AdjustedProductionData[]>([]);
+  const [comboConfig, setComboConfig] = useState<ComboSuggestion[]>([]);
   const [operatorConfig, setOperatorConfig] = useState<OperatorConfig | null>(null);
   const [projectionData, setProjectionData] = useState<any[]>([]);
   const [deficits, setDeficits] = useState<DeficitInfo[]>([]);
@@ -25,17 +27,22 @@ const Index = () => {
   const steps = [
     { id: 1, title: 'Carga de Archivo', description: 'Subir CSV con referencias' },
     { id: 2, title: 'Ajuste de Inventario', description: 'Restar stock disponible' },
-    { id: 3, title: 'Configurar Operarios', description: 'Definir personal disponible' },
-    { id: 4, title: 'Capacidad por Proceso', description: 'Análisis detallado' },
-    { id: 5, title: 'Optimizar con Extras', description: 'Configurar horas extras' }
+    { id: 3, title: 'Configurar Combos', description: 'Optimizar punzonado' },
+    { id: 4, title: 'Configurar Operarios', description: 'Definir personal disponible' },
+    { id: 5, title: 'Capacidad por Proceso', description: 'Análisis detallado' },
+    { id: 6, title: 'Optimizar con Extras', description: 'Configurar horas extras' }
   ];
 
-  const handleDataProcessed = (data: ProductionRequest[]) => {
-    setProductionData(data);
+  const handleDataProcessed = (data: FileUploadData) => {
+    setProductionData(data.combinedData);
   };
 
   const handleAdjustmentComplete = (adjusted: AdjustedProductionData[]) => {
     setAdjustedData(adjusted);
+  };
+
+  const handleComboConfigComplete = (combos: ComboSuggestion[]) => {
+    setComboConfig(combos);
   };
 
   const handleOperatorConfigComplete = (config: OperatorConfig) => {
@@ -49,19 +56,20 @@ const Index = () => {
   const handleDeficitsIdentified = (identifiedDeficits: DeficitInfo[]) => {
     setDeficits(identifiedDeficits);
     if (identifiedDeficits.length > 0) {
-      setCurrentStep(5); // Ir a configuración de horas extras
+      setCurrentStep(6); // Ir a configuración de horas extras
     }
   };
 
   const handleOvertimeApplied = (config: OvertimeConfig) => {
     setOvertimeConfig(config);
-    setCurrentStep(4); // Volver a vista de capacidad con extras aplicadas
+    setCurrentStep(5); // Volver a vista de capacidad con extras aplicadas
   };
 
   const handleStartOver = () => {
     setCurrentStep(1);
     setProductionData([]);
     setAdjustedData([]);
+    setComboConfig([]);
     setOperatorConfig(null);
     setProjectionData([]);
     setDeficits([]);
@@ -90,32 +98,41 @@ const Index = () => {
         );
       case 3:
         return (
-          <OperatorConfiguration
+          <ComboConfiguration
+            data={adjustedData.length > 0 ? adjustedData : productionData}
             onNext={() => setCurrentStep(4)}
             onBack={() => setCurrentStep(2)}
-            onConfigComplete={handleOperatorConfigComplete}
+            onComboConfigComplete={handleComboConfigComplete}
           />
         );
       case 4:
+        return (
+          <OperatorConfiguration
+            onNext={() => setCurrentStep(5)}
+            onBack={() => setCurrentStep(3)}
+            onConfigComplete={handleOperatorConfigComplete}
+          />
+        );
+      case 5:
         return operatorConfig ? (
           <ProductionProjectionV2
             data={adjustedData.length > 0 ? adjustedData : productionData}
             operatorConfig={operatorConfig}
             overtimeConfig={overtimeConfig}
             onNext={() => {}}
-            onBack={() => setCurrentStep(3)}
+            onBack={() => setCurrentStep(4)}
             onProjectionComplete={handleProjectionComplete}
             onDeficitsIdentified={handleDeficitsIdentified}
             onStartOver={handleStartOver}
           />
         ) : null;
-      case 5:
+      case 6:
         return (
           <OvertimeConfiguration
             deficits={deficits}
             workMonth={operatorConfig?.workMonth || new Date().getMonth() + 1}
             workYear={operatorConfig?.workYear || new Date().getFullYear()}
-            onBack={() => setCurrentStep(4)}
+            onBack={() => setCurrentStep(5)}
             onApply={handleOvertimeApplied}
           />
         );
