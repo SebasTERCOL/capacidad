@@ -209,11 +209,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
             existing.suggestedCombos = maxCombosNeeded;
             existing.totalTime = maxCombosNeeded * existing.cycleTime;
             
-            // Actualizar totales de componentes
-            existing.components = existing.components.map(c => ({
-              ...c,
-              totalRequired: maxCombosNeeded * c.quantityPerCombo
-            }));
+            // No recalcular totalRequired, mantenerlo fijo del pedido original
             
             console.log(`🔄 [COMBO CONFIG] Combo ${combo.combo} actualizado: ${maxCombosNeeded} combos`);
             continue;
@@ -252,11 +248,11 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           // 7. Calcular cuántos combos se necesitan basado en la referencia actual
           const requiredCombos = Math.ceil(ref.quantity / combo.cantidad);
           
-          // 8. Obtener inventario de cada componente (opcional, por ahora en 0)
+          // 8. Obtener requerimiento real de cada componente del pedido original
           const componentsWithInventory = (allComponents as any[]).map(c => ({
             componentId: c.component_id,
             quantityPerCombo: c.cantidad,
-            totalRequired: requiredCombos * c.cantidad,
+            totalRequired: allRequiredComponents.get(c.component_id.trim().toUpperCase()) || 0,
             currentInventory: 0 // TODO: Consultar warehouse si se necesita
           }));
           
@@ -309,10 +305,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           ...combo,
           suggestedCombos: newValue,
           totalTime: newValue * combo.cycleTime,
-          components: combo.components.map(c => ({
-            ...c,
-            totalRequired: newValue * c.quantityPerCombo
-          }))
+          // Mantener totalRequired fijo, no recalcular
         };
       }
       return combo;
