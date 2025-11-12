@@ -84,7 +84,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   ): Promise<void> => {
     const key = productId.trim().toUpperCase();
     
-    // Prevenir loops infinitos
+      // Prevenir loops infinitos
     if (level > 10) {
       console.warn(`🔄 Nivel máximo alcanzado para ${key}`);
       return;
@@ -106,11 +106,9 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       const existingQuantity = componentsMap.get(componentId) || 0;
       componentsMap.set(componentId, existingQuantity + componentQuantity);
       
-      // Solo hacer recursión si no hemos procesado este componente antes
-      if (!globalVisited.has(componentId)) {
-        globalVisited.add(componentId);
-        await getRecursiveBOM(componentId, componentQuantity, level + 1, globalVisited, componentsMap);
-      }
+      // Hacer recursión siempre para acumular cantidades correctamente
+      // pero solo si el componente tiene BOM
+      await getRecursiveBOM(componentId, componentQuantity, level + 1, globalVisited, componentsMap);
     }
   };
 
@@ -305,11 +303,26 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           ...combo,
           suggestedCombos: newValue,
           totalTime: newValue * combo.cycleTime,
-          // Mantener totalRequired fijo, no recalcular
         };
       }
       return combo;
     }));
+  };
+
+  // Calcular componentes producidos acumulados hasta un combo específico
+  const getAccumulatedProduction = (upToComboIndex: number): Map<string, number> => {
+    const accumulated = new Map<string, number>();
+    
+    for (let i = 0; i < upToComboIndex; i++) {
+      const combo = combos[i];
+      combo.components.forEach(comp => {
+        const produced = comp.quantityPerCombo * combo.suggestedCombos;
+        const existing = accumulated.get(comp.componentId) || 0;
+        accumulated.set(comp.componentId, existing + produced);
+      });
+    }
+    
+    return accumulated;
   };
 
   const formatTime = (minutes: number): string => {
@@ -451,15 +464,28 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     </TableHeader>
                     <TableBody>
                       {combo.components.map(comp => {
+                        // Obtener índice del combo actual
+                        const currentComboIndex = combos.findIndex(c => c.comboName === combo.comboName);
+                        
+                        // Calcular producción acumulada de combos anteriores
+                        const accumulated = getAccumulatedProduction(currentComboIndex);
+                        const previouslyProduced = accumulated.get(comp.componentId) || 0;
+                        
+                        // Calcular producción de este combo
                         const totalProduced = comp.quantityPerCombo * combo.suggestedCombos;
-                        const isSufficient = totalProduced >= comp.totalRequired;
+                        
+                        // Calcular requerido ajustado (restando lo ya producido)
+                        const adjustedRequired = Math.max(0, comp.totalRequired - previouslyProduced);
+                        
+                        // Verificar si es suficiente comparando con el requerido ajustado
+                        const isSufficient = totalProduced >= adjustedRequired;
                         
                         return (
                           <TableRow key={comp.componentId}>
                             <TableCell className="font-medium">{comp.componentId}</TableCell>
                             <TableCell className="text-right">{comp.quantityPerCombo}</TableCell>
                             <TableCell className="text-right font-semibold">{totalProduced}</TableCell>
-                            <TableCell className="text-right">{comp.totalRequired}</TableCell>
+                            <TableCell className="text-right">{adjustedRequired}</TableCell>
                             <TableCell>
                               {isSufficient ? (
                                 <Badge variant="default" className="bg-green-600">
