@@ -105,18 +105,20 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
             continue;
           }
           
-          // 4. Obtener tiempo del combo desde t_combos
+          // 4. Obtener tiempo del combo desde machines_processes donde id_process = 20 (Punzonado)
           const { data: timeData, error: timeError } = await supabase
-            .from('t_combos' as any)
-            .select('ciclo')
-            .eq('combo', combo.combo)
+            .from('machines_processes' as any)
+            .select('sam, ref')
+            .eq('ref', combo.combo)
+            .eq('id_process', 20)
+            .limit(1)
             .single();
           
           if (timeError) {
-            console.warn(`⚠️ [COMBO CONFIG] No se encontró tiempo para combo ${combo.combo}`);
+            console.warn(`⚠️ [COMBO CONFIG] No se encontró tiempo para combo ${combo.combo} en proceso Punzonado`);
           }
           
-          const cycleTime = (timeData as any)?.ciclo || 0;
+          const cycleTime = (timeData as any)?.sam || 0;
           
           // 5. Obtener TODOS los componentes de este combo
           const { data: allComponents, error: allCompError } = await supabase
