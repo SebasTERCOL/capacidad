@@ -44,22 +44,93 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     calculateComboSuggestions();
   }, [data]);
 
+  // Función recursiva para obtener todos los componentes del BOM
+  const getRecursiveBOM = async (productId: string, quantity: number = 1, level: number = 0, visited: Set<string> = new Set()): Promise<Map<string, number>> => {
+    // Prevenir loops infinitos
+    if (level > 10 || visited.has(productId)) {
+      console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
+      return new Map();
+    }
+    
+    visited.add(productId);
+    const componentsMap = new Map<string, number>();
+    
+    console.log(`${'  '.repeat(level)}🔍 [BOM] Analizando: ${productId} (cantidad: ${quantity})`);
+    
+    // Buscar BOM directo para este product_id
+    const { data: bomData, error: bomError } = await supabase
+      .from('bom')
+      .select('component_id, amount')
+      .eq('product_id', productId.trim().toUpperCase());
+    
+    if (bomError) {
+      console.error(`❌ Error al buscar BOM para ${productId}:`, bomError);
+      return componentsMap;
+    }
+    
+    if (!bomData || bomData.length === 0) {
+      console.log(`${'  '.repeat(level)}📦 ${productId} es componente final (sin BOM)`);
+      return componentsMap;
+    }
+    
+    // Procesar cada componente
+    for (const bomItem of bomData) {
+      const componentId = bomItem.component_id.trim().toUpperCase();
+      const componentQuantity = quantity * bomItem.amount;
+      
+      console.log(`${'  '.repeat(level)}📋 Componente: ${componentId} (cantidad: ${componentQuantity})`);
+      
+      // Agregar este componente al mapa
+      const existingQuantity = componentsMap.get(componentId) || 0;
+      componentsMap.set(componentId, existingQuantity + componentQuantity);
+      
+      // Buscar recursivamente si este componente tiene sus propios subcomponentes
+      const subComponents = await getRecursiveBOM(componentId, componentQuantity, level + 1, new Set(visited));
+      
+      // Agregar los subcomponentes al mapa principal
+      for (const [subComponentId, subQuantity] of subComponents) {
+        const existingSubQuantity = componentsMap.get(subComponentId) || 0;
+        componentsMap.set(subComponentId, existingSubQuantity + subQuantity);
+      }
+    }
+    
+    return componentsMap;
+  };
+
   const calculateComboSuggestions = async () => {
     setLoading(true);
     setError(null);
     
     try {
       console.log('🔧 [COMBO CONFIG] Iniciando cálculo de combos...');
+      console.log(`📋 [COMBO CONFIG] Procesando ${data.length} referencias del pedido`);
       
-      // 1. Identificar referencias que necesitan combos (terminan en -CMB)
-      const cmbReferences = data
-        .filter(item => item.referencia.includes('-CMB'))
-        .map(item => ({
-          ref: item.referencia,
-          quantity: item.cantidad
-        }));
+      // 1. Hacer desglose BOM completo de todas las referencias del pedido
+      const allRequiredComponents = new Map<string, number>();
       
-      console.log(`📦 [COMBO CONFIG] ${cmbReferences.length} referencias -CMB encontradas:`, cmbReferences);
+      for (const item of data) {
+        console.log(`\n🎯 [COMBO CONFIG] Analizando ${item.referencia} (cantidad: ${item.cantidad})`);
+        const bomComponents = await getRecursiveBOM(item.referencia, item.cantidad);
+        
+        // Consolidar componentes
+        for (const [componentId, quantity] of bomComponents) {
+          const existing = allRequiredComponents.get(componentId) || 0;
+          allRequiredComponents.set(componentId, existing + quantity);
+        }
+      }
+      
+      console.log(`\n📊 [COMBO CONFIG] Total de componentes únicos encontrados: ${allRequiredComponents.size}`);
+      
+      // 2. Filtrar solo las referencias que terminan en -CMB
+      const cmbReferences: Array<{ ref: string; quantity: number }> = [];
+      for (const [componentId, quantity] of allRequiredComponents) {
+        if (componentId.endsWith('-CMB')) {
+          cmbReferences.push({ ref: componentId, quantity });
+          console.log(`🎯 [COMBO CONFIG] Referencia -CMB encontrada: ${componentId} (cantidad: ${quantity})`);
+        }
+      }
+      
+      console.log(`\n📦 [COMBO CONFIG] ${cmbReferences.length} referencias -CMB necesarias`);
       
       if (cmbReferences.length === 0) {
         console.log('✅ [COMBO CONFIG] No hay referencias -CMB, saltando configuración');
@@ -70,71 +141,88 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       
       const comboMap = new Map<string, ComboSuggestion>();
       
-      // 2. Para cada referencia -CMB, buscar en qué combos está
+      // 3. Para cada referencia -CMB, buscar en qué combos está
       for (const ref of cmbReferences) {
-        console.log(`🔍 [COMBO CONFIG] Buscando combos para ${ref.ref}...`);
+        console.log(`\n🔍 [COMBO CONFIG] Buscando combos para ${ref.ref}...`);
         
-        const { data: combosData, error: combosError } = await supabase
-          .from('combos' as any)
+        const { data: comboData, error: comboError } = await supabase
+          .from('combo' as any)
           .select('*')
           .eq('component_id', ref.ref);
         
-        if (combosError) {
-          console.error('Error consultando combos:', combosError);
+        if (comboError) {
+          console.error('❌ Error consultando combo:', comboError);
           continue;
         }
         
-        if (!combosData || combosData.length === 0) {
+        if (!comboData || comboData.length === 0) {
           console.warn(`⚠️ [COMBO CONFIG] No se encontraron combos para ${ref.ref}`);
           continue;
         }
         
-        console.log(`✅ [COMBO CONFIG] ${combosData.length} combo(s) encontrado(s) para ${ref.ref}`);
+        console.log(`✅ [COMBO CONFIG] ${comboData.length} combo(s) encontrado(s) para ${ref.ref}`);
         
-        for (const combo of combosData as any[]) {
-          // 3. Si el combo ya fue procesado, solo actualizar cantidad requerida
+        for (const combo of comboData as any[]) {
+          // 4. Si el combo ya fue procesado, actualizar requisitos
           if (comboMap.has(combo.combo)) {
             const existing = comboMap.get(combo.combo)!;
-            const compIndex = existing.components.findIndex(c => c.componentId === ref.ref);
-            if (compIndex !== -1) {
-              existing.components[compIndex].totalRequired = Math.max(
-                existing.components[compIndex].totalRequired,
-                ref.quantity
-              );
+            
+            // Recalcular cuántos combos se necesitan considerando TODAS las referencias
+            let maxCombosNeeded = existing.suggestedCombos;
+            
+            // Verificar si necesitamos más combos para esta referencia
+            const combosForThisRef = Math.ceil(ref.quantity / combo.cantidad);
+            if (combosForThisRef > maxCombosNeeded) {
+              maxCombosNeeded = combosForThisRef;
             }
+            
+            existing.suggestedCombos = maxCombosNeeded;
+            existing.totalTime = maxCombosNeeded * existing.cycleTime;
+            
+            // Actualizar totales de componentes
+            existing.components = existing.components.map(c => ({
+              ...c,
+              totalRequired: maxCombosNeeded * c.quantityPerCombo
+            }));
+            
+            console.log(`🔄 [COMBO CONFIG] Combo ${combo.combo} actualizado: ${maxCombosNeeded} combos`);
             continue;
           }
           
-          // 4. Obtener tiempo del combo desde machines_processes donde id_process = 20 (Punzonado)
+          // 5. Obtener tiempo del combo desde machines_processes donde id_process = 20 (Punzonado)
           const { data: timeData, error: timeError } = await supabase
-            .from('machines_processes' as any)
+            .from('machines_processes')
             .select('sam, ref')
             .eq('ref', combo.combo)
             .eq('id_process', 20)
             .limit(1)
-            .single();
+            .maybeSingle();
           
           if (timeError) {
-            console.warn(`⚠️ [COMBO CONFIG] No se encontró tiempo para combo ${combo.combo} en proceso Punzonado`);
+            console.warn(`⚠️ [COMBO CONFIG] Error buscando tiempo para combo ${combo.combo}:`, timeError);
           }
           
-          const cycleTime = (timeData as any)?.sam || 0;
+          const cycleTime = timeData?.sam || 0;
           
-          // 5. Obtener TODOS los componentes de este combo
+          if (cycleTime === 0) {
+            console.warn(`⚠️ [COMBO CONFIG] No se encontró tiempo para combo ${combo.combo} en proceso Punzonado (id_process=20)`);
+          }
+          
+          // 6. Obtener TODOS los componentes de este combo
           const { data: allComponents, error: allCompError } = await supabase
-            .from('combos' as any)
+            .from('combo' as any)
             .select('*')
             .eq('combo', combo.combo);
           
           if (allCompError || !allComponents) {
-            console.error(`Error obteniendo componentes del combo ${combo.combo}:`, allCompError);
+            console.error(`❌ Error obteniendo componentes del combo ${combo.combo}:`, allCompError);
             continue;
           }
           
-          // 6. Calcular cuántos combos se necesitan basado en la referencia actual
+          // 7. Calcular cuántos combos se necesitan basado en la referencia actual
           const requiredCombos = Math.ceil(ref.quantity / combo.cantidad);
           
-          // 7. Obtener inventario de cada componente (opcional, por ahora en 0)
+          // 8. Obtener inventario de cada componente (opcional, por ahora en 0)
           const componentsWithInventory = (allComponents as any[]).map(c => ({
             componentId: c.component_id,
             quantityPerCombo: c.cantidad,
@@ -142,7 +230,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
             currentInventory: 0 // TODO: Consultar warehouse si se necesita
           }));
           
-          // 8. Agregar al mapa
+          // 9. Agregar al mapa
           comboMap.set(combo.combo, {
             comboName: combo.combo,
             cycleTime,
