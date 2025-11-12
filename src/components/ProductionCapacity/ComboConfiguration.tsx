@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Progress } from "@/components/ui/progress";
 import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AdjustedProductionData } from "./InventoryAdjustment";
@@ -39,6 +40,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   const [combos, setCombos] = useState<ComboSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState<string>('');
 
   useEffect(() => {
     calculateComboSuggestions();
@@ -114,23 +117,34 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   const calculateComboSuggestions = async () => {
     setLoading(true);
     setError(null);
+    setProgress(0);
     
     try {
       console.log('🔧 [COMBO CONFIG] Iniciando cálculo de combos...');
       console.log(`📋 [COMBO CONFIG] Procesando ${data.length} referencias del pedido`);
       
       // 1. Hacer desglose BOM completo de todas las referencias del pedido
+      setProgress(10);
+      setCurrentStep('Analizando desglose BOM de referencias...');
+      
       const allRequiredComponents = new Map<string, number>();
       const globalVisited = new Set<string>();
       
-      for (const item of data) {
+      const totalRefs = data.length;
+      for (let i = 0; i < data.length; i++) {
+        const item = data[i];
+        setCurrentStep(`Analizando ${item.referencia} (${i + 1}/${totalRefs})`);
         console.log(`\n🎯 [COMBO CONFIG] Analizando ${item.referencia} (cantidad: ${item.cantidad})`);
         await getRecursiveBOM(item.referencia, item.cantidad, 0, globalVisited, allRequiredComponents);
+        setProgress(10 + (i + 1) / totalRefs * 30); // 10% a 40%
       }
       
       console.log(`\n📊 [COMBO CONFIG] Total de componentes únicos encontrados: ${allRequiredComponents.size}`);
       
       // 2. Filtrar solo las referencias que terminan en -CMB
+      setProgress(45);
+      setCurrentStep('Identificando referencias -CMB...');
+      
       const cmbReferences: Array<{ ref: string; quantity: number }> = [];
       for (const [componentId, quantity] of allRequiredComponents) {
         if (componentId.endsWith('-CMB')) {
@@ -145,13 +159,20 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         console.log('✅ [COMBO CONFIG] No hay referencias -CMB, saltando configuración');
         setCombos([]);
         setLoading(false);
+        setProgress(100);
         return;
       }
+      
+      setProgress(55);
+      setCurrentStep(`Procesando ${cmbReferences.length} referencias -CMB...`);
       
       const comboMap = new Map<string, ComboSuggestion>();
       
       // 3. Para cada referencia -CMB, buscar en qué combos está
-      for (const ref of cmbReferences) {
+      const totalCmbRefs = cmbReferences.length;
+      for (let idx = 0; idx < cmbReferences.length; idx++) {
+        const ref = cmbReferences[idx];
+        setCurrentStep(`Consultando combos para ${ref.ref} (${idx + 1}/${totalCmbRefs})`);
         console.log(`\n🔍 [COMBO CONFIG] Buscando combos para ${ref.ref}...`);
         
         const { data: comboData, error: comboError } = await supabase
@@ -250,7 +271,12 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           
           console.log(`✅ [COMBO CONFIG] Combo ${combo.combo}: ${requiredCombos} combos sugeridos (${cycleTime.toFixed(2)} min/combo)`);
         }
+        
+        setProgress(55 + ((idx + 1) / totalCmbRefs) * 35); // 55% a 90%
       }
+      
+      setProgress(95);
+      setCurrentStep('Finalizando cálculo de combos...');
       
       const comboArray = Array.from(comboMap.values());
       setCombos(comboArray);
@@ -273,6 +299,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     }
     
     setLoading(false);
+    setProgress(100);
   };
 
   const handleComboChange = (comboName: string, newValue: number) => {
@@ -303,10 +330,25 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   if (loading) {
     return (
       <Card>
-        <CardContent className="flex items-center justify-center py-12">
-          <div className="text-center space-y-4">
-            <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary" />
-            <p className="text-muted-foreground">Calculando combos necesarios...</p>
+        <CardContent className="p-8">
+          <div className="space-y-4">
+            <div className="flex items-center justify-center gap-3">
+              <div className="animate-spin h-8 w-8 border-b-2 border-primary"></div>
+              <div className="text-center">
+                <p className="font-medium">Calculando combos necesarios...</p>
+                {currentStep && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {currentStep}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Progress value={progress} className="w-full" />
+              <p className="text-xs text-center text-muted-foreground">
+                {Math.round(progress)}% completado
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
