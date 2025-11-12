@@ -44,57 +44,71 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     calculateComboSuggestions();
   }, [data]);
 
-  // Función recursiva para obtener todos los componentes del BOM
-  const getRecursiveBOM = async (productId: string, quantity: number = 1, level: number = 0, visited: Set<string> = new Set()): Promise<Map<string, number>> => {
-    // Prevenir loops infinitos
-    if (level > 10 || visited.has(productId)) {
-      console.warn(`🔄 Loop detectado o nivel máximo alcanzado para ${productId}`);
-      return new Map();
+  // Cache global para evitar consultas repetidas
+  const bomCache = new Map<string, Array<{component_id: string, amount: number}>>();
+  
+  // Función optimizada para obtener BOM con caché
+  const getBOMData = async (productId: string): Promise<Array<{component_id: string, amount: number}>> => {
+    const key = productId.trim().toUpperCase();
+    
+    if (bomCache.has(key)) {
+      return bomCache.get(key)!;
     }
     
-    visited.add(productId);
-    const componentsMap = new Map<string, number>();
-    
-    console.log(`${'  '.repeat(level)}🔍 [BOM] Analizando: ${productId} (cantidad: ${quantity})`);
-    
-    // Buscar BOM directo para este product_id
     const { data: bomData, error: bomError } = await supabase
       .from('bom')
       .select('component_id, amount')
-      .eq('product_id', productId.trim().toUpperCase());
+      .eq('product_id', key);
     
     if (bomError) {
       console.error(`❌ Error al buscar BOM para ${productId}:`, bomError);
-      return componentsMap;
+      bomCache.set(key, []);
+      return [];
     }
     
-    if (!bomData || bomData.length === 0) {
-      console.log(`${'  '.repeat(level)}📦 ${productId} es componente final (sin BOM)`);
-      return componentsMap;
+    const result = bomData || [];
+    bomCache.set(key, result);
+    return result;
+  };
+
+  // Función recursiva optimizada para obtener todos los componentes del BOM
+  const getRecursiveBOM = async (
+    productId: string, 
+    quantity: number = 1, 
+    level: number = 0, 
+    globalVisited: Set<string>,
+    componentsMap: Map<string, number>
+  ): Promise<void> => {
+    const key = productId.trim().toUpperCase();
+    
+    // Prevenir loops infinitos
+    if (level > 10) {
+      console.warn(`🔄 Nivel máximo alcanzado para ${key}`);
+      return;
     }
     
-    // Procesar cada componente
+    // Buscar BOM con caché
+    const bomData = await getBOMData(key);
+    
+    if (bomData.length === 0) {
+      return;
+    }
+    
+    // Procesar todos los componentes
     for (const bomItem of bomData) {
       const componentId = bomItem.component_id.trim().toUpperCase();
       const componentQuantity = quantity * bomItem.amount;
       
-      console.log(`${'  '.repeat(level)}📋 Componente: ${componentId} (cantidad: ${componentQuantity})`);
-      
-      // Agregar este componente al mapa
+      // Agregar o actualizar la cantidad en el mapa
       const existingQuantity = componentsMap.get(componentId) || 0;
       componentsMap.set(componentId, existingQuantity + componentQuantity);
       
-      // Buscar recursivamente si este componente tiene sus propios subcomponentes
-      const subComponents = await getRecursiveBOM(componentId, componentQuantity, level + 1, new Set(visited));
-      
-      // Agregar los subcomponentes al mapa principal
-      for (const [subComponentId, subQuantity] of subComponents) {
-        const existingSubQuantity = componentsMap.get(subComponentId) || 0;
-        componentsMap.set(subComponentId, existingSubQuantity + subQuantity);
+      // Solo hacer recursión si no hemos procesado este componente antes
+      if (!globalVisited.has(componentId)) {
+        globalVisited.add(componentId);
+        await getRecursiveBOM(componentId, componentQuantity, level + 1, globalVisited, componentsMap);
       }
     }
-    
-    return componentsMap;
   };
 
   const calculateComboSuggestions = async () => {
@@ -107,16 +121,11 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       
       // 1. Hacer desglose BOM completo de todas las referencias del pedido
       const allRequiredComponents = new Map<string, number>();
+      const globalVisited = new Set<string>();
       
       for (const item of data) {
         console.log(`\n🎯 [COMBO CONFIG] Analizando ${item.referencia} (cantidad: ${item.cantidad})`);
-        const bomComponents = await getRecursiveBOM(item.referencia, item.cantidad);
-        
-        // Consolidar componentes
-        for (const [componentId, quantity] of bomComponents) {
-          const existing = allRequiredComponents.get(componentId) || 0;
-          allRequiredComponents.set(componentId, existing + quantity);
-        }
+        await getRecursiveBOM(item.referencia, item.cantidad, 0, globalVisited, allRequiredComponents);
       }
       
       console.log(`\n📊 [COMBO CONFIG] Total de componentes únicos encontrados: ${allRequiredComponents.size}`);
