@@ -807,6 +807,24 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         setProgress(55 + ((idx + 1) / totalRefs) * 35); // 55% a 90%
       }
       
+      setProgress(90);
+      setCurrentStep('Agregando referencias sin combos...');
+      
+      // 4. Agregar TODAS las referencias que no tienen combos al referenceMap
+      console.log(`\n📝 [COMBO CONFIG] Agregando referencias sin combos...`);
+      for (const [componentId, quantity] of allRequiredComponents) {
+        if (!referenceMap.has(componentId)) {
+          console.log(`➕ [COMBO CONFIG] Agregando referencia sin combo: ${componentId} (cantidad: ${quantity})`);
+          referenceMap.set(componentId, {
+            referenceId: componentId,
+            totalRequired: quantity,
+            availableCombos: [],
+            selectedCombo: '',
+            quantityToProduce: 0
+          });
+        }
+      }
+      
       setProgress(95);
       setCurrentStep('Finalizando cálculo de combos...');
       
