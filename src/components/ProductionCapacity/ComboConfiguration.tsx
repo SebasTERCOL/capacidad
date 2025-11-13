@@ -8,8 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { AdjustedProductionData } from "./InventoryAdjustment";
 import { toast } from "@/components/ui/sonner";
@@ -57,19 +58,497 @@ interface ComboManagementDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+interface ComboData {
+  comboName: string;
+  components: {
+    componentId: string;
+    quantity: number;
+  }[];
+  cycleTime: number;
+}
+
 const ComboManagementDialog: React.FC<ComboManagementDialogProps> = ({ open, onOpenChange }) => {
+  const [combos, setCombos] = useState<ComboData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [editingCombo, setEditingCombo] = useState<string | null>(null);
+  const [editedData, setEditedData] = useState<ComboData | null>(null);
+  const [isAddingNew, setIsAddingNew] = useState(false);
+  const [newCombo, setNewCombo] = useState<ComboData>({
+    comboName: '',
+    components: [{ componentId: '', quantity: 1 }],
+    cycleTime: 0
+  });
+
+  useEffect(() => {
+    if (open) {
+      loadCombos();
+    }
+  }, [open]);
+
+  const loadCombos = async () => {
+    setLoading(true);
+    try {
+      // Cargar todos los combos de la tabla combo
+      const { data: comboData, error: comboError } = await (supabase as any)
+        .from('combo')
+        .select('*')
+        .order('combo');
+
+      if (comboError) throw comboError;
+
+      // Agrupar por nombre de combo
+      const groupedCombos = new Map<string, ComboData>();
+      
+      comboData?.forEach((row: any) => {
+        const comboName = row.combo;
+        if (!groupedCombos.has(comboName)) {
+          groupedCombos.set(comboName, {
+            comboName,
+            components: [],
+            cycleTime: 0
+          });
+        }
+        groupedCombos.get(comboName)!.components.push({
+          componentId: row.component_id,
+          quantity: row.cantidad || 1
+        });
+      });
+
+      // Obtener tiempos de machines_processes
+      const comboNames = Array.from(groupedCombos.keys());
+      if (comboNames.length > 0) {
+        const { data: machineData, error: machineError } = await supabase
+          .from('machines_processes')
+          .select('ref, sam')
+          .in('ref', comboNames);
+
+        if (machineError) throw machineError;
+
+        machineData?.forEach((row: any) => {
+          if (groupedCombos.has(row.ref)) {
+            groupedCombos.get(row.ref)!.cycleTime = row.sam;
+          }
+        });
+      }
+
+      setCombos(Array.from(groupedCombos.values()));
+    } catch (error) {
+      console.error('Error loading combos:', error);
+      toast.error('Error al cargar los combos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartEdit = (combo: ComboData) => {
+    setEditingCombo(combo.comboName);
+    setEditedData({ ...combo, components: [...combo.components] });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCombo(null);
+    setEditedData(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editedData) return;
+
+    setLoading(true);
+    try {
+      // Eliminar registros antiguos del combo
+      const { error: deleteError } = await (supabase as any)
+        .from('combo')
+        .delete()
+        .eq('combo', editingCombo);
+
+      if (deleteError) throw deleteError;
+
+      // Insertar nuevos registros
+      const insertData = editedData.components.map(comp => ({
+        combo: editedData.comboName,
+        component_id: comp.componentId,
+        cantidad: comp.quantity
+      }));
+
+      const { error: insertError } = await (supabase as any)
+        .from('combo')
+        .insert(insertData);
+
+      if (insertError) throw insertError;
+
+      // Actualizar tiempo en machines_processes
+      const { error: updateError } = await supabase
+        .from('machines_processes')
+        .update({ sam: editedData.cycleTime })
+        .eq('ref', editedData.comboName);
+
+      if (updateError) throw updateError;
+
+      toast.success('Combo actualizado exitosamente');
+      setEditingCombo(null);
+      setEditedData(null);
+      loadCombos();
+    } catch (error) {
+      console.error('Error saving combo:', error);
+      toast.error('Error al guardar el combo');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCombo = async (comboName: string) => {
+    if (!confirm(`¿Estás seguro de eliminar el combo ${comboName}?`)) return;
+
+    setLoading(true);
+    try {
+      const { error } = await (supabase as any)
+        .from('combo')
+        .delete()
+        .eq('combo', comboName);
+
+      if (error) throw error;
+
+      toast.success('Combo eliminado exitosamente');
+      loadCombos();
+    } catch (error) {
+      console.error('Error deleting combo:', error);
+      toast.error('Error al eliminar el combo');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddComponent = (isNew: boolean) => {
+    if (isNew) {
+      setNewCombo({
+        ...newCombo,
+        components: [...newCombo.components, { componentId: '', quantity: 1 }]
+      });
+    } else if (editedData) {
+      setEditedData({
+        ...editedData,
+        components: [...editedData.components, { componentId: '', quantity: 1 }]
+      });
+    }
+  };
+
+  const handleRemoveComponent = (index: number, isNew: boolean) => {
+    if (isNew) {
+      const newComponents = newCombo.components.filter((_, i) => i !== index);
+      setNewCombo({ ...newCombo, components: newComponents });
+    } else if (editedData) {
+      const newComponents = editedData.components.filter((_, i) => i !== index);
+      setEditedData({ ...editedData, components: newComponents });
+    }
+  };
+
+  const handleSaveNewCombo = async () => {
+    if (!newCombo.comboName || newCombo.components.some(c => !c.componentId)) {
+      toast.error('Completa todos los campos del combo');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Insertar componentes del combo
+      const insertData = newCombo.components.map(comp => ({
+        combo: newCombo.comboName,
+        component_id: comp.componentId,
+        cantidad: comp.quantity
+      }));
+
+      const { error: insertError } = await (supabase as any)
+        .from('combo')
+        .insert(insertData);
+
+      if (insertError) throw insertError;
+
+      // Insertar tiempo en machines_processes (necesitamos id_machine e id_process)
+      // Por ahora, usaremos valores por defecto que se pueden editar después
+      const { error: machineError } = await supabase
+        .from('machines_processes')
+        .insert({
+          ref: newCombo.comboName,
+          sam: newCombo.cycleTime,
+          id_machine: 1, // Valor por defecto
+          id_process: 20, // Punzonado por defecto
+          frequency: 1,
+          sam_unit: 'min_per_unit'
+        });
+
+      if (machineError) throw machineError;
+
+      toast.success('Combo creado exitosamente');
+      setIsAddingNew(false);
+      setNewCombo({
+        comboName: '',
+        components: [{ componentId: '', quantity: 1 }],
+        cycleTime: 0
+      });
+      loadCombos();
+    } catch (error) {
+      console.error('Error creating combo:', error);
+      toast.error('Error al crear el combo');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[85vh]">
         <DialogHeader>
           <DialogTitle>Gestión de Combos</DialogTitle>
           <DialogDescription>
             Administra los combos existentes y crea nuevos combos de producción
           </DialogDescription>
         </DialogHeader>
-        <div className="p-4 text-center text-muted-foreground">
-          <p>Funcionalidad de gestión de combos - En desarrollo</p>
-        </div>
+        
+        <ScrollArea className="h-[60vh] pr-4">
+          {loading && combos.length === 0 ? (
+            <div className="flex items-center justify-center p-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Botón para agregar nuevo combo */}
+              {!isAddingNew && (
+                <Button onClick={() => setIsAddingNew(true)} className="w-full">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar Nuevo Combo
+                </Button>
+              )}
+
+              {/* Formulario para nuevo combo */}
+              {isAddingNew && (
+                <Card className="border-2 border-primary">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Nuevo Combo</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Nombre del Combo</Label>
+                        <Input
+                          value={newCombo.comboName}
+                          onChange={(e) => setNewCombo({ ...newCombo, comboName: e.target.value })}
+                          placeholder="Ej: CMB.NOMBRE.V1"
+                        />
+                      </div>
+                      <div>
+                        <Label>Tiempo (minutos)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={newCombo.cycleTime}
+                          onChange={(e) => setNewCombo({ ...newCombo, cycleTime: parseFloat(e.target.value) || 0 })}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <Label>Componentes</Label>
+                        <Button size="sm" variant="outline" onClick={() => handleAddComponent(true)}>
+                          <Plus className="h-3 w-3 mr-1" />
+                          Agregar
+                        </Button>
+                      </div>
+                      {newCombo.components.map((comp, idx) => (
+                        <div key={idx} className="flex gap-2 mb-2">
+                          <Input
+                            placeholder="Referencia"
+                            value={comp.componentId}
+                            onChange={(e) => {
+                              const newComponents = [...newCombo.components];
+                              newComponents[idx].componentId = e.target.value;
+                              setNewCombo({ ...newCombo, components: newComponents });
+                            }}
+                            className="flex-1"
+                          />
+                          <Input
+                            type="number"
+                            placeholder="Cantidad"
+                            value={comp.quantity}
+                            onChange={(e) => {
+                              const newComponents = [...newCombo.components];
+                              newComponents[idx].quantity = parseFloat(e.target.value) || 1;
+                              setNewCombo({ ...newCombo, components: newComponents });
+                            }}
+                            className="w-24"
+                          />
+                          {newCombo.components.length > 1 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleRemoveComponent(idx, true)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button onClick={handleSaveNewCombo} disabled={loading}>
+                        <Save className="h-4 w-4 mr-2" />
+                        Guardar
+                      </Button>
+                      <Button variant="outline" onClick={() => {
+                        setIsAddingNew(false);
+                        setNewCombo({
+                          comboName: '',
+                          components: [{ componentId: '', quantity: 1 }],
+                          cycleTime: 0
+                        });
+                      }}>
+                        <X className="h-4 w-4 mr-2" />
+                        Cancelar
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Lista de combos existentes */}
+              {combos.map((combo) => (
+                <Card key={combo.comboName}>
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg">{combo.comboName}</CardTitle>
+                        <CardDescription>
+                          Tiempo: {combo.cycleTime.toFixed(2)} min/combo
+                        </CardDescription>
+                      </div>
+                      {editingCombo !== combo.comboName && (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleStartEdit(combo)}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteCombo(combo.comboName)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {editingCombo === combo.comboName && editedData ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label>Nombre del Combo</Label>
+                            <Input
+                              value={editedData.comboName}
+                              onChange={(e) => setEditedData({ ...editedData, comboName: e.target.value })}
+                            />
+                          </div>
+                          <div>
+                            <Label>Tiempo (minutos)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={editedData.cycleTime}
+                              onChange={(e) => setEditedData({ ...editedData, cycleTime: parseFloat(e.target.value) || 0 })}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-2">
+                            <Label>Componentes</Label>
+                            <Button size="sm" variant="outline" onClick={() => handleAddComponent(false)}>
+                              <Plus className="h-3 w-3 mr-1" />
+                              Agregar
+                            </Button>
+                          </div>
+                          {editedData.components.map((comp, idx) => (
+                            <div key={idx} className="flex gap-2 mb-2">
+                              <Input
+                                placeholder="Referencia"
+                                value={comp.componentId}
+                                onChange={(e) => {
+                                  const newComponents = [...editedData.components];
+                                  newComponents[idx].componentId = e.target.value;
+                                  setEditedData({ ...editedData, components: newComponents });
+                                }}
+                                className="flex-1"
+                              />
+                              <Input
+                                type="number"
+                                placeholder="Cantidad"
+                                value={comp.quantity}
+                                onChange={(e) => {
+                                  const newComponents = [...editedData.components];
+                                  newComponents[idx].quantity = parseFloat(e.target.value) || 1;
+                                  setEditedData({ ...editedData, components: newComponents });
+                                }}
+                                className="w-24"
+                              />
+                              {editedData.components.length > 1 && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleRemoveComponent(idx, false)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Button onClick={handleSaveEdit} disabled={loading}>
+                            <Save className="h-4 w-4 mr-2" />
+                            Guardar
+                          </Button>
+                          <Button variant="outline" onClick={handleCancelEdit}>
+                            <X className="h-4 w-4 mr-2" />
+                            Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Componente</TableHead>
+                            <TableHead className="text-right">Cantidad</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {combo.components.map((comp, idx) => (
+                            <TableRow key={idx}>
+                              <TableCell>{comp.componentId}</TableCell>
+                              <TableCell className="text-right">{comp.quantity}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cerrar
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
