@@ -664,39 +664,56 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       
       console.log(`\n📊 [COMBO CONFIG] Total de componentes únicos encontrados: ${allRequiredComponents.size}`);
       
-      // 2. Filtrar solo las referencias que terminan en -CMB
+      // 2. Obtener TODAS las referencias (no solo -CMB)
       setProgress(45);
-      setCurrentStep('Identificando referencias -CMB...');
+      setCurrentStep('Identificando todas las referencias necesarias...');
       
-      const cmbReferences: Array<{ ref: string; quantity: number }> = [];
+      const allReferences: Array<{ ref: string; quantity: number }> = [];
       for (const [componentId, quantity] of allRequiredComponents) {
-        if (componentId.endsWith('-CMB')) {
-          cmbReferences.push({ ref: componentId, quantity });
-          console.log(`🎯 [COMBO CONFIG] Referencia -CMB encontrada: ${componentId} (cantidad: ${quantity})`);
-        }
+        allReferences.push({ ref: componentId, quantity });
+        console.log(`🎯 [COMBO CONFIG] Referencia encontrada: ${componentId} (cantidad: ${quantity})`);
       }
       
-      console.log(`\n📦 [COMBO CONFIG] ${cmbReferences.length} referencias -CMB necesarias`);
+      console.log(`\n📦 [COMBO CONFIG] ${allReferences.length} referencias totales necesarias`);
       
-      if (cmbReferences.length === 0) {
-        console.log('✅ [COMBO CONFIG] No hay referencias -CMB, saltando configuración');
+      if (allReferences.length === 0) {
+        console.log('✅ [COMBO CONFIG] No hay referencias, saltando configuración');
         setCombos([]);
         setLoading(false);
         setProgress(100);
         return;
       }
       
+      // Identificar cuáles son referencias -CMB (estas requieren combos)
+      const cmbReferences = allReferences.filter(r => r.ref.endsWith('-CMB'));
+      console.log(`📦 [COMBO CONFIG] ${cmbReferences.length} referencias -CMB que requieren combos`);
+      
+      if (cmbReferences.length === 0) {
+        console.log('✅ [COMBO CONFIG] No hay referencias -CMB, saltando configuración de combos');
+        // Crear referencias sin combos para mostrar en la UI
+        const referencesWithoutCombos: ReferenceCMB[] = allReferences.map(ref => ({
+          referenceId: ref.ref,
+          totalRequired: ref.quantity,
+          availableCombos: [],
+          selectedCombo: '',
+          quantityToProduce: 0
+        }));
+        setReferences(referencesWithoutCombos);
+        setLoading(false);
+        setProgress(100);
+        return;
+      }
+      
       setProgress(55);
-      setCurrentStep(`Procesando ${cmbReferences.length} referencias -CMB...`);
+      setCurrentStep(`Procesando ${allReferences.length} referencias...`);
       
       const referenceMap = new Map<string, ReferenceCMB>();
       const comboDetailsMap = new Map<string, ComboOption>();
       
-      // 3. Para cada referencia -CMB, buscar en qué combos está
-      const totalCmbRefs = cmbReferences.length;
-      for (let idx = 0; idx < cmbReferences.length; idx++) {
-        const ref = cmbReferences[idx];
-        setCurrentStep(`Consultando combos para ${ref.ref} (${idx + 1}/${totalCmbRefs})`);
+      // 3. Para cada referencia, verificar si está en algún combo
+      for (let idx = 0; idx < allReferences.length; idx++) {
+        const ref = allReferences[idx];
+        setCurrentStep(`Consultando combos para ${ref.ref} (${idx + 1}/${totalRefs})`);
         console.log(`\n🔍 [COMBO CONFIG] Buscando combos para ${ref.ref}...`);
         
         const { data: comboData, error: comboError } = await supabase
@@ -787,7 +804,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         
         console.log(`✅ [COMBO CONFIG] Referencia ${ref.ref}: ${availableCombos.length} combos disponibles`);
         
-        setProgress(55 + ((idx + 1) / totalCmbRefs) * 35); // 55% a 90%
+        setProgress(55 + ((idx + 1) / totalRefs) * 35); // 55% a 90%
       }
       
       setProgress(95);
@@ -1000,10 +1017,13 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                   <TableRow>
                     <TableHead>Referencia</TableHead>
                     <TableHead className="text-right">Requerido</TableHead>
+                    <TableHead className="text-right">Total Producido</TableHead>
+                    <TableHead className="text-right">Diferencia</TableHead>
                     <TableHead>Combos</TableHead>
                     <TableHead className="text-center">Cantidad de Combos</TableHead>
-                    <TableHead className="text-right">Total Producido</TableHead>
+                    <TableHead className="text-right">Tiempo Consumido</TableHead>
                     <TableHead>Estado</TableHead>
+                    <TableHead>Información</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1014,15 +1034,44 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     
                     const previouslyProduced = getProducedByPreviousReferences(ref.referenceId);
                     const adjustedRequired = Math.max(0, ref.totalRequired - previouslyProduced);
-                    const totalProduced = selectedComboOption 
-                      ? selectedComboOption.quantityProducedPerCombo * ref.quantityToProduce 
-                      : 0;
+                    
+                    // Calcular qué combos producen esta referencia
+                    const producingCombos: { comboName: string; quantity: number }[] = [];
+                    references.forEach(otherRef => {
+                      const otherSelectedCombo = otherRef.availableCombos.find(
+                        c => c.comboName === otherRef.selectedCombo
+                      );
+                      if (otherSelectedCombo) {
+                        const componentInCombo = otherSelectedCombo.allComponents.find(
+                          comp => comp.componentId === ref.referenceId
+                        );
+                        if (componentInCombo && otherRef.quantityToProduce > 0) {
+                          const producedQuantity = componentInCombo.quantityPerCombo * otherRef.quantityToProduce;
+                          producingCombos.push({
+                            comboName: otherSelectedCombo.comboName,
+                            quantity: producedQuantity
+                          });
+                        }
+                      }
+                    });
+                    
+                    const totalProduced = producingCombos.reduce((sum, pc) => sum + pc.quantity, 0);
+                    const difference = totalProduced - adjustedRequired;
                     const isSufficient = totalProduced >= adjustedRequired;
+                    const timeConsumed = selectedComboOption && ref.quantityToProduce > 0
+                      ? selectedComboOption.cycleTime * ref.quantityToProduce
+                      : 0;
 
                     return (
                       <TableRow key={ref.referenceId}>
                         <TableCell className="font-medium">{ref.referenceId}</TableCell>
                         <TableCell className="text-right">{adjustedRequired}</TableCell>
+                        <TableCell className="text-right font-medium">{totalProduced}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={difference > 0 ? 'text-green-600' : difference < 0 ? 'text-red-600' : 'text-muted-foreground'}>
+                            {difference > 0 ? '+' : ''}{difference}
+                          </span>
+                        </TableCell>
                         <TableCell>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -1068,27 +1117,44 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                           </Tooltip>
                         </TableCell>
                         <TableCell>
-                          <Input
-                            type="number"
-                            min="0"
-                            value={ref.quantityToProduce}
-                            onChange={(e) => handleReferenceQuantityChange(
-                              ref.referenceId, 
-                              parseInt(e.target.value) || 0
-                            )}
-                            className="w-24 text-center"
-                          />
+                          {ref.availableCombos.length > 0 ? (
+                            <Input
+                              type="number"
+                              min="0"
+                              value={ref.quantityToProduce}
+                              onChange={(e) => handleReferenceQuantityChange(
+                                ref.referenceId, 
+                                parseInt(e.target.value) || 0
+                              )}
+                              className="w-24 text-center"
+                            />
+                          ) : (
+                            <span className="text-muted-foreground text-sm">N/A</span>
+                          )}
                         </TableCell>
-                        <TableCell className="text-right font-semibold">{totalProduced}</TableCell>
+                        <TableCell className="text-right">
+                          {timeConsumed > 0 ? `${timeConsumed.toFixed(1)} min` : '-'}
+                        </TableCell>
                         <TableCell>
-                          {isSufficient ? (
-                            <Badge variant="default" className="bg-green-600">
-                              ✓ Suficiente
+                          {ref.availableCombos.length > 0 ? (
+                            <Badge variant={isSufficient ? "default" : "destructive"}>
+                              {isSufficient ? "Suficiente" : "Insuficiente"}
                             </Badge>
                           ) : (
-                            <Badge variant="destructive">
-                              ✗ Insuficiente
-                            </Badge>
+                            <Badge variant="outline">Sin combo</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          {producingCombos.length > 0 ? (
+                            <div className="text-xs space-y-1">
+                              {producingCombos.map((pc, idx) => (
+                                <div key={idx}>
+                                  {pc.quantity} unidades {pc.comboName}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">No producido por combos</span>
                           )}
                         </TableCell>
                       </TableRow>
