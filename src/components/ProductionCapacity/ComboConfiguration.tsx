@@ -6,10 +6,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AdjustedProductionData } from "./InventoryAdjustment";
 import { toast } from "@/components/ui/sonner";
+
+export interface ComboOption {
+  comboName: string;
+  cycleTime: number;
+  quantityProducedPerCombo: number;
+  allComponents: {
+    componentId: string;
+    quantityPerCombo: number;
+  }[];
+}
+
+export interface ReferenceCMB {
+  referenceId: string;
+  totalRequired: number;
+  availableCombos: ComboOption[];
+  selectedCombo: string;
+  quantityToProduce: number;
+}
 
 export interface ComboSuggestion {
   comboName: string;
@@ -31,17 +52,42 @@ interface ComboConfigurationProps {
   onComboConfigComplete: (combos: ComboSuggestion[]) => void;
 }
 
+interface ComboManagementDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+const ComboManagementDialog: React.FC<ComboManagementDialogProps> = ({ open, onOpenChange }) => {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Gestión de Combos</DialogTitle>
+          <DialogDescription>
+            Administra los combos existentes y crea nuevos combos de producción
+          </DialogDescription>
+        </DialogHeader>
+        <div className="p-4 text-center text-muted-foreground">
+          <p>Funcionalidad de gestión de combos - En desarrollo</p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   data,
   onNext,
   onBack,
   onComboConfigComplete
 }) => {
+  const [references, setReferences] = useState<ReferenceCMB[]>([]);
   const [combos, setCombos] = useState<ComboSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState<string>('');
+  const [showComboManagement, setShowComboManagement] = useState(false);
 
   useEffect(() => {
     calculateComboSuggestions();
@@ -164,7 +210,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       setProgress(55);
       setCurrentStep(`Procesando ${cmbReferences.length} referencias -CMB...`);
       
-      const comboMap = new Map<string, ComboSuggestion>();
+      const referenceMap = new Map<string, ReferenceCMB>();
+      const comboDetailsMap = new Map<string, ComboOption>();
       
       // 3. Para cada referencia -CMB, buscar en qué combos está
       const totalCmbRefs = cmbReferences.length;
@@ -190,81 +237,76 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         
         console.log(`✅ [COMBO CONFIG] ${comboData.length} combo(s) encontrado(s) para ${ref.ref}`);
         
+        const availableCombos: ComboOption[] = [];
+        
         for (const combo of comboData as any[]) {
-          // 4. Si el combo ya fue procesado, actualizar requisitos
-          if (comboMap.has(combo.combo)) {
-            const existing = comboMap.get(combo.combo)!;
-            
-            // Recalcular cuántos combos se necesitan considerando TODAS las referencias
-            let maxCombosNeeded = existing.suggestedCombos;
-            
-            // Verificar si necesitamos más combos para esta referencia
-            const combosForThisRef = Math.ceil(ref.quantity / combo.cantidad);
-            if (combosForThisRef > maxCombosNeeded) {
-              maxCombosNeeded = combosForThisRef;
-            }
-            
-            existing.suggestedCombos = maxCombosNeeded;
-            existing.totalTime = maxCombosNeeded * existing.cycleTime;
-            
-            // No recalcular totalRequired, mantenerlo fijo del pedido original
-            
-            console.log(`🔄 [COMBO CONFIG] Combo ${combo.combo} actualizado: ${maxCombosNeeded} combos`);
+          const comboName = combo.combo;
+          
+          // Si ya procesamos este combo, solo agregarlo a la lista
+          if (comboDetailsMap.has(comboName)) {
+            const existingCombo = comboDetailsMap.get(comboName)!;
+            availableCombos.push(existingCombo);
             continue;
           }
           
-          // 5. Obtener tiempo del combo desde machines_processes donde id_process = 20 (Punzonado)
+          // Obtener tiempo del combo
           const { data: timeData, error: timeError } = await supabase
             .from('machines_processes')
             .select('sam, ref')
-            .eq('ref', combo.combo)
+            .eq('ref', comboName)
             .eq('id_process', 20)
             .limit(1)
             .maybeSingle();
           
           if (timeError) {
-            console.warn(`⚠️ [COMBO CONFIG] Error buscando tiempo para combo ${combo.combo}:`, timeError);
+            console.warn(`⚠️ [COMBO CONFIG] Error buscando tiempo para combo ${comboName}:`, timeError);
           }
           
           const cycleTime = timeData?.sam || 0;
           
-          if (cycleTime === 0) {
-            console.warn(`⚠️ [COMBO CONFIG] No se encontró tiempo para combo ${combo.combo} en proceso Punzonado (id_process=20)`);
-          }
-          
-          // 6. Obtener TODOS los componentes de este combo
+          // Obtener TODOS los componentes de este combo
           const { data: allComponents, error: allCompError } = await supabase
             .from('combo' as any)
             .select('*')
-            .eq('combo', combo.combo);
+            .eq('combo', comboName);
           
           if (allCompError || !allComponents) {
-            console.error(`❌ Error obteniendo componentes del combo ${combo.combo}:`, allCompError);
+            console.error(`❌ Error obteniendo componentes del combo ${comboName}:`, allCompError);
             continue;
           }
           
-          // 7. Calcular cuántos combos se necesitan basado en la referencia actual
-          const requiredCombos = Math.ceil(ref.quantity / combo.cantidad);
-          
-          // 8. Obtener requerimiento real de cada componente del pedido original
-          const componentsWithInventory = (allComponents as any[]).map(c => ({
-            componentId: c.component_id,
-            quantityPerCombo: c.cantidad,
-            totalRequired: allRequiredComponents.get(c.component_id.trim().toUpperCase()) || 0,
-            currentInventory: 0 // TODO: Consultar warehouse si se necesita
-          }));
-          
-          // 9. Agregar al mapa
-          comboMap.set(combo.combo, {
-            comboName: combo.combo,
+          const comboOption: ComboOption = {
+            comboName,
             cycleTime,
-            components: componentsWithInventory,
-            suggestedCombos: requiredCombos,
-            totalTime: requiredCombos * cycleTime
-          });
+            quantityProducedPerCombo: combo.cantidad,
+            allComponents: (allComponents as any[]).map(c => ({
+              componentId: c.component_id,
+              quantityPerCombo: c.cantidad
+            }))
+          };
           
-          console.log(`✅ [COMBO CONFIG] Combo ${combo.combo}: ${requiredCombos} combos sugeridos (${cycleTime.toFixed(2)} min/combo)`);
+          comboDetailsMap.set(comboName, comboOption);
+          availableCombos.push(comboOption);
         }
+        
+        // Identificar el combo principal (el que tiene nombre similar a la referencia)
+        const mainCombo = availableCombos.find(c => 
+          c.comboName.includes(ref.ref.replace('-CMB', ''))
+        ) || availableCombos[0];
+        
+        const suggestedQuantity = mainCombo 
+          ? Math.ceil(ref.quantity / mainCombo.quantityProducedPerCombo)
+          : 0;
+        
+        referenceMap.set(ref.ref, {
+          referenceId: ref.ref,
+          totalRequired: ref.quantity,
+          availableCombos,
+          selectedCombo: mainCombo?.comboName || '',
+          quantityToProduce: suggestedQuantity
+        });
+        
+        console.log(`✅ [COMBO CONFIG] Referencia ${ref.ref}: ${availableCombos.length} combos disponibles`);
         
         setProgress(55 + ((idx + 1) / totalCmbRefs) * 35); // 55% a 90%
       }
@@ -272,15 +314,37 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       setProgress(95);
       setCurrentStep('Finalizando cálculo de combos...');
       
-      const comboArray = Array.from(comboMap.values());
+      const referenceArray = Array.from(referenceMap.values());
+      setReferences(referenceArray);
+      
+      // Convertir a formato ComboSuggestion para mantener compatibilidad
+      const comboArray: ComboSuggestion[] = [];
+      referenceArray.forEach(refCMB => {
+        const selectedComboOption = refCMB.availableCombos.find(c => c.comboName === refCMB.selectedCombo);
+        if (selectedComboOption) {
+          comboArray.push({
+            comboName: refCMB.selectedCombo,
+            cycleTime: selectedComboOption.cycleTime,
+            components: selectedComboOption.allComponents.map(c => ({
+              componentId: c.componentId,
+              quantityPerCombo: c.quantityPerCombo,
+              totalRequired: allRequiredComponents.get(c.componentId.trim().toUpperCase()) || 0,
+              currentInventory: 0
+            })),
+            suggestedCombos: refCMB.quantityToProduce,
+            totalTime: refCMB.quantityToProduce * selectedComboOption.cycleTime
+          });
+        }
+      });
+      
       setCombos(comboArray);
       onComboConfigComplete(comboArray);
       
-      console.log(`✅ [COMBO CONFIG] ${comboArray.length} combos únicos identificados`);
+      console.log(`✅ [COMBO CONFIG] ${referenceArray.length} referencias -CMB identificadas`);
       
-      if (comboArray.length > 0) {
+      if (referenceArray.length > 0) {
         toast.success("Combos calculados", {
-          description: `Se identificaron ${comboArray.length} combo(s) necesarios`,
+          description: `Se identificaron ${referenceArray.length} referencia(s) -CMB`,
         });
       }
       
@@ -296,33 +360,58 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     setProgress(100);
   };
 
-  const handleComboChange = (comboName: string, newValue: number) => {
-    setCombos(prev => prev.map(combo => {
-      if (combo.comboName === comboName) {
-        return {
-          ...combo,
-          suggestedCombos: newValue,
-          totalTime: newValue * combo.cycleTime,
-        };
+  const handleReferenceComboChange = (referenceId: string, newComboName: string) => {
+    setReferences(prev => prev.map(ref => {
+      if (ref.referenceId === referenceId) {
+        const newCombo = ref.availableCombos.find(c => c.comboName === newComboName);
+        if (newCombo) {
+          const suggestedQty = Math.ceil(ref.totalRequired / newCombo.quantityProducedPerCombo);
+          return {
+            ...ref,
+            selectedCombo: newComboName,
+            quantityToProduce: suggestedQty
+          };
+        }
       }
-      return combo;
+      return ref;
     }));
   };
 
-  // Calcular componentes producidos acumulados hasta un combo específico
-  const getAccumulatedProduction = (upToComboIndex: number): Map<string, number> => {
-    const accumulated = new Map<string, number>();
+  const handleReferenceQuantityChange = (referenceId: string, newQuantity: number) => {
+    setReferences(prev => prev.map(ref => {
+      if (ref.referenceId === referenceId) {
+        return {
+          ...ref,
+          quantityToProduce: newQuantity
+        };
+      }
+      return ref;
+    }));
+  };
+
+  // Calcular la cantidad producida de una referencia por todos los combos anteriores
+  const getProducedByPreviousReferences = (currentReferenceId: string): number => {
+    let produced = 0;
+    const currentIndex = references.findIndex(r => r.referenceId === currentReferenceId);
     
-    for (let i = 0; i < upToComboIndex; i++) {
-      const combo = combos[i];
-      combo.components.forEach(comp => {
-        const produced = comp.quantityPerCombo * combo.suggestedCombos;
-        const existing = accumulated.get(comp.componentId) || 0;
-        accumulated.set(comp.componentId, existing + produced);
-      });
+    // Recorrer todas las referencias anteriores
+    for (let i = 0; i < currentIndex; i++) {
+      const prevRef = references[i];
+      const selectedCombo = prevRef.availableCombos.find(c => c.comboName === prevRef.selectedCombo);
+      
+      if (selectedCombo) {
+        // Buscar si este combo produce la referencia actual
+        const producesCurrentRef = selectedCombo.allComponents.find(
+          comp => comp.componentId === currentReferenceId
+        );
+        
+        if (producesCurrentRef) {
+          produced += producesCurrentRef.quantityPerCombo * prevRef.quantityToProduce;
+        }
+      }
     }
     
-    return accumulated;
+    return produced;
   };
 
   const formatTime = (minutes: number): string => {
@@ -331,7 +420,10 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   };
 
-  const totalTime = combos.reduce((sum, combo) => sum + combo.totalTime, 0);
+  const totalTime = references.reduce((sum, ref) => {
+    const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+    return sum + (selectedCombo ? selectedCombo.cycleTime * ref.quantityToProduce : 0);
+  }, 0);
 
   if (loading) {
     return (
@@ -376,150 +468,176 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Boxes className="h-6 w-6" />
-            Configuración de Combos - Punzonado
-          </CardTitle>
-          <CardDescription>
-            {combos.length === 0 
-              ? "No se detectaron referencias que requieran combos en este pedido"
-              : "Estos combos se sugieren basados en las referencias requeridas. Puede ajustar las cantidades según necesidad."}
-          </CardDescription>
-        </CardHeader>
-        {combos.length > 0 && (
-          <CardContent>
-            <div className="mb-4 p-4 bg-muted rounded-lg">
-              <div className="text-sm font-medium">Resumen Total</div>
-              <div className="text-2xl font-bold text-primary">{formatTime(totalTime)}</div>
-              <div className="text-xs text-muted-foreground">{combos.length} combo(s) diferentes</div>
-            </div>
-          </CardContent>
-        )}
-      </Card>
-
-      {combos.length === 0 ? (
+    <TooltipProvider>
+      <div className="space-y-6">
         <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Boxes className="h-16 w-16 mx-auto mb-4 opacity-50" />
-            <p>No hay combos necesarios para este pedido.</p>
-            <p className="text-sm mt-2">Puede continuar al siguiente paso.</p>
-          </CardContent>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Boxes className="h-6 w-6" />
+                  Configuración de Combos - Punzonado
+                </CardTitle>
+                <CardDescription>
+                  {references.length === 0 
+                    ? "No se detectaron referencias que requieran combos en este pedido"
+                    : "Configure los combos necesarios para producir las referencias -CMB requeridas"}
+                </CardDescription>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setShowComboManagement(true)}
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                COMBOS
+              </Button>
+            </div>
+          </CardHeader>
+          {references.length > 0 && (
+            <CardContent>
+              <div className="mb-4 p-4 bg-muted rounded-lg">
+                <div className="text-sm font-medium">Resumen Total</div>
+                <div className="text-2xl font-bold text-primary">{formatTime(totalTime)}</div>
+                <div className="text-xs text-muted-foreground">{references.length} referencia(s) -CMB</div>
+              </div>
+            </CardContent>
+          )}
         </Card>
-      ) : (
-        <div className="space-y-4">
-          {combos.map((combo) => (
-            <Card key={combo.comboName}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div className="space-y-1">
-                    <CardTitle className="text-lg">{combo.comboName}</CardTitle>
-                    <div className="flex gap-2">
-                      <Badge variant="secondary">
-                        {combo.cycleTime.toFixed(2)} min/combo
-                      </Badge>
-                      <Badge variant="outline">
-                        {combo.components.length} componentes
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Input para cantidad de combos */}
-                <div className="flex items-center gap-4 p-4 bg-muted rounded-lg">
-                  <div className="flex-1">
-                    <Label htmlFor={`combo-${combo.comboName}`} className="text-sm font-medium">
-                      Cantidad de Combos a Realizar
-                    </Label>
-                    <Input
-                      id={`combo-${combo.comboName}`}
-                      type="number"
-                      min="0"
-                      value={combo.suggestedCombos}
-                      onChange={(e) => handleComboChange(combo.comboName, parseInt(e.target.value) || 0)}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div className="text-center">
-                    <div className="text-xs text-muted-foreground">Tiempo Total</div>
-                    <div className="text-lg font-bold text-primary">{formatTime(combo.totalTime)}</div>
-                  </div>
-                </div>
 
-                {/* Tabla de componentes */}
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Componentes del Combo</Label>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Referencia</TableHead>
-                        <TableHead className="text-right">Unidades/Combo</TableHead>
-                        <TableHead className="text-right">Total Producido</TableHead>
-                        <TableHead className="text-right">Requerido</TableHead>
-                        <TableHead>Estado</TableHead>
+        {references.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Boxes className="h-16 w-16 mx-auto mb-4 opacity-50" />
+              <p>No hay combos necesarios para este pedido.</p>
+              <p className="text-sm mt-2">Puede continuar al siguiente paso.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="pt-6">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Referencia</TableHead>
+                    <TableHead className="text-right">Requerido</TableHead>
+                    <TableHead>Combos</TableHead>
+                    <TableHead className="text-center">Cantidad de Combos</TableHead>
+                    <TableHead className="text-right">Total Producido</TableHead>
+                    <TableHead>Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {references.map((ref) => {
+                    const selectedComboOption = ref.availableCombos.find(
+                      c => c.comboName === ref.selectedCombo
+                    );
+                    
+                    const previouslyProduced = getProducedByPreviousReferences(ref.referenceId);
+                    const adjustedRequired = Math.max(0, ref.totalRequired - previouslyProduced);
+                    const totalProduced = selectedComboOption 
+                      ? selectedComboOption.quantityProducedPerCombo * ref.quantityToProduce 
+                      : 0;
+                    const isSufficient = totalProduced >= adjustedRequired;
+
+                    return (
+                      <TableRow key={ref.referenceId}>
+                        <TableCell className="font-medium">{ref.referenceId}</TableCell>
+                        <TableCell className="text-right">{adjustedRequired}</TableCell>
+                        <TableCell>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div>
+                                <Select
+                                  value={ref.selectedCombo}
+                                  onValueChange={(value) => handleReferenceComboChange(ref.referenceId, value)}
+                                >
+                                  <SelectTrigger className="w-[200px]">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {ref.availableCombos.map((combo) => (
+                                      <SelectItem key={combo.comboName} value={combo.comboName}>
+                                        {combo.comboName}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </TooltipTrigger>
+                            {selectedComboOption && (
+                              <TooltipContent side="right" className="max-w-sm">
+                                <div className="space-y-2">
+                                  <div className="font-semibold">{selectedComboOption.comboName}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Tiempo: {selectedComboOption.cycleTime.toFixed(2)} min/combo
+                                  </div>
+                                  <div className="text-xs">
+                                    <div className="font-medium mb-1">Componentes:</div>
+                                    {selectedComboOption.allComponents.map((comp) => (
+                                      <div key={comp.componentId} className="flex justify-between gap-4">
+                                        <span>{comp.componentId}</span>
+                                        <span className="text-muted-foreground">
+                                          {comp.quantityPerCombo} unidades
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={ref.quantityToProduce}
+                            onChange={(e) => handleReferenceQuantityChange(
+                              ref.referenceId, 
+                              parseInt(e.target.value) || 0
+                            )}
+                            className="w-24 text-center"
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">{totalProduced}</TableCell>
+                        <TableCell>
+                          {isSufficient ? (
+                            <Badge variant="default" className="bg-green-600">
+                              ✓ Suficiente
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive">
+                              ✗ Insuficiente
+                            </Badge>
+                          )}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {combo.components.map(comp => {
-                        // Obtener índice del combo actual
-                        const currentComboIndex = combos.findIndex(c => c.comboName === combo.comboName);
-                        
-                        // Calcular producción acumulada de combos anteriores
-                        const accumulated = getAccumulatedProduction(currentComboIndex);
-                        const previouslyProduced = accumulated.get(comp.componentId) || 0;
-                        
-                        // Calcular producción de este combo
-                        const totalProduced = comp.quantityPerCombo * combo.suggestedCombos;
-                        
-                        // Calcular requerido ajustado (restando lo ya producido)
-                        const adjustedRequired = Math.max(0, comp.totalRequired - previouslyProduced);
-                        
-                        // Verificar si es suficiente comparando con el requerido ajustado
-                        const isSufficient = totalProduced >= adjustedRequired;
-                        
-                        return (
-                          <TableRow key={comp.componentId}>
-                            <TableCell className="font-medium">{comp.componentId}</TableCell>
-                            <TableCell className="text-right">{comp.quantityPerCombo}</TableCell>
-                            <TableCell className="text-right font-semibold">{totalProduced}</TableCell>
-                            <TableCell className="text-right">{adjustedRequired}</TableCell>
-                            <TableCell>
-                              {isSufficient ? (
-                                <Badge variant="default" className="bg-green-600">
-                                  ✓ Suficiente
-                                </Badge>
-                              ) : (
-                                <Badge variant="destructive">
-                                  ✗ Insuficiente
-                                </Badge>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Botones de navegación */}
-      <div className="flex gap-2">
-        <Button variant="outline" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Volver
-        </Button>
-        <Button onClick={onNext} className="flex-1">
-          Continuar a Configurar Operarios
-          <ArrowRight className="h-4 w-4 ml-2" />
-        </Button>
+        {/* Botones de navegación */}
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Volver
+          </Button>
+          <Button onClick={onNext} className="flex-1">
+            Continuar a Configurar Operarios
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        </div>
+
+        <ComboManagementDialog 
+          open={showComboManagement} 
+          onOpenChange={setShowComboManagement}
+        />
       </div>
-    </div>
+    </TooltipProvider>
   );
 };
