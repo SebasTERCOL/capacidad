@@ -30,6 +30,7 @@ interface ProductionProjectionV2Props {
   data: { referencia: string; cantidad: number }[];
   operatorConfig: OperatorConfig;
   overtimeConfig?: OvertimeConfig | null;
+  comboData?: any[];
   onNext: () => void;
   onBack: () => void;
   onProjectionComplete: (projectionData: ProjectionInfo[]) => void;
@@ -41,6 +42,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   data, 
   operatorConfig,
   overtimeConfig,
+  comboData,
   onNext, 
   onBack, 
   onProjectionComplete,

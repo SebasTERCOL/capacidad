@@ -119,6 +119,7 @@ const Index = () => {
             data={adjustedData.length > 0 ? adjustedData : productionData}
             operatorConfig={operatorConfig}
             overtimeConfig={overtimeConfig}
+            comboData={comboConfig}
             onNext={() => {}}
             onBack={() => setCurrentStep(4)}
             onProjectionComplete={handleProjectionComplete}

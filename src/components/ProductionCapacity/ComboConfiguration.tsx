@@ -9,7 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X, ChevronDown, ChevronRight, Minimize2, Info } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { AdjustedProductionData } from "./InventoryAdjustment";
@@ -567,6 +568,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState<string>('');
   const [showComboManagement, setShowComboManagement] = useState(false);
+  const [expandedReferences, setExpandedReferences] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     calculateComboSuggestions();
@@ -885,6 +887,35 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     }));
   };
 
+  const handleSetMinimumCombos = (referenceId: string) => {
+    setReferences(prev => 
+      prev.map(ref => {
+        if (ref.referenceId === referenceId) {
+          const selectedComboOption = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+          if (selectedComboOption) {
+            const previouslyProduced = getProducedByPreviousReferences(ref.referenceId);
+            const adjustedRequired = Math.max(0, ref.totalRequired - previouslyProduced);
+            const minCombos = Math.ceil(adjustedRequired / selectedComboOption.quantityProducedPerCombo);
+            return { ...ref, quantityToProduce: minCombos };
+          }
+        }
+        return ref;
+      })
+    );
+  };
+
+  const toggleReferenceExpansion = (referenceId: string) => {
+    setExpandedReferences(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(referenceId)) {
+        newSet.delete(referenceId);
+      } else {
+        newSet.add(referenceId);
+      }
+      return newSet;
+    });
+  };
+
   // Calcular la cantidad producida de una referencia por todos los combos anteriores
   const getProducedByPreviousReferences = (currentReferenceId: string): number => {
     let produced = 0;
@@ -1012,21 +1043,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         ) : (
           <Card>
             <CardContent className="pt-6">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Referencia</TableHead>
-                    <TableHead className="text-right">Requerido</TableHead>
-                    <TableHead className="text-right">Total Producido</TableHead>
-                    <TableHead className="text-right">Diferencia</TableHead>
-                    <TableHead>Combos</TableHead>
-                    <TableHead className="text-center">Cantidad de Combos</TableHead>
-                    <TableHead className="text-right">Tiempo Consumido</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Información</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <div className="space-y-2">
                   {references.map((ref) => {
                     const selectedComboOption = ref.availableCombos.find(
                       c => c.comboName === ref.selectedCombo
@@ -1062,106 +1079,147 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                       ? selectedComboOption.cycleTime * ref.quantityToProduce
                       : 0;
 
+                    const isExpanded = expandedReferences.has(ref.referenceId);
+
                     return (
-                      <TableRow key={ref.referenceId}>
-                        <TableCell className="font-medium">{ref.referenceId}</TableCell>
-                        <TableCell className="text-right">{adjustedRequired}</TableCell>
-                        <TableCell className="text-right font-medium">{totalProduced}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={difference > 0 ? 'text-green-600' : difference < 0 ? 'text-red-600' : 'text-muted-foreground'}>
-                            {difference > 0 ? '+' : ''}{difference}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div>
-                                <Select
-                                  value={ref.selectedCombo}
-                                  onValueChange={(value) => handleReferenceComboChange(ref.referenceId, value)}
-                                >
-                                  <SelectTrigger className="w-[200px]">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {ref.availableCombos.map((combo) => (
-                                      <SelectItem key={combo.comboName} value={combo.comboName}>
-                                        {combo.comboName}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </TooltipTrigger>
-                            {selectedComboOption && (
-                              <TooltipContent side="right" className="max-w-sm">
-                                <div className="space-y-2">
-                                  <div className="font-semibold">{selectedComboOption.comboName}</div>
+                      <Collapsible key={ref.referenceId} open={isExpanded} onOpenChange={() => toggleReferenceExpansion(ref.referenceId)}>
+                        <Card className="border-l-4" style={{ borderLeftColor: isSufficient ? 'hsl(var(--tercol-red))' : 'hsl(var(--destructive))' }}>
+                          <CardHeader className="py-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => toggleReferenceExpansion(ref.referenceId)}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <CollapsibleTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  </Button>
+                                </CollapsibleTrigger>
+                                <div>
+                                  <div className="font-semibold text-lg">{ref.referenceId}</div>
                                   <div className="text-xs text-muted-foreground">
-                                    Tiempo: {selectedComboOption.cycleTime.toFixed(2)} min/combo
-                                  </div>
-                                  <div className="text-xs">
-                                    <div className="font-medium mb-1">Componentes:</div>
-                                    {selectedComboOption.allComponents.map((comp) => (
-                                      <div key={comp.componentId} className="flex justify-between gap-4">
-                                        <span>{comp.componentId}</span>
-                                        <span className="text-muted-foreground">
-                                          {comp.quantityPerCombo} unidades
-                                        </span>
-                                      </div>
-                                    ))}
+                                    Requerido: <span className="font-medium">{adjustedRequired}</span> | 
+                                    Producido: <span className="font-medium">{totalProduced}</span> | 
+                                    Diferencia: <span className={difference > 0 ? 'text-green-600 font-medium' : difference < 0 ? 'text-red-600 font-medium' : 'font-medium'}>
+                                      {difference > 0 ? '+' : ''}{difference}
+                                    </span>
                                   </div>
                                 </div>
-                              </TooltipContent>
-                            )}
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell>
-                          {ref.availableCombos.length > 0 ? (
-                            <Input
-                              type="number"
-                              min="0"
-                              value={ref.quantityToProduce}
-                              onChange={(e) => handleReferenceQuantityChange(
-                                ref.referenceId, 
-                                parseInt(e.target.value) || 0
-                              )}
-                              className="w-24 text-center"
-                            />
-                          ) : (
-                            <span className="text-muted-foreground text-sm">N/A</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {timeConsumed > 0 ? `${timeConsumed.toFixed(1)} min` : '-'}
-                        </TableCell>
-                        <TableCell>
-                          {ref.availableCombos.length > 0 ? (
-                            <Badge variant={isSufficient ? "default" : "destructive"}>
-                              {isSufficient ? "Suficiente" : "Insuficiente"}
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Sin combo</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-xs">
-                          {producingCombos.length > 0 ? (
-                            <div className="text-xs space-y-1">
-                              {producingCombos.map((pc, idx) => (
-                                <div key={idx}>
-                                  {pc.quantity} unidades {pc.comboName}
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <Badge variant={isSufficient ? "default" : "destructive"}>
+                                  {isSufficient ? "Suficiente" : "Insuficiente"}
+                                </Badge>
+                                <div className="text-right">
+                                  <div className="text-sm font-medium">{formatTime(timeConsumed)}</div>
+                                  <div className="text-xs text-muted-foreground">{ref.quantityToProduce} combos</div>
                                 </div>
-                              ))}
+                              </div>
                             </div>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">No producido por combos</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
+                          </CardHeader>
+                          <CollapsibleContent>
+                            <CardContent className="pt-0 pb-4">
+                              <div className="grid grid-cols-3 gap-4 mt-4">
+                                <div className="space-y-2">
+                                  <Label className="text-xs text-muted-foreground">Combo Seleccionado</Label>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div>
+                                        <Select
+                                          value={ref.selectedCombo}
+                                          onValueChange={(value) => handleReferenceComboChange(ref.referenceId, value)}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {ref.availableCombos.map((combo) => (
+                                              <SelectItem key={combo.comboName} value={combo.comboName}>
+                                                {combo.comboName}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </TooltipTrigger>
+                                    {selectedComboOption && (
+                                      <TooltipContent side="right" className="max-w-sm">
+                                        <div className="space-y-2">
+                                          <div className="font-semibold border-b pb-1">Contenido del Combo</div>
+                                          {selectedComboOption.allComponents.map((comp, idx) => (
+                                            <div key={idx} className="flex justify-between text-xs">
+                                              <span>{comp.componentId}</span>
+                                              <span className="font-medium ml-4">x{comp.quantityPerCombo}</span>
+                                            </div>
+                                          ))}
+                                          <div className="border-t pt-1 mt-2">
+                                            <span className="text-xs font-semibold">Tiempo: {selectedComboOption.cycleTime.toFixed(2)} min</span>
+                                          </div>
+                                        </div>
+                                      </TooltipContent>
+                                    )}
+                                  </Tooltip>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-xs text-muted-foreground">Cantidad de Combos</Label>
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={ref.quantityToProduce}
+                                      onChange={(e) => handleReferenceQuantityChange(ref.referenceId, parseInt(e.target.value) || 0)}
+                                      className="text-center"
+                                    />
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button 
+                                          variant="outline" 
+                                          size="icon"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSetMinimumCombos(ref.referenceId);
+                                          }}
+                                        >
+                                          <Minimize2 className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p className="text-xs">Calcular mínimo necesario</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label className="text-xs text-muted-foreground">Información</Label>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button variant="outline" className="w-full justify-start">
+                                        <Info className="h-4 w-4 mr-2" />
+                                        Ver detalles
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="max-w-xs">
+                                      <div className="space-y-1 text-xs">
+                                        <div className="font-semibold border-b pb-1 mb-1">Combos que producen {ref.referenceId}:</div>
+                                        {producingCombos.length > 0 ? (
+                                          producingCombos.map((pc, idx) => (
+                                            <div key={idx} className="flex justify-between">
+                                              <span>{pc.comboName}</span>
+                                              <span className="font-medium ml-2">{pc.quantity} unidades</span>
+                                            </div>
+                                          ))
+                                        ) : (
+                                          <span className="text-muted-foreground">No producido por combos</span>
+                                        )}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </CollapsibleContent>
+                        </Card>
+                      </Collapsible>
                     );
                   })}
-                </TableBody>
-              </Table>
+              </div>
             </CardContent>
           </Card>
         )}
