@@ -549,6 +549,102 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         }
       }
 
+      // 3.5. INTEGRACIÓN DE COMBOS: Agregar combos seleccionados al proceso PUNZONADO
+      if (comboData && comboData.length > 0) {
+        console.log('\n🎯 === INTEGRANDO COMBOS AL ANÁLISIS ===');
+        setProgress({ current: 4, total: 6, currentRef: 'Integrando combos...' });
+        
+        for (const combo of comboData) {
+          console.log(`\n📦 Procesando combo: ${combo.comboName}`);
+          console.log(`   · Cantidad de combos: ${combo.suggestedCombos}`);
+          console.log(`   · Tiempo de ciclo: ${combo.cycleTime} min`);
+          console.log(`   · Tiempo total: ${combo.totalTime} min`);
+          
+          // Buscar la información del combo en machines_processes
+          const comboMachineProcesses = machinesData.filter((mp: any) => 
+            normalizeRefId(mp.ref) === normalizeRefId(combo.comboName) &&
+            mp.id_process === 20 // PUNZONADO
+          );
+          
+          if (comboMachineProcesses.length === 0) {
+            console.warn(`⚠️ No se encontró información de proceso para combo ${combo.comboName}`);
+            continue;
+          }
+          
+          const comboMp = comboMachineProcesses[0];
+          const processName = resolveProcessName(comboMp);
+          const processNameOriginal = comboMp.processes.name;
+          
+          // Saltar procesos excluidos
+          if (processName === null) {
+            console.log(`     ❌ Proceso excluido: ${processNameOriginal}`);
+            continue;
+          }
+          
+          console.log(`     · Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
+          
+          // Crear o obtener el grupo de proceso
+          if (!processGroups.has(processName)) {
+            const processConfig = findProcessConfig(processName, operatorConfig);
+            
+            console.log(`     · Buscando configuración para: "${processName}" -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
+            if (!processConfig) {
+              console.log(`     · Procesos disponibles:`, operatorConfig.processes.map(p => p.processName));
+            }
+            
+            processGroups.set(processName, {
+              processName,
+              components: new Map(),
+              availableOperators: processConfig?.operatorCount || 0,
+              availableHours: processConfig?.availableHours || operatorConfig.availableHours
+            });
+          }
+          
+          const processGroup = processGroups.get(processName)!;
+          
+          // Obtener máquinas operacionales para este combo
+          const availableMachines = comboMachineProcesses
+            .filter((machine: any) => {
+              const resolved = resolveProcessName(machine);
+              return resolved !== null && resolved.toLowerCase() === processName.toLowerCase();
+            })
+            .filter((machine: any) => {
+              const processConfig = findProcessConfig(processName, operatorConfig);
+              if (!processConfig) {
+                console.log(`     ⚠️ No hay configuración para proceso: ${processName}`);
+                return false;
+              }
+              const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
+              const isOperational = machineConfig?.isOperational || false;
+              console.log(`     🔧 Máquina ${machine.machines.name} (ID: ${machine.id_machine}) - Operacional: ${isOperational}`);
+              return isOperational;
+            });
+          
+          // Agregar el combo como un componente en el proceso
+          const existingComponent = processGroup.components.get(combo.comboName);
+          
+          if (existingComponent) {
+            // Si ya existe, actualizar la información
+            if (!existingComponent.sam || existingComponent.sam === 0) {
+              existingComponent.sam = combo.cycleTime;
+            }
+            const existingNames = new Set(existingComponent.machineOptions.map((m: any) => m.machines.name));
+            const merged = [...existingComponent.machineOptions];
+            for (const m of availableMachines) if (!existingNames.has(m.machines.name)) merged.push(m);
+            existingComponent.machineOptions = merged;
+            existingComponent.quantity = combo.suggestedCombos; // Actualizar con la cantidad de combos
+          } else {
+            processGroup.components.set(combo.comboName, {
+              quantity: combo.suggestedCombos,
+              sam: combo.cycleTime,
+              machineOptions: availableMachines
+            });
+          }
+          
+          console.log(`✅ Combo ${combo.comboName} agregado al proceso ${processName}`);
+        }
+      }
+
       // 4. FASE DE DISTRIBUCIÓN INTELIGENTE: Aplicar algoritmo de distribución óptima
       setProgress({ current: 5, total: 6, currentRef: 'Aplicando distribución inteligente...' });
       

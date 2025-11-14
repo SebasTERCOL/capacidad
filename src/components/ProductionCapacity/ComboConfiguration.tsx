@@ -792,9 +792,12 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           c.comboName.includes(ref.ref.replace('-CMB', ''))
         ) || availableCombos[0];
         
-        const suggestedQuantity = mainCombo 
-          ? Math.ceil(ref.quantity / mainCombo.quantityProducedPerCombo)
-          : 0;
+        // Si la cantidad requerida es 0, no producir ningún combo
+        const suggestedQuantity = ref.quantity === 0 
+          ? 0 
+          : mainCombo 
+            ? Math.ceil(ref.quantity / mainCombo.quantityProducedPerCombo)
+            : 0;
         
         referenceMap.set(ref.ref, {
           referenceId: ref.ref,
