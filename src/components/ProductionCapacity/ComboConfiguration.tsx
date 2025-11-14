@@ -10,11 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X, ChevronDown, ChevronRight, Minimize2, Info, Activity } from "lucide-react";
+import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X, ChevronDown, ChevronRight, Minimize2, Info, Activity, List, Package } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { AdjustedProductionData } from "./InventoryAdjustment";
 import { toast } from "@/components/ui/sonner";
+import { ComboViewByCombo } from "./ComboViewByCombo";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export interface ComboOption {
   comboName: string;
@@ -931,24 +933,187 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     }));
   };
 
-  // Algoritmo de optimización para minimizar sobreproducción
-  const optimizeComboProduction = () => {
-    console.log('\n🎯 === INICIANDO OPTIMIZACIÓN DE COMBOS ===');
-    
-    setReferences(prev => prev.map(ref => {
-      if (ref.totalRequired === 0) {
-        return { ...ref, quantityToProduce: 0 };
+  // Handler para cambios de cantidad en vista por combo
+  const handleComboQuantityChange = (comboName: string, newTotalQuantity: number) => {
+    setReferences(prev => {
+      // Encontrar todas las referencias que usan este combo
+      const refsWithCombo = prev.filter(ref => ref.selectedCombo === comboName && ref.quantityToProduce > 0);
+      
+      if (refsWithCombo.length === 0) return prev;
+      
+      // Si solo hay una referencia, actualizar directamente
+      if (refsWithCombo.length === 1) {
+        return prev.map(ref => 
+          ref.referenceId === refsWithCombo[0].referenceId
+            ? { ...ref, quantityToProduce: newTotalQuantity }
+            : ref
+        );
       }
+      
+      // Si hay múltiples referencias, distribuir proporcionalmente
+      const totalCurrent = refsWithCombo.reduce((sum, ref) => sum + ref.quantityToProduce, 0);
+      
+      return prev.map(ref => {
+        const refWithCombo = refsWithCombo.find(r => r.referenceId === ref.referenceId);
+        if (refWithCombo && totalCurrent > 0) {
+          const proportion = refWithCombo.quantityToProduce / totalCurrent;
+          return { ...ref, quantityToProduce: Math.round(newTotalQuantity * proportion) };
+        }
+        return ref;
+      });
+    });
+  };
 
+  // Algoritmo de optimización avanzado con valores actuales como punto de partida
+  const optimizeComboProduction = () => {
+    console.log('\n🎯 === INICIANDO OPTIMIZACIÓN AVANZADA DE COMBOS ===');
+    
+    // Paso 1: Usar valores actuales como punto de partida
+    const currentState = references.map(ref => ({
+      ...ref,
+      initialQuantity: ref.quantityToProduce
+    }));
+    
+    console.log('📊 Estado inicial (valores actuales):');
+    currentState.forEach(ref => {
       const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
-      if (!selectedCombo) return ref;
-
-      // Calcular cuántas unidades se producirían con los combos actuales
-      const currentProduction = ref.quantityToProduce * selectedCombo.quantityProducedPerCombo;
-      const overProduction = currentProduction - ref.totalRequired;
-
-      console.log(`\n📦 Optimizando ${ref.referenceId}:`);
-      console.log(`   Requerido: ${ref.totalRequired}`);
+      if (selectedCombo && ref.initialQuantity > 0) {
+        const produced = ref.initialQuantity * selectedCombo.quantityProducedPerCombo;
+        console.log(`   ${ref.referenceId}: ${ref.initialQuantity} combos → ${produced} unidades (req: ${ref.totalRequired})`);
+      }
+    });
+    
+    // Paso 2: Calcular la demanda total considerando lo que cada combo produce
+    const demandMap = new Map<string, number>();
+    const productionMap = new Map<string, number>();
+    
+    // Inicializar demanda de todas las referencias
+    references.forEach(ref => {
+      demandMap.set(ref.referenceId, ref.totalRequired);
+      productionMap.set(ref.referenceId, 0);
+    });
+    
+    // Calcular producción actual con los valores iniciales
+    currentState.forEach(ref => {
+      const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+      if (selectedCombo && ref.initialQuantity > 0) {
+        selectedCombo.allComponents.forEach(comp => {
+          const currentProduction = productionMap.get(comp.componentId) || 0;
+          productionMap.set(
+            comp.componentId,
+            currentProduction + (comp.quantityPerCombo * ref.initialQuantity)
+          );
+        });
+      }
+    });
+    
+    console.log('\n📈 Análisis de demanda vs producción actual:');
+    demandMap.forEach((demand, refId) => {
+      const production = productionMap.get(refId) || 0;
+      const diff = production - demand;
+      console.log(`   ${refId}: Demanda=${demand}, Producción=${production}, Diff=${diff}`);
+    });
+    
+    // Paso 3: Optimización iterativa para ajustar cantidades
+    let optimizedReferences = [...currentState];
+    let improved = true;
+    let iterations = 0;
+    const maxIterations = 100;
+    
+    while (improved && iterations < maxIterations) {
+      improved = false;
+      iterations++;
+      
+      // Recalcular producción actual
+      productionMap.clear();
+      references.forEach(ref => productionMap.set(ref.referenceId, 0));
+      
+      optimizedReferences.forEach(ref => {
+        const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+        if (selectedCombo && ref.quantityToProduce > 0) {
+          selectedCombo.allComponents.forEach(comp => {
+            const currentProduction = productionMap.get(comp.componentId) || 0;
+            productionMap.set(
+              comp.componentId,
+              currentProduction + (comp.quantityPerCombo * ref.quantityToProduce)
+            );
+          });
+        }
+      });
+      
+      // Buscar referencias con déficit y ajustar
+      for (const ref of optimizedReferences) {
+        if (ref.totalRequired === 0) {
+          if (ref.quantityToProduce > 0) {
+            ref.quantityToProduce = 0;
+            improved = true;
+          }
+          continue;
+        }
+        
+        const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+        if (!selectedCombo) continue;
+        
+        const currentProduction = productionMap.get(ref.referenceId) || 0;
+        const deficit = ref.totalRequired - currentProduction;
+        
+        if (deficit > 0) {
+          // Hay déficit, necesitamos aumentar combos
+          const additionalCombos = Math.ceil(deficit / selectedCombo.quantityProducedPerCombo);
+          ref.quantityToProduce += additionalCombos;
+          improved = true;
+        } else if (deficit < 0 && ref.quantityToProduce > 0) {
+          // Hay exceso, intentar reducir sin crear déficit
+          const excess = Math.abs(deficit);
+          const combosToRemove = Math.floor(excess / selectedCombo.quantityProducedPerCombo);
+          
+          if (combosToRemove > 0 && combosToRemove < ref.quantityToProduce) {
+            ref.quantityToProduce -= combosToRemove;
+            improved = true;
+          }
+        }
+      }
+    }
+    
+    console.log(`\n✅ Optimización completada en ${iterations} iteraciones`);
+    
+    // Paso 4: Verificación final
+    productionMap.clear();
+    references.forEach(ref => productionMap.set(ref.referenceId, 0));
+    
+    optimizedReferences.forEach(ref => {
+      const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+      if (selectedCombo && ref.quantityToProduce > 0) {
+        selectedCombo.allComponents.forEach(comp => {
+          const currentProduction = productionMap.get(comp.componentId) || 0;
+          productionMap.set(
+            comp.componentId,
+            currentProduction + (comp.quantityPerCombo * ref.quantityToProduce)
+          );
+        });
+      }
+    });
+    
+    console.log('\n📊 Estado final optimizado:');
+    let totalTimeOptimized = 0;
+    optimizedReferences.forEach(ref => {
+      const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+      if (selectedCombo && ref.quantityToProduce > 0) {
+        const produced = productionMap.get(ref.referenceId) || 0;
+        const time = ref.quantityToProduce * selectedCombo.cycleTime;
+        totalTimeOptimized += time;
+        console.log(`   ${ref.referenceId}: ${ref.quantityToProduce} combos → ${produced} unidades (req: ${ref.totalRequired}, tiempo: ${time.toFixed(2)}min)`);
+      }
+    });
+    
+    console.log(`\n⏱️ Tiempo total optimizado: ${(totalTimeOptimized / 60).toFixed(2)} horas`);
+    
+    // Aplicar la optimización
+    setReferences(optimizedReferences.map(({ initialQuantity, ...ref }) => ref));
+    
+    toast.success("Optimización completada", {
+      description: `Tiempo total: ${(totalTimeOptimized / 60).toFixed(2)} horas`,
+    });
       console.log(`   Combo: ${selectedCombo.comboName} (produce ${selectedCombo.quantityProducedPerCombo} por combo)`);
       console.log(`   Combos actuales: ${ref.quantityToProduce}`);
       console.log(`   Producción actual: ${currentProduction}`);
@@ -1128,6 +1293,19 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           )}
         </Card>
 
+        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'by-reference' | 'by-combo')} className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="by-reference" className="flex items-center gap-2">
+              <List className="h-4 w-4" />
+              Por Referencia
+            </TabsTrigger>
+            <TabsTrigger value="by-combo" className="flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Por Combo
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="by-reference" className="mt-4">
         {references.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
@@ -1319,6 +1497,15 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
             </CardContent>
           </Card>
         )}
+          </TabsContent>
+          
+          <TabsContent value="by-combo" className="mt-4">
+            <ComboViewByCombo 
+              references={references}
+              onQuantityChange={handleComboQuantityChange}
+            />
+          </TabsContent>
+        </Tabs>
 
         {/* Botones de navegación */}
         <div className="flex gap-2">
