@@ -720,77 +720,104 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       }
       
       setProgress(55);
-      setCurrentStep(`Procesando ${allReferences.length} referencias...`);
+      setCurrentStep(`Cargando datos de combos...`);
+      
+      // OPTIMIZACIÓN: Cargar TODOS los datos de una vez en lugar de consultas individuales
+      console.log('🚀 [COMBO CONFIG] Cargando datos masivos de combos...');
+      
+      // 1. Obtener TODAS las relaciones combo-componente de una vez
+      const { data: allComboRelations, error: comboError } = await supabase
+        .from('combo' as any)
+        .select('*');
+      
+      if (comboError) {
+        throw new Error(`Error cargando combos: ${comboError.message}`);
+      }
+      
+      // 2. Obtener TODOS los tiempos de combos de una vez
+      const uniqueComboNames = [...new Set((allComboRelations as any[])?.map(r => r.combo) || [])];
+      const { data: allComboTimes, error: timeError } = await supabase
+        .from('machines_processes')
+        .select('sam, ref')
+        .eq('id_process', 20)
+        .in('ref', uniqueComboNames);
+      
+      if (timeError) {
+        console.warn('⚠️ Error cargando tiempos de combos:', timeError);
+      }
+      
+      console.log(`✅ Cargados ${allComboRelations?.length || 0} relaciones y ${allComboTimes?.length || 0} tiempos`);
+      
+      setProgress(65);
+      setCurrentStep('Procesando datos en memoria...');
+      
+      // Crear mapas para acceso rápido
+      const comboTimeMap = new Map<string, number>();
+      (allComboTimes || []).forEach((t: any) => {
+        comboTimeMap.set(t.ref, t.sam || 0);
+      });
+      
+      // Agrupar componentes por combo
+      const comboComponentsMap = new Map<string, any[]>();
+      (allComboRelations || []).forEach((rel: any) => {
+        if (!comboComponentsMap.has(rel.combo)) {
+          comboComponentsMap.set(rel.combo, []);
+        }
+        comboComponentsMap.get(rel.combo)!.push(rel);
+      });
+      
+      // Crear mapa de componente -> combos disponibles
+      const componentToCombosMap = new Map<string, string[]>();
+      (allComboRelations || []).forEach((rel: any) => {
+        const compId = rel.component_id;
+        if (!componentToCombosMap.has(compId)) {
+          componentToCombosMap.set(compId, []);
+        }
+        if (!componentToCombosMap.get(compId)!.includes(rel.combo)) {
+          componentToCombosMap.get(compId)!.push(rel.combo);
+        }
+      });
+      
+      setProgress(75);
+      setCurrentStep('Asignando combos a referencias...');
       
       const referenceMap = new Map<string, ReferenceCMB>();
       const comboDetailsMap = new Map<string, ComboOption>();
       
-      // 3. Para cada referencia, verificar si está en algún combo
+      // 3. Procesar cada referencia en memoria (sin consultas adicionales)
       for (let idx = 0; idx < allReferences.length; idx++) {
         const ref = allReferences[idx];
-        setCurrentStep(`Consultando combos para ${ref.ref} (${idx + 1}/${totalRefs})`);
-        console.log(`\n🔍 [COMBO CONFIG] Buscando combos para ${ref.ref}...`);
         
-        const { data: comboData, error: comboError } = await supabase
-          .from('combo' as any)
-          .select('*')
-          .eq('component_id', ref.ref);
+        const combosForComponent = componentToCombosMap.get(ref.ref) || [];
         
-        if (comboError) {
-          console.error('❌ Error consultando combo:', comboError);
-          continue;
-        }
-        
-        if (!comboData || comboData.length === 0) {
+        if (combosForComponent.length === 0) {
           console.warn(`⚠️ [COMBO CONFIG] No se encontraron combos para ${ref.ref}`);
           continue;
         }
         
-        console.log(`✅ [COMBO CONFIG] ${comboData.length} combo(s) encontrado(s) para ${ref.ref}`);
+        console.log(`✅ [COMBO CONFIG] ${combosForComponent.length} combo(s) encontrado(s) para ${ref.ref}`);
         
         const availableCombos: ComboOption[] = [];
         
-        for (const combo of comboData as any[]) {
-          const comboName = combo.combo;
-          
-          // Si ya procesamos este combo, solo agregarlo a la lista
+        for (const comboName of combosForComponent) {
+          // Si ya procesamos este combo, reutilizarlo
           if (comboDetailsMap.has(comboName)) {
-            const existingCombo = comboDetailsMap.get(comboName)!;
-            availableCombos.push(existingCombo);
+            availableCombos.push(comboDetailsMap.get(comboName)!);
             continue;
           }
           
-          // Obtener tiempo del combo
-          const { data: timeData, error: timeError } = await supabase
-            .from('machines_processes')
-            .select('sam, ref')
-            .eq('ref', comboName)
-            .eq('id_process', 20)
-            .limit(1)
-            .maybeSingle();
+          const comboComponents = comboComponentsMap.get(comboName) || [];
+          const cycleTime = comboTimeMap.get(comboName) || 0;
           
-          if (timeError) {
-            console.warn(`⚠️ [COMBO CONFIG] Error buscando tiempo para combo ${comboName}:`, timeError);
-          }
-          
-          const cycleTime = timeData?.sam || 0;
-          
-          // Obtener TODOS los componentes de este combo
-          const { data: allComponents, error: allCompError } = await supabase
-            .from('combo' as any)
-            .select('*')
-            .eq('combo', comboName);
-          
-          if (allCompError || !allComponents) {
-            console.error(`❌ Error obteniendo componentes del combo ${comboName}:`, allCompError);
-            continue;
-          }
+          // Encontrar la cantidad producida por combo para este componente específico
+          const thisComponentInCombo = comboComponents.find(c => c.component_id === ref.ref);
+          const quantityProducedPerCombo = thisComponentInCombo?.cantidad || 1;
           
           const comboOption: ComboOption = {
             comboName,
             cycleTime,
-            quantityProducedPerCombo: combo.cantidad,
-            allComponents: (allComponents as any[]).map(c => ({
+            quantityProducedPerCombo,
+            allComponents: comboComponents.map(c => ({
               componentId: c.component_id,
               quantityPerCombo: c.cantidad
             }))
@@ -822,7 +849,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         
         console.log(`✅ [COMBO CONFIG] Referencia ${ref.ref}: ${availableCombos.length} combos disponibles`);
         
-        setProgress(55 + ((idx + 1) / totalRefs) * 35); // 55% a 90%
+        setProgress(75 + ((idx + 1) / totalRefs) * 20); // 75% a 95%
       }
       
       setProgress(95);
