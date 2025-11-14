@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X, ChevronDown, ChevronRight, Minimize2, Info } from "lucide-react";
+import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X, ChevronDown, ChevronRight, Minimize2, Info, Activity } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { AdjustedProductionData } from "./InventoryAdjustment";
@@ -904,6 +904,47 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     }));
   };
 
+  // Algoritmo de optimización para minimizar sobreproducción
+  const optimizeComboProduction = () => {
+    console.log('\n🎯 === INICIANDO OPTIMIZACIÓN DE COMBOS ===');
+    
+    setReferences(prev => prev.map(ref => {
+      if (ref.totalRequired === 0) {
+        return { ...ref, quantityToProduce: 0 };
+      }
+
+      const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+      if (!selectedCombo) return ref;
+
+      // Calcular cuántas unidades se producirían con los combos actuales
+      const currentProduction = ref.quantityToProduce * selectedCombo.quantityProducedPerCombo;
+      const overProduction = currentProduction - ref.totalRequired;
+
+      console.log(`\n📦 Optimizando ${ref.referenceId}:`);
+      console.log(`   Requerido: ${ref.totalRequired}`);
+      console.log(`   Combo: ${selectedCombo.comboName} (produce ${selectedCombo.quantityProducedPerCombo} por combo)`);
+      console.log(`   Combos actuales: ${ref.quantityToProduce}`);
+      console.log(`   Producción actual: ${currentProduction}`);
+      console.log(`   Sobreproducción: ${overProduction}`);
+
+      // Calcular el número mínimo de combos necesarios
+      const minCombos = Math.ceil(ref.totalRequired / selectedCombo.quantityProducedPerCombo);
+      const minProduction = minCombos * selectedCombo.quantityProducedPerCombo;
+      const minOverProduction = minProduction - ref.totalRequired;
+
+      console.log(`   ✅ Optimizado a ${minCombos} combos (producirá ${minProduction}, sobreproducción: ${minOverProduction})`);
+
+      return {
+        ...ref,
+        quantityToProduce: minCombos
+      };
+    }));
+
+    toast.success("Optimización completada", {
+      description: "Se minimizó la sobreproducción manteniendo el cumplimiento de requerimientos",
+    });
+  };
+
   const handleSetMinimumCombos = (referenceId: string) => {
     setReferences(prev => 
       prev.map(ref => {
@@ -1028,14 +1069,25 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     : "Configure los combos necesarios para producir las referencias -CMB requeridas"}
                 </CardDescription>
               </div>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setShowComboManagement(true)}
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                COMBOS
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={optimizeComboProduction}
+                  variant="default"
+                  className="bg-tercol-red hover:bg-tercol-red/90"
+                  size="sm"
+                >
+                  <Activity className="h-4 w-4 mr-2" />
+                  Optimizar
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowComboManagement(true)}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  COMBOS
+                </Button>
+              </div>
             </div>
           </CardHeader>
           {references.length > 0 && (

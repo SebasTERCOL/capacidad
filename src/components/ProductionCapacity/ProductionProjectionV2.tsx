@@ -555,10 +555,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         setProgress({ current: 4, total: 6, currentRef: 'Integrando combos...' });
         
         for (const combo of comboData) {
+          // Saltar combos con cantidad 0
+          if (combo.suggestedCombos === 0) {
+            console.log(`⏭️ Saltando combo ${combo.comboName} (cantidad 0)`);
+            continue;
+          }
+
           console.log(`\n📦 Procesando combo: ${combo.comboName}`);
           console.log(`   · Cantidad de combos: ${combo.suggestedCombos}`);
-          console.log(`   · Tiempo de ciclo: ${combo.cycleTime} min`);
-          console.log(`   · Tiempo total: ${combo.totalTime} min`);
+          console.log(`   · Tiempo de ciclo: ${combo.cycleTime} min/combo`);
+          console.log(`   · Tiempo total: ${combo.totalTime} min (ya calculado)`);
           
           // Buscar la información del combo en machines_processes
           const comboMachineProcesses = machinesData.filter((mp: any) => 
@@ -581,13 +587,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             continue;
           }
           
-          console.log(`     · Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
+          console.log(`     · Proceso: ${processName}`);
           
           // Crear o obtener el grupo de proceso
           if (!processGroups.has(processName)) {
             const processConfig = findProcessConfig(processName, operatorConfig);
             
-            console.log(`     · Buscando configuración para: "${processName}" -> Encontrado: ${processConfig ? 'SÍ' : 'NO'}`);
             if (!processConfig) {
               console.log(`     · Procesos disponibles:`, operatorConfig.processes.map(p => p.processName));
             }
@@ -630,18 +635,37 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             }
             const existingNames = new Set(existingComponent.machineOptions.map((m: any) => m.machines.name));
             const merged = [...existingComponent.machineOptions];
-            for (const m of availableMachines) if (!existingNames.has(m.machines.name)) merged.push(m);
+            for (const m of availableMachines) {
+              if (!existingNames.has(m.machines.name)) {
+                // Asegurar que el sam_unit sea 'min_per_unit' para combos
+                merged.push({
+                  ...m,
+                  sam: combo.cycleTime,
+                  sam_unit: 'min_per_unit' // ⚡ CRÍTICO: Los combos usan minutos por combo
+                });
+              }
+            }
             existingComponent.machineOptions = merged;
             existingComponent.quantity = combo.suggestedCombos; // Actualizar con la cantidad de combos
           } else {
-            processGroup.components.set(combo.comboName, {
-              quantity: combo.suggestedCombos,
+            // Asegurar que todas las máquinas tengan el sam_unit correcto
+            const machinesWithCorrectUnit = availableMachines.map(m => ({
+              ...m,
               sam: combo.cycleTime,
-              machineOptions: availableMachines
+              sam_unit: 'min_per_unit' // ⚡ CRÍTICO: Los combos usan minutos por combo
+            }));
+
+            processGroup.components.set(combo.comboName, {
+              quantity: combo.suggestedCombos, // Número de combos a realizar
+              sam: combo.cycleTime, // Tiempo por combo en minutos
+              machineOptions: machinesWithCorrectUnit
             });
           }
           
           console.log(`✅ Combo ${combo.comboName} agregado al proceso ${processName}`);
+          console.log(`   · Tiempo por combo: ${combo.cycleTime} min (sam_unit: min_per_unit)`);
+          console.log(`   · Tiempo total: ${combo.suggestedCombos * combo.cycleTime} min = ${(combo.suggestedCombos * combo.cycleTime / 60).toFixed(2)}h`);
+          console.log(`   · Tiempo total guardado: ${combo.totalTime} min`);
         }
       }
 
