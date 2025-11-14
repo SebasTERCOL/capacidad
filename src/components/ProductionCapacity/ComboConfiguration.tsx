@@ -571,6 +571,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   const [currentStep, setCurrentStep] = useState<string>('');
   const [showComboManagement, setShowComboManagement] = useState(false);
   const [expandedReferences, setExpandedReferences] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<'by-reference' | 'by-combo'>('by-reference');
 
   useEffect(() => {
     calculateComboSuggestions();
@@ -1113,27 +1114,6 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     
     toast.success("Optimización completada", {
       description: `Tiempo total: ${(totalTimeOptimized / 60).toFixed(2)} horas`,
-    });
-      console.log(`   Combo: ${selectedCombo.comboName} (produce ${selectedCombo.quantityProducedPerCombo} por combo)`);
-      console.log(`   Combos actuales: ${ref.quantityToProduce}`);
-      console.log(`   Producción actual: ${currentProduction}`);
-      console.log(`   Sobreproducción: ${overProduction}`);
-
-      // Calcular el número mínimo de combos necesarios
-      const minCombos = Math.ceil(ref.totalRequired / selectedCombo.quantityProducedPerCombo);
-      const minProduction = minCombos * selectedCombo.quantityProducedPerCombo;
-      const minOverProduction = minProduction - ref.totalRequired;
-
-      console.log(`   ✅ Optimizado a ${minCombos} combos (producirá ${minProduction}, sobreproducción: ${minOverProduction})`);
-
-      return {
-        ...ref,
-        quantityToProduce: minCombos
-      };
-    }));
-
-    toast.success("Optimización completada", {
-      description: "Se minimizó la sobreproducción manteniendo el cumplimiento de requerimientos",
     });
   };
 
