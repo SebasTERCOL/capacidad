@@ -136,6 +136,35 @@ export type Database = {
           },
         ]
       }
+      combo: {
+        Row: {
+          cantidad: number | null
+          combo: string
+          component_id: string | null
+          id: number | null
+        }
+        Insert: {
+          cantidad?: number | null
+          combo: string
+          component_id?: string | null
+          id?: number | null
+        }
+        Update: {
+          cantidad?: number | null
+          combo?: string
+          component_id?: string | null
+          id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "combo_component_id_fkey"
+            columns: ["component_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["reference"]
+          },
+        ]
+      }
       families: {
         Row: {
           id: number
@@ -211,6 +240,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "processes"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "machines_processes_ref_fkey"
+            columns: ["ref"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["reference"]
           },
         ]
       }
@@ -598,21 +634,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      temp_refs: {
-        Row: {
-          ref: string | null
-          sam: number | null
-        }
-        Insert: {
-          ref?: string | null
-          sam?: number | null
-        }
-        Update: {
-          ref?: string | null
-          sam?: number | null
-        }
-        Relationships: []
       }
       warehouse: {
         Row: {
