@@ -593,25 +593,6 @@ export const OvertimeConfiguration: React.FC<OvertimeConfigurationProps> = ({
                                        {formatTime(calculateSundayHours(machine.shifts) * 60)} por domingo × {process.selectedSundays} {process.selectedSundays === 1 ? 'domingo' : 'domingos'}
                                      </div>
                                      
-                                     {/* Extensión de sábados */}
-                                     {process.selectedSundays > 0 && (
-                                       <>
-                                         <Separator className="my-2" />
-                                         <div className="flex items-center justify-between text-sm">
-                                           <span className="font-medium">Extensión de sábados:</span>
-                                           <span className="font-bold text-purple-600">
-                                             {formatTime((22.75 - 11.9) * process.selectedSundays * 60)}
-                                           </span>
-                                         </div>
-                                         <div className="text-xs text-muted-foreground text-center">
-                                           {formatTime((22.75 - 11.9) * 60)} por sábado × {process.selectedSundays} sábado{process.selectedSundays !== 1 ? 's' : ''}
-                                         </div>
-                                         <div className="text-xs text-muted-foreground text-center italic">
-                                           Cuando se trabaja domingo, el sábado anterior tiene 3 turnos completos
-                                         </div>
-                                       </>
-                                     )}
-                                     
                                      <Separator className="my-2" />
                                      <div className="flex items-center justify-between text-sm">
                                        <span className="font-medium">Capacidad adicional total:</span>

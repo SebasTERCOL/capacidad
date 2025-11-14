@@ -574,6 +574,19 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     calculateComboSuggestions();
   }, [data]);
 
+  // Efecto para forzar quantityToProduce a 0 cuando totalRequired es 0
+  useEffect(() => {
+    setReferences(prev => prev.map(ref => {
+      if (ref.totalRequired === 0 && ref.quantityToProduce > 0) {
+        return {
+          ...ref,
+          quantityToProduce: 0
+        };
+      }
+      return ref;
+    }));
+  }, [references]);
+
   // Cache global para evitar consultas repetidas
   const bomCache = new Map<string, Array<{component_id: string, amount: number}>>();
   
@@ -866,7 +879,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       if (ref.referenceId === referenceId) {
         const newCombo = ref.availableCombos.find(c => c.comboName === newComboName);
         if (newCombo) {
-          const suggestedQty = Math.ceil(ref.totalRequired / newCombo.quantityProducedPerCombo);
+          // Si el requerido es 0, no producir combos
+          const suggestedQty = ref.totalRequired === 0 ? 0 : Math.ceil(ref.totalRequired / newCombo.quantityProducedPerCombo);
           return {
             ...ref,
             selectedCombo: newComboName,
