@@ -494,7 +494,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           ) : (
             <div className="space-y-4">
               <Label>Seleccionar Rango de Fechas</Label>
-              <Popover open={calendarPopoverOpen} onOpenChange={setCalendarPopoverOpen}>
+              <Popover open={calendarPopoverOpen && dateRangeMode === 'custom'} onOpenChange={setCalendarPopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
@@ -516,7 +516,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
                     mode="range"
                     selected={customDateRange}
