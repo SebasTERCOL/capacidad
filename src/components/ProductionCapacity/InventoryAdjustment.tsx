@@ -145,6 +145,9 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
     return componentsMap;
   };
 
+  // Procesos excluidos del ajuste de inventario (siempre se considera como si no hubiera inventario)
+  const EXCLUDED_PROCESS_IDS = [1, 2, 70, 80]; // Tapas, Horno, Lavado, Pintura
+
   const processInventoryAdjustment = async () => {
     setLoading(true);
     setError(null);
@@ -153,8 +156,9 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
     try {
       const totalItems = data.length;
       console.log(`📦 Iniciando ajuste de inventario para ${totalItems} referencias`);
+      console.log(`🚫 Procesos excluidos de ajuste de inventario: Tapas (1), Horno (2), Lavado (70), Pintura (80)`);
       
-      // Paso 1: Obtener tipos de todas las referencias principales (batch query)
+      // Paso 1: Obtener tipos de todas las referencias principales Y sus procesos asociados
       const allReferences = data.map(item => item.referencia.trim().toUpperCase());
       const { data: mainProducts } = await supabase
         .from('products')
@@ -164,6 +168,20 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
       const mainProductsMap = new Map(
         mainProducts?.map(p => [p.reference.trim().toUpperCase(), p.type]) || []
       );
+
+      // Obtener procesos asociados a cada componente para aplicar excepciones
+      const { data: allMachinesProcesses } = await supabase
+        .from('machines_processes')
+        .select('ref, id_process');
+      
+      const componentProcessesMap = new Map<string, Set<number>>();
+      allMachinesProcesses?.forEach(mp => {
+        const ref = mp.ref.trim().toUpperCase();
+        if (!componentProcessesMap.has(ref)) {
+          componentProcessesMap.set(ref, new Set());
+        }
+        componentProcessesMap.get(ref)!.add(mp.id_process);
+      });
       
       // Paso 2: Procesar referencias en lotes de 5 (paralelismo controlado)
       const BATCH_SIZE = 5;
@@ -230,8 +248,25 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
               });
               continue;
             }
+
+            // Verificar si el componente tiene procesos excluidos
+            const componentProcesses = componentProcessesMap.get(componentId);
+            const hasExcludedProcess = componentProcesses ? 
+              Array.from(componentProcesses).some(processId => EXCLUDED_PROCESS_IDS.includes(processId)) : 
+              false;
+
+            // Si tiene un proceso excluido, NO restar inventario
+            let cantidadDisponible = 0;
+            if (hasExcludedProcess) {
+              console.log(`🚫 ${componentId}: Proceso excluido (${Array.from(componentProcesses || []).join(', ')}), inventario NO se resta`);
+              cantidadDisponible = 0; // Forzar a cero para que se calcule todo como a producir
+            } else {
+              cantidadDisponible = productData.quantity || 0;
+            }
+
+            // Log detallado para diagnóstico de triplicación
+            console.log(`📊 ${componentId}: Requerido=${Math.ceil(cantidadNecesaria)}, Disponible=${cantidadDisponible}, AProduc=${Math.max(0, Math.ceil(cantidadNecesaria) - cantidadDisponible)}`);
             
-            const cantidadDisponible = productData.quantity || 0;
             const cantidadAProducir = Math.max(0, Math.ceil(cantidadNecesaria) - cantidadDisponible);
             const quedaraDisponible = cantidadDisponible - Math.ceil(cantidadNecesaria);
             
