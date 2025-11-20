@@ -1177,8 +1177,58 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       return;
     }
     
-    applyCSVToReferences(csvData);
-    generateComparisonReport();
+    // Aplicar CSV y generar reporte con los datos aplicados
+    const updatedReferences = references.map(ref => {
+      // Buscar si hay un combo CSV que coincida con algún combo disponible de esta referencia
+      const matchingCombos = ref.availableCombos.filter(combo => 
+        csvData.some(c => c.combo === combo.comboName)
+      );
+      
+      if (matchingCombos.length > 0) {
+        // Tomar el primer combo coincidente
+        const firstMatch = matchingCombos[0];
+        const csvEntry = csvData.find(c => c.combo === firstMatch.comboName);
+        
+        if (csvEntry) {
+          return {
+            ...ref,
+            selectedCombo: firstMatch.comboName,
+            quantityToProduce: csvEntry.cantidad
+          };
+        }
+      }
+      
+      return ref;
+    });
+    
+    // Actualizar el estado
+    setReferences(updatedReferences);
+    
+    // Generar el reporte con los datos actualizados
+    const report = updatedReferences.map(ref => {
+      const csvEntry = csvData.find(c => c.combo === ref.selectedCombo);
+      const csvQuantity = csvEntry?.cantidad || 0;
+      const currentQuantity = ref.quantityToProduce;
+      const required = ref.totalRequired;
+      
+      const selectedComboData = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+      const csvProduction = csvQuantity * (selectedComboData?.quantityProducedPerCombo || 0);
+      const difference = csvProduction - required;
+      
+      return {
+        reference: ref.referenceId,
+        required,
+        csvQuantity,
+        csvProduction,
+        currentQuantity,
+        difference,
+        status: difference >= 0 ? 'Cumple' : 'Insuficiente',
+        comboUsed: ref.selectedCombo
+      };
+    }).filter(r => r.csvQuantity > 0);
+    
+    setComparisonReport(report);
+    setShowComparisonReport(true);
     
     toast.success("Cálculo completado", {
       description: `Se aplicaron ${csvData.length} combos del archivo CSV`
