@@ -67,6 +67,16 @@ export default {
 					black: 'hsl(var(--tercol-black))',
 					white: 'hsl(var(--tercol-white))',
 					gray: 'hsl(var(--tercol-gray))'
+				},
+				capacity: {
+					low: 'hsl(var(--capacity-low))',
+					'low-foreground': 'hsl(var(--capacity-low-foreground))',
+					medium: 'hsl(var(--capacity-medium))',
+					'medium-foreground': 'hsl(var(--capacity-medium-foreground))',
+					high: 'hsl(var(--capacity-high))',
+					'high-foreground': 'hsl(var(--capacity-high-foreground))',
+					critical: 'hsl(var(--capacity-critical))',
+					'critical-foreground': 'hsl(var(--capacity-critical-foreground))'
 				}
 			},
 			borderRadius: {

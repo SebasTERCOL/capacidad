@@ -572,6 +572,13 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   const [showComboManagement, setShowComboManagement] = useState(false);
   const [expandedReferences, setExpandedReferences] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'by-reference' | 'by-combo'>('by-reference');
+  
+  // Estados para carga CSV
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvData, setCsvData] = useState<{ combo: string; cantidad: number }[]>([]);
+  const [csvLoading, setCsvLoading] = useState(false);
+  const [showComparisonReport, setShowComparisonReport] = useState(false);
+  const [comparisonReport, setComparisonReport] = useState<any[]>([]);
 
   useEffect(() => {
     calculateComboSuggestions();
@@ -1115,6 +1122,102 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     toast.success("Optimización completada", {
       description: `Tiempo total: ${(totalTimeOptimized / 60).toFixed(2)} horas`,
     });
+  };
+
+  // Función para parsear CSV
+  const handleCSVUpload = async (file: File) => {
+    setCsvLoading(true);
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const lines = text.split('\n').filter(line => line.trim());
+        
+        // Asumir formato: combo,cantidad (primera línea es encabezado)
+        const data = lines.slice(1).map(line => {
+          const [combo, cantidad] = line.split(',').map(s => s.trim());
+          return {
+            combo: combo,
+            cantidad: parseInt(cantidad) || 0
+          };
+        }).filter(item => item.combo && item.cantidad > 0);
+        
+        setCsvData(data);
+        applyCSVToReferences(data);
+        setCsvLoading(false);
+        
+        toast.success("CSV cargado exitosamente", {
+          description: `${data.length} combos importados`
+        });
+      } catch (error) {
+        setCsvLoading(false);
+        toast.error("Error al procesar el archivo CSV", {
+          description: "Verifica que el formato sea correcto: combo,cantidad"
+        });
+      }
+    };
+    
+    reader.onerror = () => {
+      setCsvLoading(false);
+      toast.error("Error al leer el archivo CSV");
+    };
+    
+    reader.readAsText(file);
+  };
+
+  // Aplicar datos CSV a referencias
+  const applyCSVToReferences = (csvData: { combo: string; cantidad: number }[]) => {
+    setReferences(prev => prev.map(ref => {
+      // Buscar si hay un combo CSV que coincida con algún combo disponible de esta referencia
+      const matchingCombos = ref.availableCombos.filter(combo => 
+        csvData.some(c => c.combo === combo.comboName)
+      );
+      
+      if (matchingCombos.length > 0) {
+        // Tomar el primer combo coincidente
+        const firstMatch = matchingCombos[0];
+        const csvEntry = csvData.find(c => c.combo === firstMatch.comboName);
+        
+        if (csvEntry) {
+          return {
+            ...ref,
+            selectedCombo: firstMatch.comboName,
+            quantityToProduce: csvEntry.cantidad
+          };
+        }
+      }
+      
+      return ref;
+    }));
+  };
+
+  // Generar reporte de comparación
+  const generateComparisonReport = () => {
+    const report = references.map(ref => {
+      const csvEntry = csvData.find(c => c.combo === ref.selectedCombo);
+      const csvQuantity = csvEntry?.cantidad || 0;
+      const currentQuantity = ref.quantityToProduce;
+      const required = ref.totalRequired;
+      
+      const selectedComboData = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+      const csvProduction = csvQuantity * (selectedComboData?.quantityProducedPerCombo || 0);
+      const difference = csvProduction - required;
+      
+      return {
+        reference: ref.referenceId,
+        required,
+        csvQuantity,
+        csvProduction,
+        currentQuantity,
+        difference,
+        status: difference >= 0 ? 'Cumple' : 'Insuficiente',
+        comboUsed: ref.selectedCombo
+      };
+    }).filter(r => r.csvQuantity > 0); // Solo mostrar referencias que tenían datos en CSV
+    
+    setComparisonReport(report);
+    setShowComparisonReport(true);
   };
 
   const handleSetMinimumCombos = (referenceId: string) => {

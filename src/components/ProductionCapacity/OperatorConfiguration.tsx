@@ -4,12 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Users, Calendar, Clock, Settings, AlertTriangle, Database } from "lucide-react";
+import { Users, Calendar as CalendarIcon, Clock, Settings, AlertTriangle, Database, CalendarRange } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ReferenceManager } from "./ReferenceManager";
 import { getColombianHolidays, isColombianHoliday, formatHolidayDate } from "@/lib/colombianHolidays";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format, eachDayOfInterval } from "date-fns";
+import { es } from "date-fns/locale";
+import { DateRange } from "react-day-picker";
 
 export interface MachineConfig {
   id: number;
@@ -54,6 +59,12 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isReferenceManagerOpen, setIsReferenceManagerOpen] = useState(false);
+  
+  // Estados para selector de rango de fechas
+  const [dateRangeMode, setDateRangeMode] = useState<'monthly' | 'custom'>('monthly');
+  const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>();
+  const [workingDays, setWorkingDays] = useState<number>(0);
+  const [customAvailableHours, setCustomAvailableHours] = useState<number>(0);
 
   // Calcular horas disponibles para el mes seleccionado (3 turnos - estándar)
   const calculateAvailableHours = (month: number, year: number): number => {
