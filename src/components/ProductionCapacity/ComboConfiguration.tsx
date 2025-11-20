@@ -17,7 +17,7 @@ import { AdjustedProductionData } from "./InventoryAdjustment";
 import { toast } from "@/components/ui/sonner";
 import { ComboViewByCombo } from "./ComboViewByCombo";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ComboComparisonDialog } from "./ComboComparisonDialog";
+
 
 export interface ComboOption {
   comboName: string;
@@ -716,7 +716,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           totalRequired: ref.quantity,
           availableCombos: [],
           selectedCombo: '',
-          quantityToProduce: 0
+          quantityToProduce: 0,
+          initialQuantity: 0
         }));
         setReferences(referencesWithoutCombos);
         setLoading(false);
@@ -739,11 +740,11 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         throw new Error(`Error cargando combos: ${comboError.message}`);
       }
       
-      // 2. Obtener TODOS los tiempos de combos de una vez
+      // 2. Obtener TODOS los tiempos de combos y condiciones iniciales de una vez
       const uniqueComboNames = [...new Set((allComboRelations as any[])?.map(r => r.combo) || [])];
       const { data: allComboTimes, error: timeError } = await supabase
         .from('machines_processes')
-        .select('sam, ref')
+        .select('sam, ref, condicion_inicial')
         .eq('id_process', 20)
         .in('ref', uniqueComboNames);
       
@@ -758,8 +759,10 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       
       // Crear mapas para acceso rápido
       const comboTimeMap = new Map<string, number>();
+      const comboInitialConditionMap = new Map<string, number>();
       (allComboTimes || []).forEach((t: any) => {
         comboTimeMap.set(t.ref, t.sam || 0);
+        comboInitialConditionMap.set(t.ref, t.condicion_inicial || 0);
       });
       
       // Agrupar componentes por combo
@@ -837,19 +840,18 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           c.comboName.includes(ref.ref.replace('-CMB', ''))
         ) || availableCombos[0];
         
-        // Si la cantidad requerida es 0, no producir ningún combo
-        const suggestedQuantity = ref.quantity === 0 
-          ? 0 
-          : mainCombo 
-            ? Math.ceil(ref.quantity / mainCombo.quantityProducedPerCombo)
-            : 0;
+        const comboName = mainCombo?.comboName || '';
+        const initialQuantity = comboInitialConditionMap.get(comboName) || 0;
+        
+        console.log(`   📦 [COMBO CONFIG] Combo: ${comboName} (condición inicial: ${initialQuantity})`);
         
         referenceMap.set(ref.ref, {
           referenceId: ref.ref,
           totalRequired: ref.quantity,
           availableCombos,
-          selectedCombo: mainCombo?.comboName || '',
-          quantityToProduce: suggestedQuantity
+          selectedCombo: comboName,
+          quantityToProduce: initialQuantity,
+          initialQuantity: initialQuantity
         });
         
         console.log(`✅ [COMBO CONFIG] Referencia ${ref.ref}: ${availableCombos.length} combos disponibles`);
@@ -1110,176 +1112,13 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     console.log(`\n⏱️ Tiempo total optimizado: ${(totalTimeOptimized / 60).toFixed(2)} horas`);
     
     // Aplicar la optimización
-    setReferences(optimizedReferences.map(({ initialQuantity, ...ref }) => ref));
+    setReferences(optimizedReferences);
     
     toast.success("Optimización completada", {
       description: `Tiempo total: ${(totalTimeOptimized / 60).toFixed(2)} horas`,
     });
   };
 
-  // Función para parsear CSV
-  const handleCSVUpload = async (file: File) => {
-    setCsvLoading(true);
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        const lines = text.split('\n').filter(line => line.trim());
-        
-        if (lines.length === 0) {
-          throw new Error('El archivo está vacío');
-        }
-        
-        // Asumir formato: combo,cantidad (primera línea es encabezado)
-        const data = lines.slice(1).map(line => {
-          const [combo, cantidad] = line.split(',').map(s => s.trim());
-          return {
-            combo: combo,
-            cantidad: parseInt(cantidad) || 0
-          };
-        }).filter(item => item.combo && item.cantidad > 0);
-        
-        setCsvData(data);
-        setCsvLoading(false);
-        
-        toast.success("CSV cargado exitosamente", {
-          description: `${data.length} combos importados. Presiona 'Calcular' para aplicar.`
-        });
-      } catch (error) {
-        setCsvLoading(false);
-        toast.error("Error al procesar el archivo CSV", {
-          description: "Verifica que el formato sea correcto: combo,cantidad"
-        });
-      }
-    };
-    
-    reader.onerror = () => {
-      setCsvLoading(false);
-      toast.error("Error al leer el archivo CSV");
-    };
-    
-    reader.readAsText(file);
-  };
-
-  // Función para calcular con el CSV cargado
-  const handleCalculateWithCSV = () => {
-    if (csvData.length === 0) {
-      toast.error("No hay datos de CSV para calcular");
-      return;
-    }
-    
-    // Aplicar CSV y generar reporte con los datos aplicados
-    const updatedReferences = references.map(ref => {
-      // Buscar si hay un combo CSV que coincida con algún combo disponible de esta referencia
-      const matchingCombos = ref.availableCombos.filter(combo => 
-        csvData.some(c => c.combo === combo.comboName)
-      );
-      
-      if (matchingCombos.length > 0) {
-        // Tomar el primer combo coincidente
-        const firstMatch = matchingCombos[0];
-        const csvEntry = csvData.find(c => c.combo === firstMatch.comboName);
-        
-        if (csvEntry) {
-          return {
-            ...ref,
-            selectedCombo: firstMatch.comboName,
-            quantityToProduce: csvEntry.cantidad
-          };
-        }
-      }
-      
-      return ref;
-    });
-    
-    // Actualizar el estado
-    setReferences(updatedReferences);
-    
-    // Generar el reporte con los datos actualizados
-    const report = updatedReferences.map(ref => {
-      const csvEntry = csvData.find(c => c.combo === ref.selectedCombo);
-      const csvQuantity = csvEntry?.cantidad || 0;
-      const currentQuantity = ref.quantityToProduce;
-      const required = ref.totalRequired;
-      
-      const selectedComboData = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
-      const csvProduction = csvQuantity * (selectedComboData?.quantityProducedPerCombo || 0);
-      const difference = csvProduction - required;
-      
-      return {
-        reference: ref.referenceId,
-        required,
-        csvQuantity,
-        csvProduction,
-        currentQuantity,
-        difference,
-        status: difference >= 0 ? 'Cumple' : 'Insuficiente',
-        comboUsed: ref.selectedCombo
-      };
-    }).filter(r => r.csvQuantity > 0);
-    
-    setComparisonReport(report);
-    setShowComparisonReport(true);
-    
-    toast.success("Cálculo completado", {
-      description: `Se aplicaron ${csvData.length} combos del archivo CSV`
-    });
-  };
-
-  // Aplicar datos CSV a referencias
-  const applyCSVToReferences = (csvData: { combo: string; cantidad: number }[]) => {
-    setReferences(prev => prev.map(ref => {
-      // Buscar si hay un combo CSV que coincida con algún combo disponible de esta referencia
-      const matchingCombos = ref.availableCombos.filter(combo => 
-        csvData.some(c => c.combo === combo.comboName)
-      );
-      
-      if (matchingCombos.length > 0) {
-        // Tomar el primer combo coincidente
-        const firstMatch = matchingCombos[0];
-        const csvEntry = csvData.find(c => c.combo === firstMatch.comboName);
-        
-        if (csvEntry) {
-          return {
-            ...ref,
-            selectedCombo: firstMatch.comboName,
-            quantityToProduce: csvEntry.cantidad
-          };
-        }
-      }
-      
-      return ref;
-    }));
-  };
-
-  // Generar reporte de comparación
-  const generateComparisonReport = () => {
-    const report = references.map(ref => {
-      const csvEntry = csvData.find(c => c.combo === ref.selectedCombo);
-      const csvQuantity = csvEntry?.cantidad || 0;
-      const currentQuantity = ref.quantityToProduce;
-      const required = ref.totalRequired;
-      
-      const selectedComboData = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
-      const csvProduction = csvQuantity * (selectedComboData?.quantityProducedPerCombo || 0);
-      const difference = csvProduction - required;
-      
-      return {
-        reference: ref.referenceId,
-        required,
-        csvQuantity,
-        csvProduction,
-        currentQuantity,
-        difference,
-        status: difference >= 0 ? 'Cumple' : 'Insuficiente',
-        comboUsed: ref.selectedCombo
-      };
-    }).filter(r => r.csvQuantity > 0); // Solo mostrar referencias que tenían datos en CSV
-    
-    setComparisonReport(report);
-    setShowComparisonReport(true);
-  };
 
 
   const toggleReferenceExpansion = (referenceId: string) => {
@@ -1421,79 +1260,6 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           )}
         </Card>
 
-        {/* Sección de Carga CSV */}
-        {references.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Importar Configuración de Combos (CSV)
-              </CardTitle>
-              <CardDescription>
-                Sube un archivo CSV con formato: combo,cantidad para pre-configurar las cantidades
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-4">
-                <Input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      setCsvFile(file);
-                      handleCSVUpload(file);
-                    }
-                  }}
-                  disabled={csvLoading}
-                  className="flex-1"
-                />
-                {csvLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-              </div>
-              
-              {csvData.length > 0 && (
-                <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                    <p className="text-sm font-medium text-green-900 dark:text-green-100">
-                      CSV cargado: {csvData.length} combos importados
-                    </p>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={handleCalculateWithCSV}
-                      className="bg-tercol-red hover:bg-tercol-red/90"
-                    >
-                      <Activity className="h-4 w-4 mr-2" />
-                      Calcular con archivo CSV
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={generateComparisonReport}
-                    >
-                      Ver Reporte de Comparación
-                    </Button>
-                  </div>
-                  
-                  <p className="text-xs text-green-800 dark:text-green-200">
-                    * Presiona "Calcular" para aplicar las cantidades del CSV a los combos y ver los resultados
-                  </p>
-                </div>
-              )}
-              
-              <div className="text-sm text-muted-foreground">
-                <p className="font-medium mb-2">Formato esperado del CSV:</p>
-                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
-combo,cantidad{'\n'}CMB.BN42.V1,10{'\n'}CMB.CNCA30.V1,15{'\n'}CMB.PERNO.V1,20
-                </pre>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'by-reference' | 'by-combo')} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
@@ -1635,32 +1401,13 @@ combo,cantidad{'\n'}CMB.BN42.V1,10{'\n'}CMB.CNCA30.V1,15{'\n'}CMB.PERNO.V1,20
                                 </div>
                                 <div className="space-y-2">
                                   <Label className="text-xs text-muted-foreground">Cantidad de Combos</Label>
-                                  <div className="flex items-center gap-2">
-                                    <Input
-                                      type="number"
-                                      min="0"
-                                      value={ref.quantityToProduce}
-                                      onChange={(e) => handleReferenceQuantityChange(ref.referenceId, parseInt(e.target.value) || 0)}
-                                      className="text-center"
-                                    />
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button 
-                                          variant="outline" 
-                                          size="icon"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleSetMinimumCombos(ref.referenceId);
-                                          }}
-                                        >
-                                          <Minimize2 className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p className="text-xs">Calcular mínimo necesario</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </div>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={ref.quantityToProduce}
+                                    onChange={(e) => handleReferenceQuantityChange(ref.referenceId, parseInt(e.target.value) || 0)}
+                                    className="text-center"
+                                  />
                                 </div>
                                 <div className="space-y-2">
                                   <Label className="text-xs text-muted-foreground">Información</Label>
@@ -1726,11 +1473,6 @@ combo,cantidad{'\n'}CMB.BN42.V1,10{'\n'}CMB.CNCA30.V1,15{'\n'}CMB.PERNO.V1,20
           onOpenChange={setShowComboManagement}
         />
         
-        <ComboComparisonDialog
-          open={showComparisonReport}
-          onOpenChange={setShowComparisonReport}
-          report={comparisonReport}
-        />
       </div>
     </TooltipProvider>
   );
