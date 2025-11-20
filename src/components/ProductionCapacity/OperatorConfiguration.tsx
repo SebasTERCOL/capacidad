@@ -429,7 +429,31 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Selector de Modo */}
+          <div className="space-y-4 mb-6">
+            <Label>Modo de Cálculo de Capacidad</Label>
+            <div className="flex gap-4">
+              <Button
+                variant={dateRangeMode === 'monthly' ? 'default' : 'outline'}
+                onClick={() => setDateRangeMode('monthly')}
+                className="flex-1"
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                Mes Completo
+              </Button>
+              <Button
+                variant={dateRangeMode === 'custom' ? 'default' : 'outline'}
+                onClick={() => setDateRangeMode('custom')}
+                className="flex-1"
+              >
+                <CalendarRange className="mr-2 h-4 w-4" />
+                Rango Personalizado
+              </Button>
+            </div>
+          </div>
+
+          {dateRangeMode === 'monthly' ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label htmlFor="workMonth">Mes</Label>
               <Input
@@ -463,8 +487,76 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
               </div>
             </div>
           </div>
+          ) : (
+            <div className="space-y-4">
+              <Label>Seleccionar Rango de Fechas</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={`w-full justify-start text-left font-normal ${
+                      !customDateRange && "text-muted-foreground"
+                    }`}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {customDateRange?.from ? (
+                      customDateRange.to ? (
+                        <>
+                          {format(customDateRange.from, 'dd/MM/yyyy', { locale: es })} - {format(customDateRange.to, 'dd/MM/yyyy', { locale: es })}
+                        </>
+                      ) : (
+                        format(customDateRange.from, 'dd/MM/yyyy', { locale: es })
+                      )
+                    ) : (
+                      <span>Seleccione un rango de fechas</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 z-[100]" align="start">
+                  <Calendar
+                    mode="range"
+                    selected={customDateRange}
+                    onSelect={setCustomDateRange}
+                    numberOfMonths={2}
+                    locale={es}
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+              
+              {customDateRange?.from && customDateRange?.to && (
+                <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-4 rounded-lg space-y-3">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Resumen del Rango Seleccionado</p>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Desde:</span>
+                      <p className="font-medium">{format(customDateRange.from, 'dd/MM/yyyy', { locale: es })}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Hasta:</span>
+                      <p className="font-medium">{format(customDateRange.to, 'dd/MM/yyyy', { locale: es })}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Días laborables:</span>
+                      <p className="font-medium text-green-600">{workingDays}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Horas disponibles:</span>
+                      <p className="font-medium text-primary text-lg">{customAvailableHours.toFixed(2)} h</p>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-blue-200 dark:border-blue-800">
+                    <p className="text-xs text-blue-800 dark:text-blue-200">
+                      * Se excluyen domingos y días festivos colombianos del cálculo
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           
-          <div className="col-span-full mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+          {dateRangeMode === 'monthly' && (
+            <div className="col-span-full mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <Calendar className="h-4 w-4 text-blue-600" />
               <span className="text-sm font-medium text-blue-600">
@@ -481,6 +573,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
               })()}
             </div>
           </div>
+          )}
         </CardContent>
       </Card>
 
