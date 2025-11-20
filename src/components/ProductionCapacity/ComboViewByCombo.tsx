@@ -37,16 +37,23 @@ export const ComboViewByCombo: React.FC<ComboViewByComboProps> = ({
         comboMap.set(ref.selectedCombo, {
           comboName: ref.selectedCombo,
           cycleTime: selectedCombo.cycleTime,
-          totalQuantity: 0,
+          totalQuantity: ref.quantityToProduce,
           references: [],
         });
+      } else {
+        // Si el combo ya existe, solo actualizamos la cantidad si es diferente
+        const comboGroup = comboMap.get(ref.selectedCombo)!;
+        if (comboGroup.totalQuantity !== ref.quantityToProduce) {
+          comboGroup.totalQuantity = ref.quantityToProduce;
+        }
       }
 
       const comboGroup = comboMap.get(ref.selectedCombo)!;
-      comboGroup.totalQuantity += ref.quantityToProduce;
+      // Agregar todas las referencias que produce este combo según su quantityProducedPerCombo
+      const producedQuantity = ref.quantityToProduce * selectedCombo.quantityProducedPerCombo;
       comboGroup.references.push({
         referenceId: ref.referenceId,
-        quantity: ref.quantityToProduce,
+        quantity: producedQuantity,
       });
     });
 
@@ -120,25 +127,17 @@ export const ComboViewByCombo: React.FC<ComboViewByComboProps> = ({
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Referencias producidas:</Label>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {combo.references.map((ref) => {
-                      const refData = references.find(r => r.referenceId === ref.referenceId);
-                      const selectedCombo = refData?.availableCombos.find(c => c.comboName === combo.comboName);
-                      const unitsProduced = selectedCombo
-                        ? ref.quantity * selectedCombo.quantityProducedPerCombo
-                        : 0;
-
-                      return (
-                        <div
-                          key={ref.referenceId}
-                          className="p-2 border rounded-md bg-card text-sm"
-                        >
-                          <div className="font-medium truncate">{ref.referenceId}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {ref.quantity} combo(s) → {unitsProduced.toLocaleString()} unidades
-                          </div>
+                    {combo.references.map((ref) => (
+                      <div
+                        key={ref.referenceId}
+                        className="p-2 border rounded-md bg-card text-sm"
+                      >
+                        <div className="font-medium truncate">{ref.referenceId}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {combo.totalQuantity} combo(s) → {ref.quantity.toLocaleString()} unidades
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
