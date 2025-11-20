@@ -237,7 +237,14 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
           const componentAnalysis: BOMComponent[] = [];
           const itemAdjusted: AdjustedProductionData[] = [];
           
+          // Consolidar componentes para evitar duplicación por proceso
+          const consolidatedComponents = new Map<string, number>();
           for (const [componentId, cantidadNecesaria] of allComponents) {
+            const existing = consolidatedComponents.get(componentId) || 0;
+            consolidatedComponents.set(componentId, existing + cantidadNecesaria);
+          }
+          
+          for (const [componentId, cantidadNecesaria] of consolidatedComponents) {
             const productData = productsMap.get(componentId);
             
             // Si no existe en products o es PT, no se ajusta
@@ -264,7 +271,7 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
               cantidadDisponible = productData.quantity || 0;
             }
 
-            // Log detallado para diagnóstico de triplicación
+            // Log detallado para diagnóstico
             console.log(`📊 ${componentId}: Requerido=${Math.ceil(cantidadNecesaria)}, Disponible=${cantidadDisponible}, AProduc=${Math.max(0, Math.ceil(cantidadNecesaria) - cantidadDisponible)}`);
             
             const cantidadAProducir = Math.max(0, Math.ceil(cantidadNecesaria) - cantidadDisponible);
