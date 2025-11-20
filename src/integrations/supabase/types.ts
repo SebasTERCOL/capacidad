@@ -200,6 +200,7 @@ export type Database = {
       }
       machines_processes: {
         Row: {
+          condicion_inicial: number | null
           frequency: number
           id: number
           id_machine: number
@@ -209,6 +210,7 @@ export type Database = {
           sam_unit: Database["public"]["Enums"]["sam_unit_type"]
         }
         Insert: {
+          condicion_inicial?: number | null
           frequency?: number
           id?: never
           id_machine: number
@@ -218,6 +220,7 @@ export type Database = {
           sam_unit?: Database["public"]["Enums"]["sam_unit_type"]
         }
         Update: {
+          condicion_inicial?: number | null
           frequency?: number
           id?: never
           id_machine?: number
@@ -634,6 +637,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      t_combo: {
+        Row: {
+          condicion_inicial: number | null
+          ref: string | null
+          sam: number | null
+        }
+        Insert: {
+          condicion_inicial?: number | null
+          ref?: string | null
+          sam?: number | null
+        }
+        Update: {
+          condicion_inicial?: number | null
+          ref?: string | null
+          sam?: number | null
+        }
+        Relationships: []
       }
       warehouse: {
         Row: {
