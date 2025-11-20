@@ -859,6 +859,37 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         setProgress(75 + ((idx + 1) / totalRefs) * 20); // 75% a 95%
       }
       
+      setProgress(90);
+      setCurrentStep('Agregando combos sin pedidos...');
+      
+      // Agregar TODOS los combos con condicion_inicial > 0, incluso sin pedidos
+      (allComboTimes || []).forEach((comboTime: any) => {
+        if (comboTime.condicion_inicial > 0 && !referenceMap.has(comboTime.ref)) {
+          console.log(`📦 [COMBO CONFIG] Agregando combo sin pedido: ${comboTime.ref} (condición inicial: ${comboTime.condicion_inicial})`);
+          
+          const comboComponents = comboComponentsMap.get(comboTime.ref) || [];
+          
+          const comboOption: ComboOption = {
+            comboName: comboTime.ref,
+            cycleTime: comboTime.sam || 0,
+            quantityProducedPerCombo: 1,
+            allComponents: comboComponents.map(c => ({
+              componentId: c.component_id,
+              quantityPerCombo: c.cantidad
+            }))
+          };
+          
+          referenceMap.set(comboTime.ref, {
+            referenceId: comboTime.ref,
+            totalRequired: 0, // Sin pedido
+            availableCombos: [comboOption],
+            selectedCombo: comboTime.ref,
+            quantityToProduce: comboTime.condicion_inicial,
+            initialQuantity: comboTime.condicion_inicial
+          });
+        }
+      });
+      
       setProgress(95);
       setCurrentStep('Finalizando cálculo de combos...');
       

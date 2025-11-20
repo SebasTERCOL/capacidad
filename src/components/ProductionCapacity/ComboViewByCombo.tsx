@@ -91,6 +91,28 @@ export const ComboViewByCombo: React.FC<ComboViewByComboProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Header con contador de combos */}
+      <Card className="bg-primary/5 border-primary/20">
+        <CardContent className="py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Boxes className="h-6 w-6 text-primary" />
+              <div>
+                <h3 className="font-semibold text-lg">Vista por Combo</h3>
+                <p className="text-sm text-muted-foreground">
+                  Mostrando {combosGrouped.length} combo(s) configurado(s)
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <Badge variant="secondary" className="text-base px-4 py-2">
+                {combosGrouped.length} Combos
+              </Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {combosGrouped.map((combo) => {
         const totalTime = combo.cycleTime * combo.totalQuantity;
 
