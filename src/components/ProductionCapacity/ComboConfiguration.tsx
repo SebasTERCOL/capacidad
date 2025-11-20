@@ -1135,6 +1135,10 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         const text = e.target?.result as string;
         const lines = text.split('\n').filter(line => line.trim());
         
+        if (lines.length === 0) {
+          throw new Error('El archivo está vacío');
+        }
+        
         // Asumir formato: combo,cantidad (primera línea es encabezado)
         const data = lines.slice(1).map(line => {
           const [combo, cantidad] = line.split(',').map(s => s.trim());
@@ -1145,11 +1149,10 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         }).filter(item => item.combo && item.cantidad > 0);
         
         setCsvData(data);
-        applyCSVToReferences(data);
         setCsvLoading(false);
         
         toast.success("CSV cargado exitosamente", {
-          description: `${data.length} combos importados`
+          description: `${data.length} combos importados. Presiona 'Calcular' para aplicar.`
         });
       } catch (error) {
         setCsvLoading(false);
@@ -1165,6 +1168,21 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     };
     
     reader.readAsText(file);
+  };
+
+  // Función para calcular con el CSV cargado
+  const handleCalculateWithCSV = () => {
+    if (csvData.length === 0) {
+      toast.error("No hay datos de CSV para calcular");
+      return;
+    }
+    
+    applyCSVToReferences(csvData);
+    generateComparisonReport();
+    
+    toast.success("Cálculo completado", {
+      description: `Se aplicaron ${csvData.length} combos del archivo CSV`
+    });
   };
 
   // Aplicar datos CSV a referencias
@@ -1408,21 +1426,36 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
               </div>
               
               {csvData.length > 0 && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <p className="text-sm font-medium text-green-900">
+                <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    <p className="text-sm font-medium text-green-900 dark:text-green-100">
                       CSV cargado: {csvData.length} combos importados
                     </p>
                   </div>
                   
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={generateComparisonReport}
-                  >
-                    Ver Reporte de Comparación
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleCalculateWithCSV}
+                      className="bg-tercol-red hover:bg-tercol-red/90"
+                    >
+                      <Activity className="h-4 w-4 mr-2" />
+                      Calcular con archivo CSV
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={generateComparisonReport}
+                    >
+                      Ver Reporte de Comparación
+                    </Button>
+                  </div>
+                  
+                  <p className="text-xs text-green-800 dark:text-green-200">
+                    * Presiona "Calcular" para aplicar las cantidades del CSV a los combos y ver los resultados
+                  </p>
                 </div>
               )}
               
