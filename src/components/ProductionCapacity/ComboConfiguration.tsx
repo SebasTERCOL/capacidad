@@ -579,18 +579,12 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     calculateComboSuggestions();
   }, [data]);
 
-  // Efecto para forzar quantityToProduce a 0 cuando totalRequired es 0
-  useEffect(() => {
-    setReferences(prev => prev.map(ref => {
-      if (ref.totalRequired === 0 && ref.quantityToProduce > 0) {
-        return {
-          ...ref,
-          quantityToProduce: 0
-        };
-      }
-      return ref;
-    }));
-  }, [references]);
+  // Nota: este efecto se eliminó porque generaba un bucle infinito de renders
+  // y además ponía en 0 la cantidad de combos incluso cuando solo teníamos
+  // condición inicial (> 0) sin pedido asociado.
+  // Si en el futuro se necesita forzar quantityToProduce = 0 cuando
+  // totalRequired = 0, deberá hacerse con una acción explícita del usuario
+  // (no desde un efecto que observe `references`).
 
   // Cache global para evitar consultas repetidas
   const bomCache = new Map<string, Array<{component_id: string, amount: number}>>();
@@ -760,14 +754,14 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         throw new Error(`Error cargando combos: ${comboError.message}`);
       }
       
-      // 2. Obtener TODOS los tiempos de combos y condiciones iniciales de una vez
-      const uniqueComboNames = [...new Set((allComboRelations as any[])?.map(r => r.combo) || [])];
+      // 2. Obtener TODOS los tiempos de combos y condiciones iniciales de Punzonado
+      //    (sin filtrar por `uniqueComboNames` para garantizar que se carguen
+      //     todos los combos con condicion_inicial > 0 que existan en machines_processes)
       const { data: allComboTimes, error: timeError } = await supabase
         .from('machines_processes')
         .select('sam, ref, condicion_inicial')
-        .eq('id_process', 20)
-        .in('ref', uniqueComboNames);
-      
+        .eq('id_process', 20);
+
       if (timeError) {
         console.warn('⚠️ Error cargando tiempos de combos:', timeError);
       }
