@@ -28,6 +28,10 @@ export interface ProjectionInfo {
 
 interface ProductionProjectionV2Props {
   data: { referencia: string; cantidad: number }[];
+  /** Datos originales sin ajuste de inventario (productionData crudo) */
+  originalData: { referencia: string; cantidad: number }[];
+  /** Indica si la proyección actual está usando inventario */
+  useInventory: boolean;
   operatorConfig: OperatorConfig;
   overtimeConfig?: OvertimeConfig | null;
   comboData?: any[];
@@ -40,6 +44,8 @@ interface ProductionProjectionV2Props {
 
 export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({ 
   data, 
+  originalData,
+  useInventory,
   operatorConfig,
   overtimeConfig,
   comboData,
@@ -334,12 +340,17 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       setProgress({ current: 3, total: 6, currentRef: 'Consolidando componentes...' });
       const consolidatedComponents = new Map<string, number>();
       const mainReferences = new Map<string, number>();
-      
+
+      // Mapas base SIN inventario (siempre usando los datos originales de entrada)
+      const baseData = originalData && originalData.length > 0 ? originalData : data;
+      const rawMainReferences = new Map<string, number>();
+      const rawConsolidatedComponents = new Map<string, number>();
+
       console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
 
-      // Procesar cada referencia de entrada
+      // Procesar cada referencia de entrada (datos posiblemente ajustados por inventario)
       for (const item of data) {
-        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
+        console.log(`🔍 Procesando referencia de entrada (ajustada): ${item.referencia} (cantidad: ${item.cantidad})`);
         
         // Intentar obtener BOM para esta referencia
         const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
@@ -363,11 +374,35 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         }
       }
 
-      console.log(`✅ Referencias principales consolidadas: ${mainReferences.size}`);
-      console.log(`✅ Componentes consolidados: ${consolidatedComponents.size}`);
+      // Procesar cada referencia usando SIEMPRE los datos originales (sin inventario)
+      console.log('\n🔁 === CONSOLIDACIÓN BASE (SIN INVENTARIO) ===');
+      for (const item of baseData) {
+        console.log(`🔍 Procesando referencia base: ${item.referencia} (cantidad: ${item.cantidad})`);
+        const allComponentsBase = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
+
+        if (allComponentsBase.size > 0) {
+          const currentMainQtyBase = rawMainReferences.get(item.referencia) || 0;
+          rawMainReferences.set(item.referencia, currentMainQtyBase + item.cantidad);
+
+          for (const [componentId, quantity] of allComponentsBase.entries()) {
+            const currentQtyBase = rawConsolidatedComponents.get(componentId) || 0;
+            rawConsolidatedComponents.set(componentId, currentQtyBase + quantity);
+          }
+        } else {
+          const currentComponentQtyBase = rawConsolidatedComponents.get(item.referencia) || 0;
+          rawConsolidatedComponents.set(item.referencia, currentComponentQtyBase + item.cantidad);
+        }
+      }
+
+      console.log(`✅ Referencias principales consolidadas (ajustadas): ${mainReferences.size}`);
+      console.log(`✅ Componentes consolidados (ajustados): ${consolidatedComponents.size}`);
+      console.log(`✅ Referencias principales base (sin inventario): ${rawMainReferences.size}`);
+      console.log(`✅ Componentes base (sin inventario): ${rawConsolidatedComponents.size}`);
 
       // Consolidar por referencia normalizada para unificar claves como "TAPA12R" y "TAPA 12R"
       const consolidatedByNorm = new Map<string, { quantity: number; display: string }>();
+      const rawConsolidatedByNorm = new Map<string, { quantity: number; display: string }>();
+
       for (const [id, qty] of consolidatedComponents.entries()) {
         const norm = normalizeRefId(id);
         const existing = consolidatedByNorm.get(norm);
@@ -377,7 +412,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           consolidatedByNorm.set(norm, { quantity: qty, display: id });
         }
       }
-      console.log(`✅ Componentes consolidados normalizados: ${consolidatedByNorm.size}`);
+
+      for (const [id, qty] of rawConsolidatedComponents.entries()) {
+        const norm = normalizeRefId(id);
+        const existing = rawConsolidatedByNorm.get(norm);
+        if (existing) {
+          existing.quantity += qty;
+        } else {
+          rawConsolidatedByNorm.set(norm, { quantity: qty, display: id });
+        }
+      }
+
+      console.log(`✅ Componentes consolidados normalizados (ajustados): ${consolidatedByNorm.size}`);
+      console.log(`✅ Componentes base normalizados (sin inventario): ${rawConsolidatedByNorm.size}`);
       
       // Log all available processes from machines_processes
       console.log('\n🔍 === PROCESOS ENCONTRADOS EN BD ===');
@@ -412,14 +459,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         for (const mp of machinesProcesses) {
           const processName = resolveProcessName(mp);
           const processNameOriginal = mp.processes.name;
+          const isExcludedProcess = EXCLUDED_PROCESS_IDS.includes(mp.id_process);
           
-          // Saltar procesos excluidos
+          // Saltar procesos excluidos por nombre (reclasificación, etc.)
           if (processName === null) {
             console.log(`     ❌ Proceso excluido: ${processNameOriginal}`);
             continue;
           }
           
-          console.log(`     · Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
+          console.log(`     · Proceso original: ${processNameOriginal} (ID: ${mp.id_process}) -> Normalizado: ${processName}`);
+
+          // Para procesos especiales (Lavado, Pintura, Horno, Tapas) usar SIEMPRE
+          // la cantidad base sin inventario cuando useInventory=true
+          const baseQty = rawMainReferences.get(ref) ?? quantity;
+          const effectiveQuantity = useInventory && isExcludedProcess ? baseQty : quantity;
           
           if (!processGroups.has(processName)) {
             const processConfig = findProcessConfig(processName, operatorConfig);
@@ -469,7 +522,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           } else {
             const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
             processGroup.components.set(ref, {
-              quantity,
+              quantity: effectiveQuantity,
               sam: samForProcess,
               machineOptions: availableMachines
             });
@@ -487,6 +540,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         for (const mp of machinesProcesses) {
           const processName = resolveProcessName(mp);
           const processNameOriginal = mp.processes.name;
+          const isExcludedProcess = EXCLUDED_PROCESS_IDS.includes(mp.id_process);
           
           // Saltar procesos excluidos
           if (processName === null) {
@@ -494,7 +548,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             continue;
           }
           
-          console.log(`     · Componente ${display} - Proceso original: ${processNameOriginal} -> Normalizado: ${processName}`);
+          console.log(`     · Componente ${display} - Proceso original: ${processNameOriginal} (ID: ${mp.id_process}) -> Normalizado: ${processName}`);
           
           if (!processGroups.has(processName)) {
             const processConfig = findProcessConfig(processName, operatorConfig);
@@ -531,6 +585,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               return isOperational;
             });
 
+          // Cantidad base para este componente (sin inventario) si existe
+          const rawEntry = rawConsolidatedByNorm.get(normId);
+          const baseQty = rawEntry ? rawEntry.quantity : quantity;
+          const effectiveQuantity = useInventory && isExcludedProcess ? baseQty : quantity;
+
           if (existingComponent) {
             // No sumar aquí: la cantidad ya fue consolidada a nivel global (evitar duplicar por cada máquina)
             if (!existingComponent.sam || existingComponent.sam === 0) {
@@ -544,7 +603,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           } else {
             const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
             processGroup.components.set(display, {
-              quantity,
+              quantity: effectiveQuantity,
               sam: samForProcess,
               machineOptions: availableMachines
             });

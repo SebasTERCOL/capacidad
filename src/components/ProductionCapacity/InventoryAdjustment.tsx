@@ -182,6 +182,11 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
         }
         componentProcessesMap.get(ref)!.add(mp.id_process);
       });
+
+      // Mapas globales para controlar el uso de inventario por componente
+      // Evita que la misma cantidad de inventario se reste varias veces
+      const inventoryTotals = new Map<string, number>();
+      const inventoryUsed = new Map<string, number>();
       
       // Paso 2: Procesar referencias en lotes de 5 (paralelismo controlado)
       const BATCH_SIZE = 5;
@@ -262,20 +267,37 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
               Array.from(componentProcesses).some(processId => EXCLUDED_PROCESS_IDS.includes(processId)) : 
               false;
 
-            // Si tiene un proceso excluido, NO restar inventario
-            let cantidadDisponible = 0;
+            // Cantidad requerida redondeada
+            const cantidadRequerida = Math.ceil(cantidadNecesaria);
+
+            // Calcular inventario disponible de forma GLOBAL para este componente
+            // de modo que la suma de inventario usado en todos los productos nunca
+            // supere lo que hay en la base de datos.
+            let totalDisponible = 0;
             if (hasExcludedProcess) {
-              console.log(`🚫 ${componentId}: Proceso excluido (${Array.from(componentProcesses || []).join(', ')}), inventario NO se resta`);
-              cantidadDisponible = 0; // Forzar a cero para que se calcule todo como a producir
+              // Procesos excluidos: se ignora inventario (se produce todo)
+              totalDisponible = 0;
             } else {
-              cantidadDisponible = productData.quantity || 0;
+              if (!inventoryTotals.has(componentId)) {
+                inventoryTotals.set(componentId, productData.quantity || 0);
+              }
+              totalDisponible = inventoryTotals.get(componentId)!;
+            }
+
+            const usadoHastaAhora = inventoryUsed.get(componentId) || 0;
+            const restante = Math.max(0, totalDisponible - usadoHastaAhora);
+            const usadoEnEsteProducto = Math.min(restante, cantidadRequerida);
+
+            const cantidadAProducir = Math.max(0, cantidadRequerida - usadoEnEsteProducto);
+            const quedaraDisponible = totalDisponible - (usadoHastaAhora + usadoEnEsteProducto);
+
+            // Actualizar uso global de inventario solo si no es proceso excluido
+            if (!hasExcludedProcess && usadoEnEsteProducto > 0) {
+              inventoryUsed.set(componentId, usadoHastaAhora + usadoEnEsteProducto);
             }
 
             // Log detallado para diagnóstico
-            console.log(`📊 ${componentId}: Requerido=${Math.ceil(cantidadNecesaria)}, Disponible=${cantidadDisponible}, AProduc=${Math.max(0, Math.ceil(cantidadNecesaria) - cantidadDisponible)}`);
-            
-            const cantidadAProducir = Math.max(0, Math.ceil(cantidadNecesaria) - cantidadDisponible);
-            const quedaraDisponible = cantidadDisponible - Math.ceil(cantidadNecesaria);
+            console.log(`📊 ${componentId}: Req=${cantidadRequerida}, InvTotal=${totalDisponible}, UsadoAntes=${usadoHastaAhora}, UsadoAhora=${usadoEnEsteProducto}, AProducir=${cantidadAProducir}, Quedará=${quedaraDisponible}`);
             
             let alerta: 'ok' | 'warning' | 'error' = 'ok';
             
@@ -287,8 +309,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             
             componentAnalysis.push({
               component_id: componentId,
-              cantidad_requerida: Math.ceil(cantidadNecesaria),
-              cantidad_disponible: cantidadDisponible,
+              cantidad_requerida: cantidadRequerida,
+              cantidad_disponible: totalDisponible,
               cantidad_a_producir: cantidadAProducir,
               type: productData.type,
               minimum_unit: productData.minimum_unit,
