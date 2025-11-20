@@ -49,11 +49,19 @@ export const ComboViewByCombo: React.FC<ComboViewByComboProps> = ({
       }
 
       const comboGroup = comboMap.get(ref.selectedCombo)!;
-      // Agregar todas las referencias que produce este combo según su quantityProducedPerCombo
-      const producedQuantity = ref.quantityToProduce * selectedCombo.quantityProducedPerCombo;
-      comboGroup.references.push({
-        referenceId: ref.referenceId,
-        quantity: producedQuantity,
+      
+      // Agregar TODAS las referencias que produce este combo según allComponents
+      selectedCombo.allComponents.forEach(component => {
+        // Verificar si ya existe esta referencia en el grupo para evitar duplicados
+        const existingRef = comboGroup.references.find(r => r.referenceId === component.componentId);
+        
+        if (!existingRef) {
+          const producedQuantity = ref.quantityToProduce * component.quantityPerCombo;
+          comboGroup.references.push({
+            referenceId: component.componentId,
+            quantity: producedQuantity,
+          });
+        }
       });
     });
 
