@@ -110,9 +110,10 @@ export const ComboComparisonDialog: React.FC<ComboComparisonDialogProps> = ({
                 </p>
               </div>
               <div>
-                <p className="text-muted-foreground">Sobreproducción Total:</p>
-                <p className="text-2xl font-bold">
-                  +{report.reduce((acc, r) => acc + Math.max(0, r.difference), 0)}
+                <p className="text-muted-foreground">Diferencia Total:</p>
+                <p className={`text-2xl font-bold ${report.reduce((sum, r) => sum + r.difference, 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {report.reduce((sum, r) => sum + r.difference, 0) >= 0 ? '+' : ''}
+                  {report.reduce((sum, r) => sum + r.difference, 0)}
                 </p>
               </div>
             </div>
