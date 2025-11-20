@@ -10,13 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X, ChevronDown, ChevronRight, Minimize2, Info, Activity, List, Package } from "lucide-react";
+import { Boxes, ArrowLeft, ArrowRight, Loader2, AlertCircle, Settings, Plus, Trash2, Edit2, Save, X, ChevronDown, ChevronRight, Minimize2, Info, Activity, List, Package, Upload, CheckCircle2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { AdjustedProductionData } from "./InventoryAdjustment";
 import { toast } from "@/components/ui/sonner";
 import { ComboViewByCombo } from "./ComboViewByCombo";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ComboComparisonDialog } from "./ComboComparisonDialog";
 
 export interface ComboOption {
   comboName: string;
@@ -1376,6 +1377,65 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           )}
         </Card>
 
+        {/* Sección de Carga CSV */}
+        {references.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Importar Configuración de Combos (CSV)
+              </CardTitle>
+              <CardDescription>
+                Sube un archivo CSV con formato: combo,cantidad para pre-configurar las cantidades
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-4">
+                <Input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setCsvFile(file);
+                      handleCSVUpload(file);
+                    }
+                  }}
+                  disabled={csvLoading}
+                  className="flex-1"
+                />
+                {csvLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              </div>
+              
+              {csvData.length > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <p className="text-sm font-medium text-green-900">
+                      CSV cargado: {csvData.length} combos importados
+                    </p>
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={generateComparisonReport}
+                  >
+                    Ver Reporte de Comparación
+                  </Button>
+                </div>
+              )}
+              
+              <div className="text-sm text-muted-foreground">
+                <p className="font-medium mb-2">Formato esperado del CSV:</p>
+                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+combo,cantidad{'\n'}CMB.BN42.V1,10{'\n'}CMB.CNCA30.V1,15{'\n'}CMB.PERNO.V1,20
+                </pre>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'by-reference' | 'by-combo')} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="by-reference" className="flex items-center gap-2">
@@ -1605,6 +1665,12 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         <ComboManagementDialog 
           open={showComboManagement} 
           onOpenChange={setShowComboManagement}
+        />
+        
+        <ComboComparisonDialog
+          open={showComparisonReport}
+          onOpenChange={setShowComparisonReport}
+          report={comparisonReport}
         />
       </div>
     </TooltipProvider>
