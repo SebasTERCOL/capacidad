@@ -402,13 +402,34 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
         description: `Total en CSV: ${totalInCSV} | Aplicados en Punzonado: ${appliedCount} | Ignorados (no existen en Punzonado): ${ignoredCount} | Reseteados a 0: ${resetCount}`,
       });
       
-      // Log de combos ignorados
+      // Log detallado de combos ignorados
       if (missingInMP.length > 0) {
-        console.warn(`⚠️ [COMBOS] ${missingInMP.length} combos del CSV NO se encontraron en machines_processes (id_process=20):`, missingInMP);
+        console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        console.warn(`⚠️ [COMBOS CSV] ${missingInMP.length} combos del CSV NO se encontraron en machines_processes (id_process=20):`);
+        console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        missingInMP.forEach((ref, idx) => {
+          console.warn(`   ${idx + 1}. ${ref} (del CSV: "${parsed.find(p => p.ref.toUpperCase() === ref)?.ref}")`);
+        });
+        console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
       }
       
       if (missingInComboTable.length > 0) {
-        console.warn(`⚠️ [COMBOS] ${missingInComboTable.length} combos del CSV NO tienen definición en tabla 'combo':`, missingInComboTable);
+        console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        console.warn(`⚠️ [COMBOS CSV] ${missingInComboTable.length} combos del CSV NO tienen definición en tabla 'combo':`);
+        console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        missingInComboTable.forEach((ref, idx) => {
+          console.warn(`   ${idx + 1}. ${ref}`);
+        });
+        console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      }
+      
+      // Log de combos encontrados y aplicados
+      console.log(`\n✅ [COMBOS CSV] ${appliedCount} combos aplicados correctamente:`);
+      parsed.filter(p => foundInMP.has(p.ref.toUpperCase())).slice(0, 10).forEach((combo, idx) => {
+        console.log(`   ${idx + 1}. ${combo.ref} → condicion_inicial: ${combo.condicion_inicial}`);
+      });
+      if (appliedCount > 10) {
+        console.log(`   ... y ${appliedCount - 10} más\n`);
       }
       
     } catch (error) {
