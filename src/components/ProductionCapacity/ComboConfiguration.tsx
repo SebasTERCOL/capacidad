@@ -863,6 +863,12 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       setCurrentStep('Agregando combos sin pedidos...');
       
       // Agregar TODOS los combos con condicion_inicial > 0, incluso sin pedidos
+      let combosWithOrderCount = 0;
+      let combosWithoutOrderCount = 0;
+      
+      // Contar combos CON pedido (ya están en referenceMap)
+      combosWithOrderCount = referenceMap.size;
+      
       (allComboTimes || []).forEach((comboTime: any) => {
         if (comboTime.condicion_inicial > 0 && !referenceMap.has(comboTime.ref)) {
           console.log(`📦 [COMBO CONFIG] Agregando combo sin pedido: ${comboTime.ref} (condición inicial: ${comboTime.condicion_inicial})`);
@@ -887,6 +893,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
             quantityToProduce: comboTime.condicion_inicial,
             initialQuantity: comboTime.condicion_inicial
           });
+          
+          combosWithoutOrderCount++;
         }
       });
       
@@ -921,9 +929,11 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       
       console.log(`✅ [COMBO CONFIG] ${referenceArray.length} referencias -CMB identificadas`);
       
+      const totalCombos = referenceArray.length;
+      
       if (referenceArray.length > 0) {
         toast.success("Combos calculados", {
-          description: `Se identificaron ${referenceArray.length} referencia(s) -CMB`,
+          description: `Referencias -CMB con pedido: ${combosWithOrderCount} | Combos adicionales (condición inicial > 0): ${combosWithoutOrderCount} | Total en vista: ${totalCombos}`,
         });
       }
       
