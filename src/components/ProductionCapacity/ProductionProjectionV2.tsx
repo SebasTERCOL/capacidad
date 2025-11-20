@@ -136,6 +136,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return all;
   };
 
+  // Procesos que deben ignorar el inventario (IDs: 1, 2, 70, 80)
+  const EXCLUDED_PROCESS_IDS = [1, 2, 70, 80]; // Tapas, Horno, Lavado, Pintura
+
   // Normalización de nombres de proceso y filtros de exclusión
   const normalizeProcessName = (name: string) => {
     if (!name) return name;
