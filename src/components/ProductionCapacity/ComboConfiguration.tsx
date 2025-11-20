@@ -662,6 +662,26 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     setError(null);
     setProgress(0);
     
+    // 🎯 DIAGNÓSTICO: Referencias específicas que reportó el usuario
+    const TARGET_REFS = new Set([
+      'CMB.BS42R.V1', 'CMB.CN02.V2', 'CMB.CN04EP.V2', 'CMB.CN06R.V1', 'CMB.CN08E-75G.V1',
+      'CMB.CN12-125.V2', 'CMB.CN12R.V1', 'CMB.CN12RG.V1', 'CMB.CN12RT.V1', 'CMB.CN12RTG.V1',
+      'CMB.CN18R.V1', 'CMB.CN18RG.V1', 'CMB.CN18RT.V1', 'CMB.CN18RTG.V1', 'CMB.CN24R.V1',
+      'CMB.CN24RG.V1', 'CMB.CN24RT.V1', 'CMB.CN24RTG.V1', 'CMB.CN30R.V1', 'CMB.CN30RG.V1',
+      'CMB.CN30RT.V1', 'CMB.CN30RTG.V1', 'CMB.CN36R.V1', 'CMB.CN36RG.V1', 'CMB.CN36RT.V1',
+      'CMB.CN36RTG.V1', 'CMB.CN42R.V1', 'CMB.CN42RG.V1', 'CMB.CN42RT.V1', 'CMB.CN42RTG.V1',
+      'CMB.CN8-6.V2', 'CMB.CNCA40.V1M', 'CMB.CNCA70.V1M', 'CMB.CNCE125GV.V1', 'CMB.CNCE2515.V1',
+      'CMB.CNCE3010.V2', 'CMB.CNCE3015.V2', 'CMB.CNCE40.V1', 'CMB.CNCE50.V2', 'CMB.CNCPAU506G.V1',
+      'CMB.CNCPAU506G-E.V1', 'CMB.CNGAP100G.V1', 'CMB.CNGAP7030G.V1', 'CMB.CNGAP70G.V1',
+      'CMB.DFCA30.V1M', 'CMB.DFCA40.V1M', 'CMB.DFCA60.V1M', 'CMB.DFCA70.V1M', 'CMB.DFGA100.V1',
+      'CMB.DFGA70.V1', 'CMB.DFTOTA.V1', 'CMB.PUERTA-GAP70.V1', 'CMB.T1230RT.V1', 'CMB.T2442RT.V2',
+      'CMB.TAPA18-125.V2', 'CMB.TAPA18R.V1', 'CMB.TAPA24R.V1', 'CMB.TAPA30RT.V1', 'CMB.TAPA36RT.V1',
+      'CMB.TAPA42RT.V1', 'CMB.TAPA6R.V1', 'CMB.TAPA-GA100.V2', 'CMB.TAPA-GA70.V2', 'CMB.TAPAPAU506.V1',
+      'CMB.TAPAPAU506-E.V1', 'CMB.TCE125TXGV.V1', 'CMB.T-CE2525.V2', 'CMB.T-CE4040.V2',
+      'CMB.T-CE6060.V2', 'CMB.T-CT4040.V2', 'CMB.TSCA30.V1M', 'CMB.TSCA40.V1M', 'CMB.TSCA50.V1M',
+      'CMB.TSCA60.V1M', 'CMB.TSCA70.V1M', 'CMB.TSCA80.V1M', 'CMB.TSGA7030G.V1'
+    ]);
+    
     try {
       console.log('🔧 [COMBO CONFIG] Iniciando cálculo de combos...');
       console.log(`📋 [COMBO CONFIG] Procesando ${data.length} referencias del pedido`);
@@ -753,6 +773,33 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       }
       
       console.log(`✅ Cargados ${allComboRelations?.length || 0} relaciones y ${allComboTimes?.length || 0} tiempos`);
+      
+      // 🎯 DIAGNÓSTICO PASO 1: Verificar cuáles de las 77 referencias están en allComboTimes
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🔍 [DIAGNÓSTICO] Verificando 77 referencias reportadas...');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+      
+      const foundTargetRefs: string[] = [];
+      const missingTargetRefs: string[] = [];
+      
+      TARGET_REFS.forEach(targetRef => {
+        const found = (allComboTimes || []).find((t: any) => t.ref.toUpperCase() === targetRef.toUpperCase());
+        if (found) {
+          foundTargetRefs.push(targetRef);
+          console.log(`✅ [DIAGNÓSTICO] ${targetRef} encontrado en allComboTimes | condicion_inicial: ${found.condicion_inicial || 0} | sam: ${found.sam || 0}`);
+        } else {
+          missingTargetRefs.push(targetRef);
+          console.log(`❌ [DIAGNÓSTICO] ${targetRef} NO encontrado en allComboTimes (machines_processes con id_process=20)`);
+        }
+      });
+      
+      console.log(`\n📊 [DIAGNÓSTICO] Resumen 77 referencias:`);
+      console.log(`   ✅ Encontradas en machines_processes (Punzonado): ${foundTargetRefs.length}`);
+      console.log(`   ❌ NO encontradas: ${missingTargetRefs.length}`);
+      if (missingTargetRefs.length > 0) {
+        console.log(`   ❌ Faltantes:`, missingTargetRefs);
+      }
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
       
       setProgress(65);
       setCurrentStep('Procesando datos en memoria...');
@@ -897,6 +944,46 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           combosWithoutOrderCount++;
         }
       });
+      
+      // 🎯 DIAGNÓSTICO PASO 2: Verificar cuáles de las 77 referencias quedaron en referenceMap
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🔍 [DIAGNÓSTICO] Verificando referencias en referenceMap final...');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+      
+      const targetRefsInMap: string[] = [];
+      const targetRefsNotInMap: string[] = [];
+      
+      TARGET_REFS.forEach(targetRef => {
+        const refKey = targetRef.toUpperCase();
+        let found = false;
+        
+        // Buscar en el mapa (puede tener diferencias de mayúsculas)
+        for (const [key, value] of referenceMap.entries()) {
+          if (key.toUpperCase() === refKey) {
+            found = true;
+            targetRefsInMap.push(targetRef);
+            console.log(`✅ [DIAGNÓSTICO] ${targetRef} en referenceMap | quantityToProduce: ${value.quantityToProduce} | initialQuantity: ${value.initialQuantity} | totalRequired: ${value.totalRequired}`);
+            break;
+          }
+        }
+        
+        if (!found) {
+          targetRefsNotInMap.push(targetRef);
+          console.log(`❌ [DIAGNÓSTICO] ${targetRef} NO está en referenceMap (no se mostrará en la interfaz)`);
+        }
+      });
+      
+      console.log(`\n📊 [DIAGNÓSTICO] Resumen final de 77 referencias:`);
+      console.log(`   ✅ En referenceMap (se mostrarán): ${targetRefsInMap.length}`);
+      console.log(`   ❌ NO en referenceMap (NO se mostrarán): ${targetRefsNotInMap.length}`);
+      if (targetRefsNotInMap.length > 0) {
+        console.log(`   ❌ No mostradas:`, targetRefsNotInMap);
+        console.log(`\n💡 [DIAGNÓSTICO] Razones posibles por las que no aparecen:`);
+        console.log(`   1. No tienen condicion_inicial > 0 en machines_processes`);
+        console.log(`   2. No tienen entrada en la tabla 'combo' (no hay definición de componentes)`);
+        console.log(`   3. La referencia en el CSV tiene diferencias de formato (espacios, mayúsculas, etc.)`);
+      }
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
       
       setProgress(95);
       setCurrentStep('Finalizando cálculo de combos...');
