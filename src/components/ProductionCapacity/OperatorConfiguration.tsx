@@ -65,6 +65,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>();
   const [workingDays, setWorkingDays] = useState<number>(0);
   const [customAvailableHours, setCustomAvailableHours] = useState<number>(0);
+  const [calendarPopoverOpen, setCalendarPopoverOpen] = useState(false);
 
   // Calcular horas disponibles para el mes seleccionado (3 turnos - estándar)
   const calculateAvailableHours = (month: number, year: number): number => {
@@ -435,18 +436,21 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
             <div className="flex gap-4">
               <Button
                 variant={dateRangeMode === 'monthly' ? 'default' : 'outline'}
-                onClick={() => setDateRangeMode('monthly')}
                 className="flex-1"
+                onClick={() => {
+                  setDateRangeMode('monthly');
+                  setCalendarPopoverOpen(false);
+                }}
               >
-                <CalendarIcon className="mr-2 h-4 w-4" />
+                <CalendarIcon className="h-4 w-4 mr-2" />
                 Mes Completo
               </Button>
               <Button
                 variant={dateRangeMode === 'custom' ? 'default' : 'outline'}
-                onClick={() => setDateRangeMode('custom')}
                 className="flex-1"
+                onClick={() => setDateRangeMode('custom')}
               >
-                <CalendarRange className="mr-2 h-4 w-4" />
+                <CalendarRange className="h-4 w-4 mr-2" />
                 Rango Personalizado
               </Button>
             </div>
@@ -490,7 +494,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
           ) : (
             <div className="space-y-4">
               <Label>Seleccionar Rango de Fechas</Label>
-              <Popover>
+              <Popover open={calendarPopoverOpen} onOpenChange={setCalendarPopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
