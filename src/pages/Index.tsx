@@ -117,6 +117,8 @@ const Index = () => {
         return operatorConfig ? (
           <ProductionProjectionV2
             data={adjustedData.length > 0 ? adjustedData : productionData}
+            originalData={productionData}
+            useInventory={useInventory}
             operatorConfig={operatorConfig}
             overtimeConfig={overtimeConfig}
             comboData={comboConfig}
