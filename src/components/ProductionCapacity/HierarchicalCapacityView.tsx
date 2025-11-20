@@ -87,10 +87,17 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
     }
     setExpandedMachines(newExpanded);
   };
-  const getOccupancyVariant = (occupancy: number) => {
-    if (occupancy >= 90) return 'destructive';
-    if (occupancy >= 70) return 'secondary';
-    return 'default';
+  const getCapacityColorClass = (percentage: number) => {
+    if (percentage >= 100) {
+      return 'bg-capacity-critical text-capacity-critical-foreground border-capacity-critical';
+    }
+    if (percentage >= 80) {
+      return 'bg-capacity-high text-capacity-high-foreground border-capacity-high';
+    }
+    if (percentage >= 40) {
+      return 'bg-capacity-medium text-capacity-medium-foreground border-capacity-medium';
+    }
+    return 'bg-capacity-low text-capacity-low-foreground border-capacity-low';
   };
   const formatTime = (minutes: number): string => {
     const hours = Math.floor(minutes / 60);
@@ -229,7 +236,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>}
-          <Badge variant={getOccupancyVariant(process.totalOccupancy)} className="text-sm my-0 rounded-none">
+          <Badge className={getCapacityColorClass(process.totalOccupancy) + " text-sm my-0 rounded-none"}>
             {process.totalOccupancy.toFixed(1)}% Ocupación
             {process.sharedOperatorsWith ? <>
                 {' '}({formatTime(process.totalTime)} requerido)
@@ -272,7 +279,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                         <p>Compartida con: {machine.sharedWith?.join(', ')}</p>
                                       </TooltipContent>
                                     </Tooltip>}
-                  <Badge variant={getOccupancyVariant(machine.occupancy)} className="text-xs">
+                  <Badge className={getCapacityColorClass(machine.occupancy) + " text-xs"}>
                     {machine.occupancy.toFixed(1)}% - {formatTime(machine.totalTime)} / {formatTime(machine.capacity)}
                   </Badge>
                   {machine.isShared && machine.totalMachineTime && machine.totalMachineTime !== machine.totalTime && <span className="text-xs text-muted-foreground">
@@ -343,7 +350,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                       <span className="text-muted-foreground">
                                         Tiempo: <span className="font-medium text-foreground">{formatTime(ref.tiempoTotal)}</span>
                                       </span>
-                                      <Badge variant={getOccupancyVariant(ref.ocupacionPorcentaje)} className="text-xs">
+                                      <Badge className={getCapacityColorClass(ref.ocupacionPorcentaje) + " text-xs"}>
                                         {ref.ocupacionPorcentaje.toFixed(1)}%
                                       </Badge>
                                       {ref.alerta && <span className={`text-xs ${ref.sam === 0 || ref.alerta.toLowerCase().includes('falta sam') ? 'text-destructive' : 'text-muted-foreground'}`}>

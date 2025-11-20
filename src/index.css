@@ -51,6 +51,16 @@ All colors MUST be HSL.
     --tercol-black: 0 0% 10%;
     --tercol-white: 0 0% 100%;
     --tercol-gray: 0 0% 95%;
+    
+    /* Capacity color ranges */
+    --capacity-low: 0 0% 60%;
+    --capacity-low-foreground: 0 0% 10%;
+    --capacity-medium: 142 71% 45%;
+    --capacity-medium-foreground: 0 0% 100%;
+    --capacity-high: 36 100% 50%;
+    --capacity-high-foreground: 0 0% 10%;
+    --capacity-critical: 0 85% 60%;
+    --capacity-critical-foreground: 0 0% 100%;
   }
 
   .dark {
@@ -95,6 +105,16 @@ All colors MUST be HSL.
     --tercol-black: 0 0% 10%;
     --tercol-white: 0 0% 100%;
     --tercol-gray: 0 0% 20%;
+    
+    /* Capacity color ranges */
+    --capacity-low: 0 0% 40%;
+    --capacity-low-foreground: 0 0% 90%;
+    --capacity-medium: 142 71% 45%;
+    --capacity-medium-foreground: 0 0% 100%;
+    --capacity-high: 36 100% 50%;
+    --capacity-high-foreground: 0 0% 10%;
+    --capacity-critical: 0 85% 60%;
+    --capacity-critical-foreground: 0 0% 100%;
   }
 }
 
