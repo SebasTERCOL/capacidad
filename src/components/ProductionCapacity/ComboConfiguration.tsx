@@ -35,6 +35,7 @@ export interface ReferenceCMB {
   availableCombos: ComboOption[];
   selectedCombo: string;
   quantityToProduce: number;
+  initialQuantity: number; // Valor desde condicion_inicial de machines_processes
 }
 
 export interface ComboSuggestion {
@@ -573,13 +574,6 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   const [showComboManagement, setShowComboManagement] = useState(false);
   const [expandedReferences, setExpandedReferences] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'by-reference' | 'by-combo'>('by-reference');
-  
-  // Estados para carga CSV
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvData, setCsvData] = useState<{ combo: string; cantidad: number }[]>([]);
-  const [csvLoading, setCsvLoading] = useState(false);
-  const [showComparisonReport, setShowComparisonReport] = useState(false);
-  const [comparisonReport, setComparisonReport] = useState<any[]>([]);
 
   useEffect(() => {
     calculateComboSuggestions();
@@ -917,12 +911,10 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       if (ref.referenceId === referenceId) {
         const newCombo = ref.availableCombos.find(c => c.comboName === newComboName);
         if (newCombo) {
-          // Si el requerido es 0, no producir combos
-          const suggestedQty = ref.totalRequired === 0 ? 0 : Math.ceil(ref.totalRequired / newCombo.quantityProducedPerCombo);
+          // Mantener la cantidad actual al cambiar de combo
           return {
             ...ref,
-            selectedCombo: newComboName,
-            quantityToProduce: suggestedQty
+            selectedCombo: newComboName
           };
         }
       }
@@ -980,15 +972,15 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     // Paso 1: Usar valores actuales como punto de partida
     const currentState = references.map(ref => ({
       ...ref,
-      initialQuantity: ref.quantityToProduce
+      initialQuantityTemp: ref.quantityToProduce
     }));
     
     console.log('📊 Estado inicial (valores actuales):');
     currentState.forEach(ref => {
       const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
-      if (selectedCombo && ref.initialQuantity > 0) {
-        const produced = ref.initialQuantity * selectedCombo.quantityProducedPerCombo;
-        console.log(`   ${ref.referenceId}: ${ref.initialQuantity} combos → ${produced} unidades (req: ${ref.totalRequired})`);
+      if (selectedCombo && ref.initialQuantityTemp > 0) {
+        const produced = ref.initialQuantityTemp * selectedCombo.quantityProducedPerCombo;
+        console.log(`   ${ref.referenceId}: ${ref.initialQuantityTemp} combos → ${produced} unidades (req: ${ref.totalRequired})`);
       }
     });
     
@@ -1289,22 +1281,6 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     setShowComparisonReport(true);
   };
 
-  const handleSetMinimumCombos = (referenceId: string) => {
-    setReferences(prev => 
-      prev.map(ref => {
-        if (ref.referenceId === referenceId) {
-          const selectedComboOption = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
-          if (selectedComboOption) {
-            const previouslyProduced = getProducedByPreviousReferences(ref.referenceId);
-            const adjustedRequired = Math.max(0, ref.totalRequired - previouslyProduced);
-            const minCombos = Math.ceil(adjustedRequired / selectedComboOption.quantityProducedPerCombo);
-            return { ...ref, quantityToProduce: minCombos };
-          }
-        }
-        return ref;
-      })
-    );
-  };
 
   const toggleReferenceExpansion = (referenceId: string) => {
     setExpandedReferences(prev => {
