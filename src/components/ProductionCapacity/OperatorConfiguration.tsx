@@ -4,17 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Users, Calendar as CalendarIcon, Clock, Settings, AlertTriangle, Database, CalendarRange } from "lucide-react";
+import { Users, Calendar as CalendarIcon, Clock, Settings, AlertTriangle, Database } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ReferenceManager } from "./ReferenceManager";
 import { getColombianHolidays, isColombianHoliday, formatHolidayDate } from "@/lib/colombianHolidays";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format, eachDayOfInterval } from "date-fns";
-import { es } from "date-fns/locale";
-import { DateRange } from "react-day-picker";
 
 export interface MachineConfig {
   id: number;
@@ -59,13 +54,6 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isReferenceManagerOpen, setIsReferenceManagerOpen] = useState(false);
-  
-  // Estados para selector de rango de fechas
-  const [dateRangeMode, setDateRangeMode] = useState<'monthly' | 'custom'>('monthly');
-  const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>();
-  const [workingDays, setWorkingDays] = useState<number>(0);
-  const [customAvailableHours, setCustomAvailableHours] = useState<number>(0);
-  const [calendarPopoverOpen, setCalendarPopoverOpen] = useState(false);
 
   // Calcular horas disponibles para el mes seleccionado (3 turnos - estándar)
   const calculateAvailableHours = (month: number, year: number): number => {
@@ -425,39 +413,12 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Calendar className="h-5 w-5" />
+            <CalendarIcon className="h-5 w-5" />
             Período de Análisis
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Selector de Modo */}
-          <div className="space-y-4 mb-6">
-            <Label>Modo de Cálculo de Capacidad</Label>
-            <div className="flex gap-4">
-              <Button
-                variant={dateRangeMode === 'monthly' ? 'default' : 'outline'}
-                className="flex-1"
-                onClick={() => {
-                  setDateRangeMode('monthly');
-                  setCalendarPopoverOpen(false);
-                }}
-              >
-                <CalendarIcon className="h-4 w-4 mr-2" />
-                Mes Completo
-              </Button>
-              <Button
-                variant={dateRangeMode === 'custom' ? 'default' : 'outline'}
-                className="flex-1"
-                onClick={() => setDateRangeMode('custom')}
-              >
-                <CalendarRange className="h-4 w-4 mr-2" />
-                Rango Personalizado
-              </Button>
-            </div>
-          </div>
-
-          {dateRangeMode === 'monthly' ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <Label htmlFor="workMonth">Mes</Label>
               <Input
@@ -491,95 +452,6 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
               </div>
             </div>
           </div>
-          ) : dateRangeMode === 'custom' ? (
-            <div className="space-y-4">
-              <Label>Seleccionar Rango de Fechas</Label>
-              <Popover open={calendarPopoverOpen} onOpenChange={setCalendarPopoverOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={`w-full justify-start text-left font-normal ${
-                      !customDateRange && "text-muted-foreground"
-                    }`}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {customDateRange?.from ? (
-                      customDateRange.to ? (
-                        <>
-                          {format(customDateRange.from, 'dd/MM/yyyy', { locale: es })} - {format(customDateRange.to, 'dd/MM/yyyy', { locale: es })}
-                        </>
-                      ) : (
-                        format(customDateRange.from, 'dd/MM/yyyy', { locale: es })
-                      )
-                    ) : (
-                      <span>Seleccione un rango de fechas</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="range"
-                    selected={customDateRange}
-                    onSelect={setCustomDateRange}
-                    numberOfMonths={2}
-                    locale={es}
-                    className="pointer-events-auto"
-                  />
-                </PopoverContent>
-              </Popover>
-              
-              {customDateRange?.from && customDateRange?.to && (
-                <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-4 rounded-lg space-y-3">
-                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Resumen del Rango Seleccionado</p>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Desde:</span>
-                      <p className="font-medium">{format(customDateRange.from, 'dd/MM/yyyy', { locale: es })}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Hasta:</span>
-                      <p className="font-medium">{format(customDateRange.to, 'dd/MM/yyyy', { locale: es })}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Días laborables:</span>
-                      <p className="font-medium text-green-600">{workingDays}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Horas disponibles:</span>
-                      <p className="font-medium text-primary text-lg">{customAvailableHours.toFixed(2)} h</p>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-blue-200 dark:border-blue-800">
-                    <p className="text-xs text-blue-800 dark:text-blue-200">
-                      * Se excluyen domingos y días festivos colombianos del cálculo
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : null}
-          
-          {/* Información de días festivos solo para rango personalizado si se requiere en el futuro
-              Actualmente se oculta en modo "Mes Completo" para evitar calendarios repetitivos. */}
-          {false && dateRangeMode === 'monthly' && (
-            <div className="col-span-full mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
-              <div className="flex items-center gap-2 mb-2">
-                <Calendar className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium text-blue-600">
-                  Días festivos en {new Date(workYear, workMonth - 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
-                </span>
-              </div>
-              <div className="text-xs text-blue-800 dark:text-blue-200">
-                {(() => {
-                  const holidays = getColombianHolidays(workYear);
-                  const monthHolidays = holidays.filter(h => h.getMonth() === workMonth - 1);
-                  return monthHolidays.length > 0 
-                    ? monthHolidays.map(h => formatHolidayDate(h)).join('; ')
-                    : 'No hay días festivos este mes';
-                })()}
-              </div>
-            </div>
-          )}
 
         </CardContent>
       </Card>
