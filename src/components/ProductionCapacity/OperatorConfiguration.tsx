@@ -491,53 +491,42 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
               </div>
             </div>
           </div>
-          ) : (
+          ) : dateRangeMode === 'custom' ? (
             <div className="space-y-4">
               <Label>Seleccionar Rango de Fechas</Label>
-              {dateRangeMode === 'custom' ? (
-                <Popover open={calendarPopoverOpen} onOpenChange={setCalendarPopoverOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={`w-full justify-start text-left font-normal ${
-                        !customDateRange && "text-muted-foreground"
-                      }`}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {customDateRange?.from ? (
-                        customDateRange.to ? (
-                          <>
-                            {format(customDateRange.from, 'dd/MM/yyyy', { locale: es })} - {format(customDateRange.to, 'dd/MM/yyyy', { locale: es })}
-                          </>
-                        ) : (
-                          format(customDateRange.from, 'dd/MM/yyyy', { locale: es })
-                        )
+              <Popover open={calendarPopoverOpen} onOpenChange={setCalendarPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={`w-full justify-start text-left font-normal ${
+                      !customDateRange && "text-muted-foreground"
+                    }`}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {customDateRange?.from ? (
+                      customDateRange.to ? (
+                        <>
+                          {format(customDateRange.from, 'dd/MM/yyyy', { locale: es })} - {format(customDateRange.to, 'dd/MM/yyyy', { locale: es })}
+                        </>
                       ) : (
-                        <span>Seleccione un rango de fechas</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="range"
-                      selected={customDateRange}
-                      onSelect={setCustomDateRange}
-                      numberOfMonths={2}
-                      locale={es}
-                      className="pointer-events-auto"
-                    />
-                  </PopoverContent>
-                </Popover>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal text-muted-foreground"
-                  disabled
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  <span>Seleccione un rango de fechas</span>
-                </Button>
-              )}
+                        format(customDateRange.from, 'dd/MM/yyyy', { locale: es })
+                      )
+                    ) : (
+                      <span>Seleccione un rango de fechas</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="range"
+                    selected={customDateRange}
+                    onSelect={setCustomDateRange}
+                    numberOfMonths={2}
+                    locale={es}
+                    className="pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
               
               {customDateRange?.from && customDateRange?.to && (
                 <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-4 rounded-lg space-y-3">
@@ -568,7 +557,7 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
                 </div>
               )}
             </div>
-          )}
+          ) : null}
           
           {dateRangeMode === 'monthly' && (
             <div className="col-span-full mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
