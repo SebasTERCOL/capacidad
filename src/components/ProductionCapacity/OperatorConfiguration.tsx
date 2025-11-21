@@ -559,25 +559,28 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
             </div>
           ) : null}
           
-          {dateRangeMode === 'monthly' && (
+          {/* Información de días festivos solo para rango personalizado si se requiere en el futuro
+              Actualmente se oculta en modo "Mes Completo" para evitar calendarios repetitivos. */}
+          {false && dateRangeMode === 'monthly' && (
             <div className="col-span-full mt-2 p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <Calendar className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-600">
-                Días festivos en {new Date(workYear, workMonth - 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
-              </span>
+              <div className="flex items-center gap-2 mb-2">
+                <Calendar className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-600">
+                  Días festivos en {new Date(workYear, workMonth - 1).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+              <div className="text-xs text-blue-800 dark:text-blue-200">
+                {(() => {
+                  const holidays = getColombianHolidays(workYear);
+                  const monthHolidays = holidays.filter(h => h.getMonth() === workMonth - 1);
+                  return monthHolidays.length > 0 
+                    ? monthHolidays.map(h => formatHolidayDate(h)).join('; ')
+                    : 'No hay días festivos este mes';
+                })()}
+              </div>
             </div>
-            <div className="text-xs text-blue-800 dark:text-blue-200">
-              {(() => {
-                const holidays = getColombianHolidays(workYear);
-                const monthHolidays = holidays.filter(h => h.getMonth() === workMonth - 1);
-                return monthHolidays.length > 0 
-                  ? monthHolidays.map(h => formatHolidayDate(h)).join('; ')
-                  : 'No hay días festivos este mes';
-              })()}
-            </div>
-          </div>
           )}
+
         </CardContent>
       </Card>
 
