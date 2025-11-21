@@ -469,10 +469,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           
           console.log(`     · Proceso original: ${processNameOriginal} (ID: ${mp.id_process}) -> Normalizado: ${processName}`);
 
-          // Para procesos especiales (Lavado, Pintura, Horno, Tapas) usar SIEMPRE
-          // la cantidad base sin inventario cuando useInventory=true
+          // Para procesos excluidos (Lavado id=70, Pintura id=80, Horno id=2, Tapas id=1) 
+          // usar SIEMPRE la cantidad base sin inventario
           const baseQty = rawMainReferences.get(ref) ?? quantity;
-          const effectiveQuantity = useInventory && isExcludedProcess ? baseQty : quantity;
+          const effectiveQuantity = isExcludedProcess ? baseQty : quantity;
+          
+          if (isExcludedProcess && useInventory) {
+            console.log(`     🔒 Proceso excluido (ID: ${mp.id_process}): Usando cantidad base ${baseQty} en lugar de ${quantity}`);
+          }
           
           if (!processGroups.has(processName)) {
             const processConfig = findProcessConfig(processName, operatorConfig);
@@ -588,7 +592,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // Cantidad base para este componente (sin inventario) si existe
           const rawEntry = rawConsolidatedByNorm.get(normId);
           const baseQty = rawEntry ? rawEntry.quantity : quantity;
-          const effectiveQuantity = useInventory && isExcludedProcess ? baseQty : quantity;
+          const effectiveQuantity = isExcludedProcess ? baseQty : quantity;
+          
+          if (isExcludedProcess && useInventory) {
+            console.log(`     🔒 Componente en proceso excluido (ID: ${mp.id_process}): Usando cantidad base ${baseQty} en lugar de ${quantity}`);
+          }
 
           if (existingComponent) {
             // No sumar aquí: la cantidad ya fue consolidada a nivel global (evitar duplicar por cada máquina)
