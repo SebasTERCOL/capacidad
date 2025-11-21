@@ -1408,7 +1408,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           <Card>
             <CardContent className="pt-6">
               <div className="space-y-2">
-                  {references.map((ref) => {
+                  {/* Agrupar referencias por referenceId para evitar duplicados */}
+                  {Array.from(new Map(references.map(ref => [ref.referenceId, ref])).values()).map((ref) => {
                     const selectedComboOption = ref.availableCombos.find(
                       c => c.comboName === ref.selectedCombo
                     );
