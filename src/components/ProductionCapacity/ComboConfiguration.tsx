@@ -818,7 +818,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       // Crear mapa de componente -> combos disponibles
       const componentToCombosMap = new Map<string, string[]>();
       (allComboRelations || []).forEach((rel: any) => {
-        const compId = rel.component_id;
+        const compId = (rel.component_id || "").trim().toUpperCase();
         if (!componentToCombosMap.has(compId)) {
           componentToCombosMap.set(compId, []);
         }
@@ -867,7 +867,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
             cycleTime,
             quantityProducedPerCombo,
             allComponents: comboComponents.map(c => ({
-              componentId: c.component_id,
+              componentId: (c.component_id || "").trim().toUpperCase(),
               quantityPerCombo: c.cantidad
             }))
           };
@@ -922,7 +922,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           
           // Para cada componente que produce este combo
           comboComponents.forEach((component: any) => {
-            const componentId = component.component_id;
+            const componentId = (component.component_id || "").trim().toUpperCase();
             
             // Si ya existe esta referencia en el mapa, actualizar su quantityToProduce si es necesario
             if (referenceMap.has(componentId)) {
@@ -942,7 +942,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                 cycleTime: comboTime.sam || 0,
                 quantityProducedPerCombo: component.cantidad || 1,
                 allComponents: comboComponents.map((c: any) => ({
-                  componentId: c.component_id,
+                  componentId: (c.component_id || "").trim().toUpperCase(),
                   quantityPerCombo: c.cantidad
                 }))
               };
