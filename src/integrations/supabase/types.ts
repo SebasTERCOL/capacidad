@@ -374,14 +374,17 @@ export type Database = {
       processes: {
         Row: {
           id: number
+          inventario: boolean | null
           name: string
         }
         Insert: {
           id?: never
+          inventario?: boolean | null
           name: string
         }
         Update: {
           id?: never
+          inventario?: boolean | null
           name?: string
         }
         Relationships: []

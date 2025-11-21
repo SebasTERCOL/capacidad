@@ -142,9 +142,6 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return all;
   };
 
-  // Procesos que deben ignorar el inventario (IDs: 1, 2, 70, 80)
-  const EXCLUDED_PROCESS_IDS = [1, 2, 70, 80]; // Tapas, Horno, Lavado, Pintura
-
   // Normalización de nombres de proceso y filtros de exclusión
   const normalizeProcessName = (name: string) => {
     if (!name) return name;
@@ -329,15 +326,27 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     setProgress({ current: 0, total: 6, currentRef: 'Cargando datos...' });
     
     try {
+      // 0. Cargar procesos excluidos dinámicamente desde la columna 'inventario' de la tabla 'processes'
+      setProgress({ current: 0, total: 7, currentRef: 'Cargando configuración...' });
+      const { data: excludedProcesses } = await supabase
+        .from('processes')
+        .select('id, name')
+        .eq('inventario', false);
+      
+      const excludedIds = excludedProcesses?.map(p => p.id) || [];
+      const excludedNames = excludedProcesses?.map(p => `${p.name} (${p.id})`).join(', ') || 'Ninguno';
+      
+      console.log(`🚫 Procesos excluidos de ajuste de inventario (inventario=false): ${excludedNames}`);
+      
       // 1. Cargar todos los datos
-      setProgress({ current: 1, total: 6, currentRef: 'Cargando BOM...' });
+      setProgress({ current: 1, total: 7, currentRef: 'Cargando BOM...' });
       const bomData = await loadAllBomData();
       
-      setProgress({ current: 2, total: 6, currentRef: 'Cargando procesos...' });
+      setProgress({ current: 2, total: 7, currentRef: 'Cargando procesos...' });
       const machinesData = await loadAllMachinesProcesses();
 
       // 2. FASE DE CONSOLIDACIÓN: Consolidar componentes evitando duplicación
-      setProgress({ current: 3, total: 6, currentRef: 'Consolidando componentes...' });
+      setProgress({ current: 3, total: 7, currentRef: 'Consolidando componentes...' });
       const consolidatedComponents = new Map<string, number>();
       const mainReferences = new Map<string, number>();
 
@@ -441,7 +450,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       });
 
       // 3. FASE DE AGRUPACIÓN POR PROCESO: Agrupar por procesos y aplicar distribución inteligente
-      setProgress({ current: 4, total: 6, currentRef: 'Agrupando por procesos...' });
+      setProgress({ current: 4, total: 7, currentRef: 'Agrupando por procesos...' });
       
       const processGroups = new Map<string, {
         processName: string;
@@ -459,7 +468,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         for (const mp of machinesProcesses) {
           const processName = resolveProcessName(mp);
           const processNameOriginal = mp.processes.name;
-          const isExcludedProcess = EXCLUDED_PROCESS_IDS.includes(mp.id_process);
+          const isExcludedProcess = excludedIds.includes(mp.id_process);
           
           // Saltar procesos excluidos por nombre (reclasificación, etc.)
           if (processName === null) {
@@ -544,7 +553,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         for (const mp of machinesProcesses) {
           const processName = resolveProcessName(mp);
           const processNameOriginal = mp.processes.name;
-          const isExcludedProcess = EXCLUDED_PROCESS_IDS.includes(mp.id_process);
+          const isExcludedProcess = excludedIds.includes(mp.id_process);
           
           // Saltar procesos excluidos
           if (processName === null) {
@@ -622,7 +631,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // 3.5. INTEGRACIÓN DE COMBOS: Agregar combos seleccionados al proceso PUNZONADO
       if (comboData && comboData.length > 0) {
         console.log('\n🎯 === INTEGRANDO COMBOS AL ANÁLISIS ===');
-        setProgress({ current: 4, total: 6, currentRef: 'Integrando combos...' });
+        setProgress({ current: 5, total: 7, currentRef: 'Integrando combos...' });
         
         for (const combo of comboData) {
           // Saltar combos con cantidad 0
@@ -740,7 +749,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       // 4. FASE DE DISTRIBUCIÓN INTELIGENTE: Aplicar algoritmo de distribución óptima
-      setProgress({ current: 5, total: 6, currentRef: 'Aplicando distribución inteligente...' });
+      setProgress({ current: 6, total: 7, currentRef: 'Aplicando distribución inteligente...' });
       
       const results: ProjectionInfo[] = [];
       console.log('\n🧠 === APLICANDO DISTRIBUCIÓN INTELIGENTE ===');
@@ -767,7 +776,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         results.push(...workDistribution);
       }
 
-      setProgress({ current: 6, total: 6, currentRef: 'Finalizando...' });
+      setProgress({ current: 7, total: 7, currentRef: 'Finalizando...' });
       setProjection(results);
       onProjectionComplete(results);
       

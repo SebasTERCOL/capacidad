@@ -145,9 +145,6 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
     return componentsMap;
   };
 
-  // Procesos excluidos del ajuste de inventario (siempre se considera como si no hubiera inventario)
-  const EXCLUDED_PROCESS_IDS = [1, 2, 70, 80]; // Tapas, Horno, Lavado, Pintura
-
   const processInventoryAdjustment = async () => {
     setLoading(true);
     setError(null);
@@ -156,7 +153,17 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
     try {
       const totalItems = data.length;
       console.log(`📦 Iniciando ajuste de inventario para ${totalItems} referencias`);
-      console.log(`🚫 Procesos excluidos de ajuste de inventario: Tapas (1), Horno (2), Lavado (70), Pintura (80)`);
+      
+      // Cargar procesos excluidos dinámicamente desde la columna 'inventario' de la tabla 'processes'
+      const { data: excludedProcesses } = await supabase
+        .from('processes')
+        .select('id, name')
+        .eq('inventario', false);
+      
+      const excludedIds = excludedProcesses?.map(p => p.id) || [];
+      const excludedNames = excludedProcesses?.map(p => `${p.name} (${p.id})`).join(', ') || 'Ninguno';
+      
+      console.log(`🚫 Procesos excluidos de ajuste de inventario (inventario=false): ${excludedNames}`);
       
       // Paso 1: Obtener tipos de todas las referencias principales Y sus procesos asociados
       const allReferences = data.map(item => item.referencia.trim().toUpperCase());
@@ -264,7 +271,7 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             // Verificar si el componente tiene procesos excluidos
             const componentProcesses = componentProcessesMap.get(componentId);
             const hasExcludedProcess = componentProcesses ? 
-              Array.from(componentProcesses).some(processId => EXCLUDED_PROCESS_IDS.includes(processId)) : 
+              Array.from(componentProcesses).some(processId => excludedIds.includes(processId)) : 
               false;
 
             // Cantidad requerida redondeada
