@@ -903,20 +903,28 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       setProgress(90);
       setCurrentStep('Agregando combos sin pedidos...');
       
-      // Procesar combos con condicion_inicial > 0
-      // IMPORTANTE: NO agregar combos como "referencias" - en su lugar, agregar sus componentes producidos
+      // PASO A: Procesar combos con condicion_inicial > 0 - Agregar COMPONENTES producidos
       let combosWithOrderCount = 0;
       let combosWithoutOrderCount = 0;
       
       // Contar combos CON pedido (componentes ya están en referenceMap)
       combosWithOrderCount = referenceMap.size;
       
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🔧 [PASO A] Procesando COMPONENTES de combos con condicion_inicial > 0...');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+      
       (allComboTimes || []).forEach((comboTime: any) => {
         if (comboTime.condicion_inicial > 0) {
+          const comboRef = comboTime.ref.trim().toUpperCase();
           const comboComponents = comboComponentsMap.get(comboTime.ref) || [];
           
+          console.log(`\n🔍 Procesando combo: ${comboRef}`);
+          console.log(`   📊 condicion_inicial: ${comboTime.condicion_inicial}`);
+          console.log(`   📦 Componentes en tabla combo: ${comboComponents.length}`);
+          
           if (comboComponents.length === 0) {
-            console.warn(`⚠️ [COMBO CONFIG] Combo ${comboTime.ref} tiene condicion_inicial pero no tiene componentes en tabla combo`);
+            console.warn(`⚠️ Combo ${comboRef} tiene condicion_inicial pero NO tiene componentes en tabla combo`);
             return;
           }
           
@@ -930,12 +938,11 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
               
               // Si el combo actual es el seleccionado para esta referencia, asegurar que quantityToProduce incluya condicion_inicial
               if (existingRef.selectedCombo === comboTime.ref) {
-                console.log(`📦 [COMBO CONFIG] Actualizando ${componentId} con condicion_inicial de ${comboTime.ref}`);
-                // Ya se habrá establecido en el primer paso, no hacer nada
+                console.log(`   ✅ Componente ${componentId} ya existe en mapa con combo ${comboRef}`);
               }
             } else {
-              // Si no existe, crear nueva entrada SOLO si tiene condicion_inicial
-              console.log(`📦 [COMBO CONFIG] Agregando componente ${componentId} de combo sin pedido: ${comboTime.ref} (condición inicial: ${comboTime.condicion_inicial})`);
+              // Si no existe, crear nueva entrada para el componente
+              console.log(`   ➕ Agregando NUEVO componente ${componentId} de combo sin pedido directo`);
               
               const comboOption: ComboOption = {
                 comboName: comboTime.ref,
@@ -961,6 +968,61 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           });
         }
       });
+      
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🔧 [PASO B] Creando entradas DIRECTAS de combos con condicion_inicial > 0...');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+      
+      // PASO B: Crear entradas DIRECTAS para los combos (para que aparezcan explícitamente en "Por Combo")
+      (allComboTimes || []).forEach((comboTime: any) => {
+        if (comboTime.condicion_inicial > 0) {
+          const comboRef = comboTime.ref.trim().toUpperCase();
+          const comboComponents = comboComponentsMap.get(comboTime.ref) || [];
+          
+          if (comboComponents.length === 0) {
+            return; // Ya lo advertimos en PASO A
+          }
+          
+          // Verificar si ya existe una entrada con referenceId igual al nombre del combo
+          if (referenceMap.has(comboRef)) {
+            console.log(`   ⏭️  Combo ${comboRef} ya existe como entrada directa en mapa`);
+            return;
+          }
+          
+          console.log(`   ➕ Creando entrada DIRECTA para combo: ${comboRef}`);
+          console.log(`      condicion_inicial: ${comboTime.condicion_inicial}`);
+          console.log(`      sam (ciclo): ${comboTime.sam}`);
+          
+          // Crear ComboOption para este combo
+          const comboOption: ComboOption = {
+            comboName: comboTime.ref,
+            cycleTime: comboTime.sam || 0,
+            quantityProducedPerCombo: 1, // Un combo produce 1 combo
+            allComponents: comboComponents.map((c: any) => ({
+              componentId: (c.component_id || "").trim().toUpperCase(),
+              quantityPerCombo: c.cantidad
+            }))
+          };
+          
+          // Agregar entrada directa con referenceId = nombre del combo
+          referenceMap.set(comboRef, {
+            referenceId: comboRef, // ⭐ El combo MISMO es la referencia
+            totalRequired: 0, // No hay pedido directo para el combo
+            availableCombos: [comboOption],
+            selectedCombo: comboTime.ref,
+            quantityToProduce: comboTime.condicion_inicial,
+            initialQuantity: comboTime.condicion_inicial
+          });
+          
+          console.log(`   ✅ Entrada directa creada para ${comboRef}`);
+        }
+      });
+      
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('📊 [RESUMEN] Combos y componentes agregados:');
+      console.log(`   Componentes adicionales agregados (PASO A): ${combosWithoutOrderCount}`);
+      console.log(`   Total de entradas en referenceMap: ${referenceMap.size}`);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
       
       // 🎯 DIAGNÓSTICO PASO 2: Verificar cuáles de las 77 referencias quedaron en referenceMap
       console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -1031,13 +1093,18 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       setCombos(comboArray);
       onComboConfigComplete(comboArray);
       
-      console.log(`✅ [COMBO CONFIG] ${referenceArray.length} referencias -CMB identificadas`);
+      console.log(`✅ [COMBO CONFIG] ${referenceArray.length} entradas totales en referenceMap`);
       
-      const totalCombos = referenceArray.length;
+      // Contar componentes vs combos directos
+      const componentEntries = referenceArray.filter(ref => !ref.referenceId.toUpperCase().startsWith('CMB.')).length;
+      const directComboEntries = referenceArray.filter(ref => ref.referenceId.toUpperCase().startsWith('CMB.')).length;
+      
+      console.log(`   📦 Componentes: ${componentEntries}`);
+      console.log(`   🎯 Combos directos (condición inicial > 0): ${directComboEntries}`);
       
       if (referenceArray.length > 0) {
-        toast.success("Combos calculados", {
-          description: `Referencias -CMB con pedido: ${combosWithOrderCount} | Combos adicionales (condición inicial > 0): ${combosWithoutOrderCount} | Total en vista: ${totalCombos}`,
+        toast.success("Combos calculados exitosamente", {
+          description: `${componentEntries} componente(s) requerido(s) | ${directComboEntries} combo(s) con producción inicial | Total: ${referenceArray.length} entrada(s)`,
         });
       }
       
@@ -1399,7 +1466,10 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
               <div className="mb-4 p-4 bg-muted rounded-lg">
                 <div className="text-sm font-medium">Resumen Total</div>
                 <div className="text-2xl font-bold text-primary">{formatTime(totalTime)}</div>
-                <div className="text-xs text-muted-foreground">{references.length} referencia(s) -CMB</div>
+                <div className="text-xs text-muted-foreground">
+                  {references.filter(ref => !ref.referenceId.toUpperCase().startsWith('CMB.')).length} componente(s) | {' '}
+                  {references.filter(ref => ref.referenceId.toUpperCase().startsWith('CMB.')).length} combo(s) directo(s)
+                </div>
               </div>
             </CardContent>
           )}
@@ -1431,7 +1501,10 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           <Card>
             <CardContent className="pt-6">
               <div className="space-y-2">
-                  {references.map((ref) => {
+                  {/* Filtrar referencias tipo CMB.* (entradas directas de combos) para mostrar solo componentes */}
+                  {references
+                    .filter(ref => !ref.referenceId.toUpperCase().startsWith('CMB.'))
+                    .map((ref) => {
                     const selectedComboOption = ref.availableCombos.find(
                       c => c.comboName === ref.selectedCombo
                     );
