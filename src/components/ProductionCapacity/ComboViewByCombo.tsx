@@ -27,13 +27,19 @@ export const ComboViewByCombo: React.FC<ComboViewByComboProps> = ({
   references,
   onQuantityChange,
 }) => {
-  // Agrupar referencias por combo
+  // Agrupar referencias por combo usando las entradas directas de combos (CMB.*)
   const combosGrouped = React.useMemo(() => {
     const comboMap = new Map<string, ComboGrouped>();
 
-    references.forEach(ref => {
+    // Primero, tomar solo las referencias cuyo propio ID es el combo (CMB.*)
+    const directComboRefs = references.filter(ref =>
+      ref.referenceId.toUpperCase().startsWith('CMB.') &&
+      ref.quantityToProduce > 0
+    );
+
+    directComboRefs.forEach(ref => {
       const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
-      if (!selectedCombo || ref.quantityToProduce === 0) return;
+      if (!selectedCombo) return;
 
       if (!comboMap.has(ref.selectedCombo)) {
         comboMap.set(ref.selectedCombo, {
@@ -43,7 +49,7 @@ export const ComboViewByCombo: React.FC<ComboViewByComboProps> = ({
           references: [],
         });
       } else {
-        // Si el combo ya existe, solo actualizamos la cantidad si es diferente
+        // Si el combo ya existe, sincronizar cantidad total si cambió
         const comboGroup = comboMap.get(ref.selectedCombo)!;
         if (comboGroup.totalQuantity !== ref.quantityToProduce) {
           comboGroup.totalQuantity = ref.quantityToProduce;
@@ -51,18 +57,21 @@ export const ComboViewByCombo: React.FC<ComboViewByComboProps> = ({
       }
 
       const comboGroup = comboMap.get(ref.selectedCombo)!;
-      
-      // Agregar TODAS las referencias que produce este combo según allComponents
+
+      // Agregar TODAS las referencias definidas en el combo (independiente de la demanda)
       selectedCombo.allComponents.forEach(component => {
-        // Verificar si ya existe esta referencia en el grupo para evitar duplicados
         const existingRef = comboGroup.references.find(r => r.referenceId === component.componentId);
-        
+
+        const producedQuantity = ref.quantityToProduce * component.quantityPerCombo;
+
         if (!existingRef) {
-          const producedQuantity = ref.quantityToProduce * component.quantityPerCombo;
           comboGroup.references.push({
             referenceId: component.componentId,
             quantity: producedQuantity,
           });
+        } else {
+          // Acumular por si el mismo combo se procesa desde varias entradas
+          existingRef.quantity += producedQuantity;
         }
       });
     });
