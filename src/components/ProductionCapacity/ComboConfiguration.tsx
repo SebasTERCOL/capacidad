@@ -723,20 +723,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       console.log(`📦 [COMBO CONFIG] ${cmbReferences.length} referencias -CMB que requieren combos`);
       
       if (cmbReferences.length === 0) {
-        console.log('✅ [COMBO CONFIG] No hay referencias -CMB, saltando configuración de combos');
-        // Crear referencias sin combos para mostrar en la UI
-        const referencesWithoutCombos: ReferenceCMB[] = allReferences.map(ref => ({
-          referenceId: ref.ref,
-          totalRequired: ref.quantity,
-          availableCombos: [],
-          selectedCombo: '',
-          quantityToProduce: 0,
-          initialQuantity: 0
-        }));
-        setReferences(referencesWithoutCombos);
-        setLoading(false);
-        setProgress(100);
-        return;
+        console.log('⚠️ [COMBO CONFIG] No hay referencias -CMB en el pedido, pero verificando combos con condicion_inicial > 0...');
+        // NO retornar aquí - continuar para procesar combos con condicion_inicial > 0
       }
       
       setProgress(55);
