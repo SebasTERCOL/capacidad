@@ -968,7 +968,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           const comboComponents = comboComponentsMap.get(comboTime.ref) || [];
           
           if (comboComponents.length === 0) {
-            return; // Ya lo advertimos en PASO A
+            console.warn(`⚠️ Combo ${comboRef} tiene condicion_inicial > 0 pero no tiene componentes en tabla combo; se creará entrada directa SIN componentes para diagnóstico`);
           }
           
           // Verificar si ya existe una entrada con referenceId igual al nombre del combo
