@@ -141,21 +141,28 @@ export type Database = {
           cantidad: number | null
           combo: string
           component_id: string | null
-          id: number | null
+          id: number
         }
         Insert: {
           cantidad?: number | null
           combo: string
           component_id?: string | null
-          id?: number | null
+          id: number
         }
         Update: {
           cantidad?: number | null
           combo?: string
           component_id?: string | null
-          id?: number | null
+          id?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "combo_combo_fkey"
+            columns: ["combo"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["reference"]
+          },
           {
             foreignKeyName: "combo_component_id_fkey"
             columns: ["component_id"]

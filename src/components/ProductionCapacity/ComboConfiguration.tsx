@@ -1500,8 +1500,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     const previouslyProduced = getProducedByPreviousReferences(ref.referenceId);
                     const adjustedRequired = Math.max(0, ref.totalRequired - previouslyProduced);
                     
-                    // Calcular qué combos producen esta referencia
-                    const producingCombos: { comboName: string; quantity: number }[] = [];
+                    // Calcular qué combos producen esta referencia (sin duplicados)
+                    const producingCombosMap = new Map<string, number>();
                     references.forEach(otherRef => {
                       const otherSelectedCombo = otherRef.availableCombos.find(
                         c => c.comboName === otherRef.selectedCombo
@@ -1512,13 +1512,19 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                         );
                         if (componentInCombo && otherRef.quantityToProduce > 0) {
                           const producedQuantity = componentInCombo.quantityPerCombo * otherRef.quantityToProduce;
-                          producingCombos.push({
-                            comboName: otherSelectedCombo.comboName,
-                            quantity: producedQuantity
-                          });
+                          
+                          // Consolidar: si el combo ya existe, sumar cantidad; si no, agregarlo
+                          const existingQuantity = producingCombosMap.get(otherSelectedCombo.comboName) || 0;
+                          producingCombosMap.set(otherSelectedCombo.comboName, existingQuantity + producedQuantity);
                         }
                       }
                     });
+                    
+                    // Convertir Map a array para el render
+                    const producingCombos = Array.from(producingCombosMap.entries()).map(([comboName, quantity]) => ({
+                      comboName,
+                      quantity
+                    }));
                     
                     const totalProduced = producingCombos.reduce((sum, pc) => sum + pc.quantity, 0);
                     const difference = totalProduced - adjustedRequired;
