@@ -794,7 +794,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         comboInitialConditionMap.set(t.ref, t.condicion_inicial || 0);
       });
       
-      // Agrupar componentes por combo
+      // Agrupar componentes por combo desde la tabla `combo`
       const comboComponentsMap = new Map<string, any[]>();
       (allComboRelations || []).forEach((rel: any) => {
         if (!comboComponentsMap.has(rel.combo)) {
@@ -802,6 +802,40 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         }
         comboComponentsMap.get(rel.combo)!.push(rel);
       });
+
+      // Fallback: para combos que tienen condicion_inicial > 0 pero NO tienen definición en la tabla `combo`,
+      // usar la BOM (tabla `bom`) para obtener sus componentes.
+      const combosWithoutComponents = (allComboTimes || [])
+        .map((t: any) => t.ref)
+        .filter((comboName: string) => !comboComponentsMap.has(comboName));
+
+      if (combosWithoutComponents.length > 0) {
+        console.log('\n🔁 [COMBO CONFIG] Usando BOM como fallback para combos sin definición en tabla combo:', combosWithoutComponents);
+
+        const { data: bomFallback, error: bomError } = await supabase
+          .from('bom' as any)
+          .select('product_id, component_id, amount')
+          .in('product_id', combosWithoutComponents);
+
+        if (bomError) {
+          console.warn('⚠️ [COMBO CONFIG] Error cargando BOM de fallback para combos:', bomError);
+        } else {
+          (bomFallback || []).forEach((row: any) => {
+            const comboName = row.product_id;
+            if (!comboComponentsMap.has(comboName)) {
+              comboComponentsMap.set(comboName, []);
+            }
+            comboComponentsMap.get(comboName)!.push({
+              combo: comboName,
+              component_id: row.component_id,
+              cantidad: row.amount,
+            });
+          });
+
+          console.log(`✅ [COMBO CONFIG] Fallback BOM aplicado para ${bomFallback?.length || 0} relación(es)`);
+        }
+      }
+      
       
       // Crear mapa de componente -> combos disponibles
       const componentToCombosMap = new Map<string, string[]>();
