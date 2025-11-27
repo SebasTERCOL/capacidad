@@ -794,23 +794,55 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         comboInitialConditionMap.set(t.ref, t.condicion_inicial || 0);
       });
       
+      // Función para extraer la referencia principal de un combo
+      // Ejemplo: CMB.CNCA40.V1M -> CNCA40
+      const extractComboBaseReference = (comboName: string): string | null => {
+        if (!comboName.startsWith('CMB.')) return null;
+        const match = comboName.match(/^CMB\.(.+?)\.V/);
+        return match ? match[1] : null;
+      };
+
       // Agrupar componentes por combo desde la tabla `combo`
+      // La tabla combo almacena la referencia base (ej: CNCA40), no el combo completo (CMB.CNCA40.V1M)
       const comboComponentsMap = new Map<string, any[]>();
+      
+      // Primero, crear un índice de la tabla combo por referencia base
+      const comboTableByBase = new Map<string, any[]>();
       (allComboRelations || []).forEach((rel: any) => {
-        if (!comboComponentsMap.has(rel.combo)) {
-          comboComponentsMap.set(rel.combo, []);
+        const baseRef = rel.combo; // En la tabla combo, el campo 'combo' contiene la referencia base
+        if (!comboTableByBase.has(baseRef)) {
+          comboTableByBase.set(baseRef, []);
         }
-        comboComponentsMap.get(rel.combo)!.push(rel);
+        comboTableByBase.get(baseRef)!.push(rel);
       });
 
-      // Fallback: para combos que tienen condicion_inicial > 0 pero NO tienen definición en la tabla `combo`,
-      // usar la BOM (tabla `bom`) para obtener sus componentes.
+      console.log('\n📋 [COMBO CONFIG] Referencias base en tabla combo:', Array.from(comboTableByBase.keys()));
+
+      // Mapear cada combo completo (CMB.XXX.V#) a sus componentes
+      (allComboTimes || []).forEach((t: any) => {
+        const fullComboName = t.ref; // ej: CMB.CNCA40.V1M
+        const baseRef = extractComboBaseReference(fullComboName); // ej: CNCA40
+        
+        if (baseRef) {
+          console.log(`🔍 [COMBO CONFIG] Combo: ${fullComboName} -> Base: ${baseRef}`);
+          
+          // Buscar en la tabla combo usando la referencia base
+          if (comboTableByBase.has(baseRef)) {
+            comboComponentsMap.set(fullComboName, comboTableByBase.get(baseRef)!);
+            console.log(`✅ [COMBO CONFIG] ${fullComboName} mapeado a ${comboTableByBase.get(baseRef)!.length} componente(s)`);
+          } else {
+            console.warn(`⚠️ [COMBO CONFIG] No se encontró ${baseRef} en tabla combo para ${fullComboName}`);
+          }
+        }
+      });
+
+      // Fallback: para combos que NO se encontraron en tabla combo, usar BOM
       const combosWithoutComponents = (allComboTimes || [])
         .map((t: any) => t.ref)
         .filter((comboName: string) => !comboComponentsMap.has(comboName));
 
       if (combosWithoutComponents.length > 0) {
-        console.log('\n🔁 [COMBO CONFIG] Usando BOM como fallback para combos sin definición en tabla combo:', combosWithoutComponents);
+        console.log('\n🔁 [COMBO CONFIG] Usando BOM como fallback para combos sin definición:', combosWithoutComponents);
 
         const { data: bomFallback, error: bomError } = await supabase
           .from('bom' as any)
@@ -818,7 +850,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
           .in('product_id', combosWithoutComponents);
 
         if (bomError) {
-          console.warn('⚠️ [COMBO CONFIG] Error cargando BOM de fallback para combos:', bomError);
+          console.warn('⚠️ [COMBO CONFIG] Error cargando BOM de fallback:', bomError);
         } else {
           (bomFallback || []).forEach((row: any) => {
             const comboName = row.product_id;
