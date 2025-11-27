@@ -828,14 +828,23 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
 
       console.log('\n📋 [COMBO CONFIG] Referencias base en tabla combo:', Array.from(comboTableByBase.keys()));
 
-      // Para combos que NO tienen definición directa en la tabla combo, intentaremos
-      // resolverlos por referencia base usando el índice `comboTableByBase` en el
-      // fallback de BOM más abajo.
+      // Resolver combos que no tengan entrada directa en comboComponentsMap
+      const combosNeedingResolution: string[] = [];
+      (allComboTimes || []).forEach((comboTime: any) => {
+        const comboName: string = (comboTime.ref || '').trim();
+        if (!comboComponentsMap.has(comboName)) {
+          const baseRef = extractComboBaseReference(comboName);
+          if (baseRef && comboTableByBase.has(baseRef)) {
+            console.log(`🔗 [COMBO CONFIG] Asociando ${comboName} → base ${baseRef} desde tabla combo`);
+            comboComponentsMap.set(comboName, comboTableByBase.get(baseRef)!);
+          } else {
+            combosNeedingResolution.push(comboName);
+          }
+        }
+      });
 
-      // Fallback: para combos que NO se encontraron en tabla combo, usar BOM
-      const combosWithoutComponents = (allComboTimes || [])
-        .map((t: any) => t.ref)
-        .filter((comboName: string) => !comboComponentsMap.has(comboName));
+      // Fallback: para combos que NO se pudieron resolver ni por nombre completo ni por referencia base, usar BOM
+      const combosWithoutComponents = combosNeedingResolution;
 
       if (combosWithoutComponents.length > 0) {
         console.log('\n🔁 [COMBO CONFIG] Usando BOM como fallback para combos sin definición:', combosWithoutComponents);
