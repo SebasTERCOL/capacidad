@@ -1565,6 +1565,14 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     // Calcular qué combos producen esta referencia (sin duplicados)
                     const producingCombosMap = new Map<string, number>();
                     references.forEach(otherRef => {
+                      // ⚠️ Importante: las entradas cuyo referenceId es un combo (CMB.*)
+                      // son filas sintéticas usadas solo para la vista "Por Combo".
+                      // No deben contarse de nuevo aquí porque ya están representadas
+                      // por sus componentes, y generaban un doble conteo (ej: CNCE13).
+                      if (otherRef.referenceId.toUpperCase().startsWith('CMB.')) {
+                        return;
+                      }
+
                       const otherSelectedCombo = otherRef.availableCombos.find(
                         c => c.comboName === otherRef.selectedCombo
                       );
