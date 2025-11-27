@@ -9,7 +9,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ReferenceManager } from "./ReferenceManager";
-import { getColombianHolidays, isColombianHoliday, formatHolidayDate } from "@/lib/colombianHolidays";
+import { getColombianHolidays, isColombianHoliday } from "@/lib/colombianHolidays";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 export interface MachineConfig {
   id: number;
@@ -35,6 +40,11 @@ export interface OperatorConfig {
   workMonth: number;
   workYear: number;
   availableHours: number;
+  periodMode?: 'month' | 'range';
+  rangeStart?: string;
+  rangeEnd?: string;
+  excludedSundays?: number;
+  excludedHolidays?: number;
 }
 
 interface OperatorConfigurationProps {
@@ -54,6 +64,9 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isReferenceManagerOpen, setIsReferenceManagerOpen] = useState(false);
+  const [periodMode, setPeriodMode] = useState<'month' | 'range'>('month');
+  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [excludeHolidays, setExcludeHolidays] = useState(true);
 
   // Calcular horas disponibles para el mes seleccionado (3 turnos - estándar)
   const calculateAvailableHours = (month: number, year: number): number => {
@@ -163,6 +176,75 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
 
   const availableHours = calculateAvailableHours(workMonth, workYear);
   const availableHours2Shifts = calculateAvailableHours2Shifts(workMonth, workYear);
+
+  type ShiftType = '3-shifts' | '2-shifts';
+
+  const calculateAvailableHoursInRange = (
+    start: Date,
+    end: Date,
+    shiftType: ShiftType,
+    excludeHolidaysFlag: boolean
+  ) => {
+    if (!start || !end) return { hours: 0, sundays: 0, holidays: 0 };
+
+    const from = start <= end ? start : end;
+    const to = start <= end ? end : start;
+
+    const years: number[] = [];
+    for (let y = from.getFullYear(); y <= to.getFullYear(); y++) {
+      years.push(y);
+    }
+    const holidaysCache = years.flatMap(year => getColombianHolidays(year));
+
+    let totalHours = 0;
+    let sundays = 0;
+    let holidays = 0;
+
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    for (let time = from.getTime(); time <= to.getTime(); time += oneDayMs) {
+      const current = new Date(time);
+      const dayOfWeek = current.getDay();
+      const isHoliday = isColombianHoliday(current, holidaysCache);
+
+      if (dayOfWeek === 0) {
+        sundays++;
+        continue;
+      }
+      if (excludeHolidaysFlag && isHoliday) {
+        holidays++;
+        continue;
+      }
+
+      const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+      const isSaturday = dayOfWeek === 6;
+
+      if (!isWeekday && !isSaturday) continue;
+
+      if (shiftType === '3-shifts') {
+        const weekdayBrute = 8 + 8 + 8; // 3 turnos de 8h
+        const saturdayBrute = 6.5 + 6;  // turnos sábado
+        const shiftsPerWeekday = 3;
+        const shiftsPerSaturday = 2;
+        const brute = isWeekday ? weekdayBrute : saturdayBrute;
+        const shifts = isWeekday ? shiftsPerWeekday : shiftsPerSaturday;
+        const net = brute - shifts * (25 / 60);
+        totalHours += net;
+      } else {
+        const weekdayMorningHours = 7.584;
+        const weekdayAfternoonHours = 7.617;
+        const weekdayTotalBrute = weekdayMorningHours + weekdayAfternoonHours;
+        const saturdayMorningHours = 6.0834;
+        const saturdayAfternoonHours = 5.917;
+        const saturdayTotalBrute = saturdayMorningHours + saturdayAfternoonHours;
+        const brute = isWeekday ? weekdayTotalBrute : saturdayTotalBrute;
+        const shifts = 2;
+        const net = brute - shifts * (25 / 60);
+        totalHours += net;
+      }
+    }
+
+    return { hours: Math.round(totalHours * 10000) / 10000, sundays, holidays };
+  };
 
   // Obtener máquinas y procesos de la base de datos
   useEffect(() => {
@@ -336,19 +418,41 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   };
 
   const handleContinue = () => {
-    // Asignar horas específicas a cada proceso según su tipo
+    let finalAvailableHours = availableHours;
+    let finalAvailableHours2Shifts = availableHours2Shifts;
+    let rangeStart: string | undefined;
+    let rangeEnd: string | undefined;
+    let excludedSundays: number | undefined;
+    let excludedHolidays: number | undefined;
+
+    if (periodMode === 'range' && dateRange.from && dateRange.to) {
+      const threeShifts = calculateAvailableHoursInRange(dateRange.from, dateRange.to, '3-shifts', excludeHolidays);
+      const twoShifts = calculateAvailableHoursInRange(dateRange.from, dateRange.to, '2-shifts', excludeHolidays);
+      finalAvailableHours = threeShifts.hours;
+      finalAvailableHours2Shifts = twoShifts.hours;
+      rangeStart = dateRange.from.toISOString();
+      rangeEnd = dateRange.to.toISOString();
+      excludedSundays = threeShifts.sundays;
+      excludedHolidays = threeShifts.holidays;
+    }
+
     const processesWithHours = processes.map(process => ({
       ...process,
-      availableHours: (process.processId === 140 || process.processId === 170) 
-        ? availableHours2Shifts 
-        : availableHours
+      availableHours: (process.processId === 140 || process.processId === 170)
+        ? finalAvailableHours2Shifts
+        : finalAvailableHours
     }));
 
     const config: OperatorConfig = {
       processes: processesWithHours,
       workMonth,
       workYear,
-      availableHours // Horas estándar por defecto
+      availableHours: finalAvailableHours,
+      periodMode,
+      rangeStart,
+      rangeEnd,
+      excludedSundays,
+      excludedHolidays,
     };
     onConfigComplete(config);
     onNext();
@@ -416,43 +520,152 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
             <CalendarIcon className="h-5 w-5" />
             Período de Análisis
           </CardTitle>
+          <CardDescription>
+            Defina si desea simular un mes completo o un rango específico de fechas
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="workMonth">Mes</Label>
-              <Input
-                id="workMonth"
-                type="number"
-                min="1"
-                max="12"
-                value={workMonth}
-                onChange={(e) => setWorkMonth(parseInt(e.target.value) || 1)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="workYear">Año</Label>
-              <Input
-                id="workYear"
-                type="number"
-                min="2023"
-                max="2030"
-                value={workYear}
-                onChange={(e) => setWorkYear(parseInt(e.target.value) || new Date().getFullYear())}
-              />
-            </div>
-            <div className="flex items-center justify-center p-4 bg-muted rounded-lg">
-              <div className="text-center">
-                <div className="flex items-center gap-2 justify-center mb-1">
-                  <Clock className="h-4 w-4" />
-                  <span className="text-sm font-medium">Horas Disponibles</span>
-                </div>
-                <div className="text-2xl font-bold text-primary">{availableHours.toFixed(1)}h</div>
-                <div className="text-xs text-muted-foreground">por operario</div>
-              </div>
-            </div>
-          </div>
+          <Tabs value={periodMode} onValueChange={(v) => setPeriodMode(v as 'month' | 'range')} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="month">Mes completo</TabsTrigger>
+              <TabsTrigger value="range">Rango personalizado</TabsTrigger>
+            </TabsList>
 
+            <TabsContent value="month" className="mt-0">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="workMonth">Mes</Label>
+                  <Input
+                    id="workMonth"
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={workMonth}
+                    onChange={(e) => setWorkMonth(parseInt(e.target.value) || 1)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="workYear">Año</Label>
+                  <Input
+                    id="workYear"
+                    type="number"
+                    min="2023"
+                    max="2030"
+                    value={workYear}
+                    onChange={(e) => setWorkYear(parseInt(e.target.value) || new Date().getFullYear())}
+                  />
+                </div>
+                <div className="flex items-center justify-center p-4 bg-muted rounded-lg">
+                  <div className="text-center">
+                    <div className="flex items-center gap-2 justify-center mb-1">
+                      <Clock className="h-4 w-4" />
+                      <span className="text-sm font-medium">Horas Disponibles</span>
+                    </div>
+                    <div className="text-2xl font-bold text-primary">{availableHours.toFixed(1)}h</div>
+                    <div className="text-xs text-muted-foreground">por operario (3 turnos)</div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="range" className="mt-0">
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4 items-start">
+                  <div className="space-y-2">
+                    <Label>Rango de fechas</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !dateRange.from && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {dateRange.from && dateRange.to ? (
+                            <span>
+                              {dateRange.from.toLocaleDateString('es-CO')} - {dateRange.to.toLocaleDateString('es-CO')}
+                            </span>
+                          ) : (
+                            <span>Seleccione rango</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="range"
+                          selected={dateRange as any}
+                          onSelect={(range) => setDateRange((range as any) || {})}
+                          initialFocus
+                          className={cn("p-3 pointer-events-auto")}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <div className="space-y-3 p-3 bg-muted rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-medium">Excluir festivos</div>
+                        <div className="text-xs text-muted-foreground">
+                          No se contarán días festivos colombianos en el rango
+                        </div>
+                      </div>
+                      <Switch
+                        checked={excludeHolidays}
+                        onCheckedChange={(v) => setExcludeHolidays(!!v)}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Los domingos siempre se excluyen del cálculo de horas disponibles.
+                    </p>
+                  </div>
+                </div>
+
+                {dateRange.from && dateRange.to && (
+                  (() => {
+                    const threeShifts = calculateAvailableHoursInRange(dateRange.from!, dateRange.to!, '3-shifts', excludeHolidays);
+                    const twoShifts = calculateAvailableHoursInRange(dateRange.from!, dateRange.to!, '2-shifts', excludeHolidays);
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-4 bg-muted rounded-lg">
+                          <div className="text-sm font-medium mb-1">Resumen del rango</div>
+                          <div className="text-xs text-muted-foreground">
+                            Desde {dateRange.from.toLocaleDateString('es-CO')} hasta {dateRange.to.toLocaleDateString('es-CO')}
+                          </div>
+                        </div>
+                        <div className="p-4 bg-muted rounded-lg text-center">
+                          <div className="text-xs text-muted-foreground mb-1">Días excluidos</div>
+                          <div className="text-sm">
+                            <span className="font-semibold">{threeShifts.sundays}</span> domingos
+                            {excludeHolidays && (
+                              <>
+                                {" "}
+                                · <span className="font-semibold">{threeShifts.holidays}</span> festivos
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="p-4 bg-muted rounded-lg text-center">
+                          <div className="flex items-center gap-2 justify-center mb-1">
+                            <Clock className="h-4 w-4" />
+                            <span className="text-sm font-medium">Horas Disponibles</span>
+                          </div>
+                          <div className="text-lg font-bold text-primary">
+                            {threeShifts.hours.toFixed(4)}h
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            3 turnos · {twoShifts.hours.toFixed(4)}h en procesos de 2 turnos
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 
