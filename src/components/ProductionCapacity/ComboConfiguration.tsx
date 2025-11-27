@@ -803,38 +803,34 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       };
 
       // Agrupar componentes por combo desde la tabla `combo`
-      // La tabla combo almacena la referencia base (ej: CNCA40), no el combo completo (CMB.CNCA40.V1M)
+      // La tabla combo almacena el nombre completo del combo (ej: CMB.CNCA40.V1M)
       const comboComponentsMap = new Map<string, any[]>();
-      
-      // Primero, crear un índice de la tabla combo por referencia base
       const comboTableByBase = new Map<string, any[]>();
+
       (allComboRelations || []).forEach((rel: any) => {
-        const baseRef = rel.combo; // En la tabla combo, el campo 'combo' contiene la referencia base
-        if (!comboTableByBase.has(baseRef)) {
-          comboTableByBase.set(baseRef, []);
+        const fullComboName = (rel.combo || "").trim();
+
+        // Índice principal: por nombre completo de combo
+        if (!comboComponentsMap.has(fullComboName)) {
+          comboComponentsMap.set(fullComboName, []);
         }
-        comboTableByBase.get(baseRef)!.push(rel);
+        comboComponentsMap.get(fullComboName)!.push(rel);
+
+        // Índice secundario: por referencia base extraída (ej: CNCA40)
+        const baseRef = extractComboBaseReference(fullComboName);
+        if (baseRef) {
+          if (!comboTableByBase.has(baseRef)) {
+            comboTableByBase.set(baseRef, []);
+          }
+          comboTableByBase.get(baseRef)!.push(rel);
+        }
       });
 
       console.log('\n📋 [COMBO CONFIG] Referencias base en tabla combo:', Array.from(comboTableByBase.keys()));
 
-      // Mapear cada combo completo (CMB.XXX.V#) a sus componentes
-      (allComboTimes || []).forEach((t: any) => {
-        const fullComboName = t.ref; // ej: CMB.CNCA40.V1M
-        const baseRef = extractComboBaseReference(fullComboName); // ej: CNCA40
-        
-        if (baseRef) {
-          console.log(`🔍 [COMBO CONFIG] Combo: ${fullComboName} -> Base: ${baseRef}`);
-          
-          // Buscar en la tabla combo usando la referencia base
-          if (comboTableByBase.has(baseRef)) {
-            comboComponentsMap.set(fullComboName, comboTableByBase.get(baseRef)!);
-            console.log(`✅ [COMBO CONFIG] ${fullComboName} mapeado a ${comboTableByBase.get(baseRef)!.length} componente(s)`);
-          } else {
-            console.warn(`⚠️ [COMBO CONFIG] No se encontró ${baseRef} en tabla combo para ${fullComboName}`);
-          }
-        }
-      });
+      // Para combos que NO tienen definición directa en la tabla combo, intentaremos
+      // resolverlos por referencia base usando el índice `comboTableByBase` en el
+      // fallback de BOM más abajo.
 
       // Fallback: para combos que NO se encontraron en tabla combo, usar BOM
       const combosWithoutComponents = (allComboTimes || [])
