@@ -1916,15 +1916,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       despunte.totalOccupancy = combinedOccupancy;
     }
 
-    // 🔧 FIX: No filtrar procesos que tienen configuración en operatorConfig, aunque no tengan trabajo
-    // Esto previene que procesos como Ensamble desaparezcan cuando inventario reduce su carga
     return processGroupsArray
-    .filter(p => {
-      // Mantener si tiene trabajo asignado O si tiene configuración de operarios
-      const hasWork = p.machines.length > 0 || p.totalTime > 0;
-      const hasConfig = p.operators > 0;
-      return hasWork || hasConfig;
-    })
+    .filter(p => p.machines.length > 0 || p.totalTime > 0) // Solo procesos con trabajo asignado
     .sort((a, b) => getProcessOrder(a.processName) - getProcessOrder(b.processName));
   };
 

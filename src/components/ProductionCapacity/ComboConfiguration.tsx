@@ -951,18 +951,17 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
         ) || availableCombos[0];
         
         const comboName = mainCombo?.comboName || '';
-        // 🔧 FIX: Componentes de combos NO deben tener condicion_inicial (solo combos directos CMB.*)
-        const initialQuantity = 0;
+        const initialQuantity = comboInitialConditionMap.get(comboName) || 0;
         
-        console.log(`   📦 [COMBO CONFIG] Combo: ${comboName} (componente sin cantidad inicial)`);
+        console.log(`   📦 [COMBO CONFIG] Combo: ${comboName} (condición inicial: ${initialQuantity})`);
         
         referenceMap.set(ref.ref, {
           referenceId: ref.ref,
           totalRequired: ref.quantity,
           availableCombos,
           selectedCombo: comboName,
-          quantityToProduce: 0, // 🔧 FIX: Componentes inician en 0
-          initialQuantity: 0    // 🔧 FIX: Sin cantidad inicial para componentes
+          quantityToProduce: initialQuantity,
+          initialQuantity: initialQuantity
         });
         
         console.log(`✅ [COMBO CONFIG] Referencia ${ref.ref}: ${availableCombos.length} combos disponibles`);
@@ -1029,8 +1028,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                 totalRequired: 0, // Sin pedido directo
                 availableCombos: [comboOption],
                 selectedCombo: comboTime.ref,
-                quantityToProduce: 0, // 🔧 FIX: Componentes inician en 0, la producción viene del combo directo
-                initialQuantity: 0   // 🔧 FIX: Sin cantidad inicial para componentes
+                quantityToProduce: comboTime.condicion_inicial,
+                initialQuantity: comboTime.condicion_inicial
               });
               
               combosWithoutOrderCount++;
