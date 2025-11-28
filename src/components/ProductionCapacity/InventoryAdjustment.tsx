@@ -361,13 +361,30 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
         setProgress((processedItems / totalItems) * 100);
       }
       
-      setAdjustedReferences(results);
-      onAdjustmentComplete(adjustedProductionData);
+      // 🔧 FIX: Consolidar adjustedProductionData para evitar duplicados
+      // Si el mismo componente aparece en múltiples PTs, se debe sumar solo una vez
+      console.log(`\n🔄 Consolidando ${adjustedProductionData.length} referencias ajustadas...`);
+      const consolidatedAdjusted = new Map<string, number>();
+      for (const item of adjustedProductionData) {
+        const refKey = item.referencia.trim().toUpperCase();
+        const existing = consolidatedAdjusted.get(refKey) || 0;
+        consolidatedAdjusted.set(refKey, existing + item.cantidad);
+      }
       
-      console.log(`✅ Ajuste completado: ${adjustedProductionData.length} referencias ajustadas`);
+      const finalAdjustedData: { referencia: string; cantidad: number }[] = [];
+      for (const [ref, qty] of consolidatedAdjusted.entries()) {
+        finalAdjustedData.push({ referencia: ref, cantidad: qty });
+      }
+      
+      console.log(`✅ Consolidación completada: ${adjustedProductionData.length} → ${finalAdjustedData.length} referencias únicas`);
+      
+      setAdjustedReferences(results);
+      onAdjustmentComplete(finalAdjustedData);
+      
+      console.log(`✅ Ajuste completado: ${finalAdjustedData.length} referencias ajustadas`);
       
       toast.success("Ajuste de inventario completado", {
-        description: `Se procesaron ${adjustedProductionData.length} referencias en ${results.length} productos terminados`
+        description: `Se procesaron ${finalAdjustedData.length} referencias únicas en ${results.length} productos terminados`
       });
       
     } catch (error) {
