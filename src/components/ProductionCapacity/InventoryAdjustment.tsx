@@ -303,7 +303,18 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
               inventoryUsed.set(componentId, usadoHastaAhora + usadoEnEsteProducto);
             }
 
-            // Log detallado para diagnóstico
+            // Log detallado para diagnóstico (especialmente para CNCA30-CMB)
+            if (componentId.includes('CNCA30') || componentId.includes('CMB')) {
+              console.log(`🔍 [INVENTARIO DEBUG] ${componentId}:`);
+              console.log(`   • Requerido: ${cantidadRequerida}`);
+              console.log(`   • Inventario Total BD: ${productData.quantity || 0}`);
+              console.log(`   • Inventario disponible (después de usos previos): ${totalDisponible}`);
+              console.log(`   • Ya usado antes: ${usadoHastaAhora}`);
+              console.log(`   • Usado en este producto: ${usadoEnEsteProducto}`);
+              console.log(`   • A PRODUCIR (final): ${cantidadAProducir}`);
+              console.log(`   • Quedará disponible: ${quedaraDisponible}`);
+              console.log(`   • Tiene proceso excluido: ${hasExcludedProcess}`);
+            }
             console.log(`📊 ${componentId}: Req=${cantidadRequerida}, InvTotal=${totalDisponible}, UsadoAntes=${usadoHastaAhora}, UsadoAhora=${usadoEnEsteProducto}, AProducir=${cantidadAProducir}, Quedará=${quedaraDisponible}`);
             
             let alerta: 'ok' | 'warning' | 'error' = 'ok';
