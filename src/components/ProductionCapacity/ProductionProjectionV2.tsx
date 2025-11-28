@@ -759,18 +759,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         console.log(`   Operarios disponibles: ${processGroup.availableOperators}`);
         console.log(`   Componentes a procesar: ${processGroup.components.size}`);
 
-        // CORRECCIÓN: No saltar procesos con 0 componentes si son procesos principales
-        // como Ensamble, que siempre deben aparecer independientemente del inventario
-        const isEssentialProcess = ['ensamble', 'empaque', 'tapas'].includes(processName.toLowerCase());
-        if (processGroup.components.size === 0 && !isEssentialProcess) {
-          console.log(`   ⏭️ Saltando proceso ${processName} (sin componentes y no esencial)`);
-          continue;
-        }
-        
-        // Si es un proceso esencial pero sin componentes, aún debe aparecer en la vista
-        if (processGroup.components.size === 0 && isEssentialProcess) {
-          console.log(`   ⚠️ Proceso esencial ${processName} sin componentes asignados (posiblemente cubierto por inventario)`);
-        }
+        if (processGroup.components.size === 0) continue;
 
         // Obtener intersección de máquinas que pueden procesar múltiples componentes
         const machineIntersection = findOptimalMachineDistribution(processGroup);
@@ -1549,8 +1538,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const totalOperators = processConfig?.operatorCount || 0;
         const baseHours = processConfig?.availableHours || operatorConfig.availableHours;
         const efficiencyFactor = (processConfig?.efficiency ?? 100) / 100;
-        // CORRECCIÓN: Multiplicar por operadores para obtener horas totales del proceso
-        const processAvailableHours = (baseHours * totalOperators) * efficiencyFactor;
+        const processAvailableHours = baseHours * efficiencyFactor;
         
         processMap.set(displayProcessName, {
           processName: displayProcessName,
