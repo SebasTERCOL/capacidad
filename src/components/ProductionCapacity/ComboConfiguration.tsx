@@ -795,11 +795,21 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       });
       
       // Función para extraer la referencia principal de un combo
-      // Ejemplo: CMB.CNCA40.V1M -> CNCA40
+      // Usa una lógica robusta similar a REGEXP_REPLACE(..., '.V.*$', '')
+      // Ejemplos:
+      //   CMB.CNCA40.V1M  -> CNCA40
+      //   CMB.CNCA40.V1   -> CNCA40
+      //   CNCA40.V1M      -> CNCA40
+      //   CNCA40          -> CNCA40
       const extractComboBaseReference = (comboName: string): string | null => {
-        if (!comboName.startsWith('CMB.')) return null;
-        const match = comboName.match(/^CMB\.(.+?)\.V/);
-        return match ? match[1] : null;
+        if (!comboName) return null;
+        let name = comboName.trim().toUpperCase();
+        if (name.startsWith('CMB.')) {
+          name = name.substring(4); // quitar prefijo CMB.
+        }
+        // Eliminar sufijo de versión: todo desde '.V' en adelante
+        const cleaned = name.replace(/\.V.*$/i, '');
+        return cleaned || null;
       };
 
       // Agrupar componentes por combo desde la tabla `combo`
@@ -1129,12 +1139,22 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       const referenceArray = Array.from(referenceMap.values());
       setReferences(referenceArray);
       
-      // Convertir a formato ComboSuggestion para mantener compatibilidad
-      const comboArray: ComboSuggestion[] = [];
+      // Convertir a formato ComboSuggestion: solo combos directos (CMB.*),
+      // agregados una sola vez para evitar doble conteo de tiempo
+      const comboSuggestionsMap = new Map<string, ComboSuggestion>();
+
       referenceArray.forEach(refCMB => {
-        const selectedComboOption = refCMB.availableCombos.find(c => c.comboName === refCMB.selectedCombo);
-        if (selectedComboOption) {
-          comboArray.push({
+        // Solo usar entradas directas de combos (CMB.*) como fuente de verdad
+        if (!refCMB.referenceId.toUpperCase().startsWith('CMB.')) return;
+
+        const selectedComboOption = refCMB.availableCombos.find(
+          c => c.comboName === refCMB.selectedCombo
+        );
+        if (!selectedComboOption) return;
+
+        const existing = comboSuggestionsMap.get(refCMB.selectedCombo);
+        if (!existing) {
+          comboSuggestionsMap.set(refCMB.selectedCombo, {
             comboName: refCMB.selectedCombo,
             cycleTime: selectedComboOption.cycleTime,
             components: selectedComboOption.allComponents.map(c => ({
@@ -1144,14 +1164,20 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
               currentInventory: 0
             })),
             suggestedCombos: refCMB.quantityToProduce,
-            totalTime: refCMB.quantityToProduce * selectedComboOption.cycleTime
+            totalTime: refCMB.quantityToProduce * selectedComboOption.cycleTime,
           });
+        } else {
+          // Acumular cantidad de combos si por alguna razón hubiera más de una entrada
+          existing.suggestedCombos += refCMB.quantityToProduce;
+          existing.totalTime = existing.suggestedCombos * existing.cycleTime;
         }
       });
+
+      const comboArray: ComboSuggestion[] = Array.from(comboSuggestionsMap.values());
       
       setCombos(comboArray);
       onComboConfigComplete(comboArray);
-      
+
       console.log(`✅ [COMBO CONFIG] ${referenceArray.length} entradas totales en referenceMap`);
       
       // Contar componentes vs combos directos
@@ -1435,10 +1461,12 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   };
 
-  const totalTime = references.reduce((sum, ref) => {
-    const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
-    return sum + (selectedCombo ? selectedCombo.cycleTime * ref.quantityToProduce : 0);
-  }, 0);
+  const totalTime = references
+    .filter(ref => ref.referenceId.toUpperCase().startsWith('CMB.'))
+    .reduce((sum, ref) => {
+      const selectedCombo = ref.availableCombos.find(c => c.comboName === ref.selectedCombo);
+      return sum + (selectedCombo ? selectedCombo.cycleTime * ref.quantityToProduce : 0);
+    }, 0);
 
   if (loading) {
     return (
