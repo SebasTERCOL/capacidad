@@ -1652,8 +1652,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     }));
                     
                     const totalProduced = producingCombos.reduce((sum, pc) => sum + pc.quantity, 0);
-                    const difference = totalProduced - adjustedRequired - inventory;
-                    const isSufficient = totalProduced >= (adjustedRequired + inventory);
+                    const difference = adjustedRequired - inventory - totalProduced;
+                    const isSufficient = difference <= 0;
                     const timeConsumed = selectedComboOption && ref.quantityToProduce > 0
                       ? selectedComboOption.cycleTime * ref.quantityToProduce
                       : 0;
