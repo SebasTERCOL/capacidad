@@ -31,6 +31,7 @@ interface AdjustedReference {
 export interface AdjustedProductionData {
   referencia: string;
   cantidad: number;
+  inventario: number;
 }
 
 interface InventoryAdjustmentProps {
@@ -63,7 +64,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
         // Si no se usa inventario, pasar los datos directamente
         const directData = data.map(item => ({
           referencia: item.referencia,
-          cantidad: item.cantidad
+          cantidad: item.cantidad,
+          inventario: 0
         }));
         onAdjustmentComplete(directData);
         setAdjustedReferences([]);
@@ -216,7 +218,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             return {
               adjusted: [{
                 referencia: item.referencia,
-                cantidad: item.cantidad
+                cantidad: item.cantidad,
+                inventario: 0
               }],
               analysis: null
             };
@@ -229,7 +232,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             return {
               adjusted: [{
                 referencia: item.referencia,
-                cantidad: item.cantidad
+                cantidad: item.cantidad,
+                inventario: 0
               }],
               analysis: null
             };
@@ -263,7 +267,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             if (!productData || productData.type === 'PT') {
               itemAdjusted.push({
                 referencia: componentId,
-                cantidad: Math.ceil(cantidadNecesaria)
+                cantidad: Math.ceil(cantidadNecesaria),
+                inventario: 0
               });
               continue;
             }
@@ -331,7 +336,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             if (cantidadAProducir > 0 && productData.type !== 'MP') {
               itemAdjusted.push({
                 referencia: componentId,
-                cantidad: cantidadAProducir
+                cantidad: cantidadAProducir,
+                inventario: usadoEnEsteProducto
               });
             }
           }

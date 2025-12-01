@@ -66,7 +66,8 @@ export default {
 					red: 'hsl(var(--tercol-red))',
 					black: 'hsl(var(--tercol-black))',
 					white: 'hsl(var(--tercol-white))',
-					gray: 'hsl(var(--tercol-gray))'
+					gray: 'hsl(var(--tercol-gray))',
+					green: 'hsl(var(--tercol-green))'
 				},
 				capacity: {
 					low: 'hsl(var(--capacity-low))',

@@ -51,6 +51,7 @@ All colors MUST be HSL.
     --tercol-black: 0 0% 10%;
     --tercol-white: 0 0% 100%;
     --tercol-gray: 0 0% 95%;
+    --tercol-green: 142 71% 45%;
     
     /* Capacity color ranges */
     --capacity-low: 0 0% 60%;
@@ -105,6 +106,7 @@ All colors MUST be HSL.
     --tercol-black: 0 0% 10%;
     --tercol-white: 0 0% 100%;
     --tercol-gray: 0 0% 20%;
+    --tercol-green: 142 71% 45%;
     
     /* Capacity color ranges */
     --capacity-low: 0 0% 40%;
