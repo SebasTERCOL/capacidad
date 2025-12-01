@@ -574,6 +574,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   const [showComboManagement, setShowComboManagement] = useState(false);
   const [expandedReferences, setExpandedReferences] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'by-reference' | 'by-combo'>('by-reference');
+  const [inventoryMap, setInventoryMap] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     calculateComboSuggestions();
@@ -679,6 +680,14 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
     try {
       console.log('🔧 [COMBO CONFIG] Iniciando cálculo de combos...');
       console.log(`📋 [COMBO CONFIG] Procesando ${data.length} referencias del pedido`);
+      
+      // Crear mapa de inventario desde los datos de entrada
+      const inventoryMap = new Map<string, number>();
+      data.forEach(item => {
+        const ref = item.referencia.trim().toUpperCase();
+        inventoryMap.set(ref, item.inventario || 0);
+      });
+      console.log(`📦 [COMBO CONFIG] Inventario cargado para ${inventoryMap.size} referencias`);
       
       // 1. Hacer desglose BOM completo de todas las referencias del pedido
       setProgress(10);
@@ -1145,6 +1154,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       
       const referenceArray = Array.from(referenceMap.values());
       setReferences(referenceArray);
+      setInventoryMap(inventoryMap);
       
       // Convertir a formato ComboSuggestion: solo combos directos (CMB.*),
       // agregados una sola vez para evitar doble conteo de tiempo
@@ -1605,6 +1615,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     
                     const previouslyProduced = getProducedByPreviousReferences(ref.referenceId);
                     const adjustedRequired = Math.max(0, ref.totalRequired - previouslyProduced);
+                    const inventory = inventoryMap.get(ref.referenceId) || 0;
                     
                     // Calcular qué combos producen esta referencia (sin duplicados)
                     const producingCombosMap = new Map<string, number>();
@@ -1641,8 +1652,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     }));
                     
                     const totalProduced = producingCombos.reduce((sum, pc) => sum + pc.quantity, 0);
-                    const difference = totalProduced - adjustedRequired;
-                    const isSufficient = totalProduced >= adjustedRequired;
+                    const difference = totalProduced - adjustedRequired - inventory;
+                    const isSufficient = totalProduced >= (adjustedRequired + inventory);
                     const timeConsumed = selectedComboOption && ref.quantityToProduce > 0
                       ? selectedComboOption.cycleTime * ref.quantityToProduce
                       : 0;
@@ -1651,7 +1662,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
 
                     return (
                       <Collapsible key={ref.referenceId} open={isExpanded} onOpenChange={() => toggleReferenceExpansion(ref.referenceId)}>
-                        <Card className="border-l-4" style={{ borderLeftColor: isSufficient ? 'hsl(var(--tercol-red))' : 'hsl(var(--destructive))' }}>
+                        <Card className="border-l-4" style={{ borderLeftColor: isSufficient ? 'hsl(var(--tercol-green))' : 'hsl(var(--destructive))' }}>
                           <CardHeader className="py-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => toggleReferenceExpansion(ref.referenceId)}>
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-3">
@@ -1660,10 +1671,11 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                                     {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                                   </Button>
                                 </CollapsibleTrigger>
-                                <div>
+                                 <div>
                                   <div className="font-semibold text-lg">{ref.referenceId}</div>
                                   <div className="text-xs text-muted-foreground">
                                     Requerido: <span className="font-medium">{adjustedRequired}</span> | 
+                                    Inventario: <span className="font-medium">{inventoryMap.get(ref.referenceId) || 0}</span> | 
                                     Producido: <span className="font-medium">{totalProduced}</span> | 
                                     Diferencia: <span className={difference > 0 ? 'text-green-600 font-medium' : difference < 0 ? 'text-red-600 font-medium' : 'font-medium'}>
                                       {difference > 0 ? '+' : ''}{difference}
@@ -1672,8 +1684,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                                 </div>
                               </div>
                               <div className="flex items-center gap-3">
-                                <Badge variant={isSufficient ? "default" : "destructive"}>
-                                  {isSufficient ? "Suficiente" : "Insuficiente"}
+                                <Badge variant={isSufficient ? "default" : "destructive"} className={isSufficient ? "bg-tercol-green hover:bg-tercol-green/90" : ""}>
+                                  {isSufficient ? "Aceptable" : "Pendiente"}
                                 </Badge>
                                 <div className="text-right">
                                   <div className="text-sm font-medium">{formatTime(timeConsumed)}</div>

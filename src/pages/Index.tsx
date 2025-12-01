@@ -99,7 +99,7 @@ const Index = () => {
       case 3:
         return (
           <ComboConfiguration
-            data={adjustedData.length > 0 ? adjustedData : productionData}
+            data={adjustedData.length > 0 ? adjustedData : productionData.map(p => ({ ...p, inventario: 0 }))}
             onNext={() => setCurrentStep(4)}
             onBack={() => setCurrentStep(2)}
             onComboConfigComplete={handleComboConfigComplete}
