@@ -103,6 +103,7 @@ const Index = () => {
             onNext={() => setCurrentStep(4)}
             onBack={() => setCurrentStep(2)}
             onComboConfigComplete={handleComboConfigComplete}
+            useInventory={useInventory}
           />
         );
       case 4:
