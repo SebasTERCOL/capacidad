@@ -58,20 +58,9 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
 
   useEffect(() => {
     if (data.length > 0) {
-      if (useInventory) {
-        processInventoryAdjustment();
-      } else {
-        // Si no se usa inventario, pasar los datos directamente
-        const directData = data.map(item => ({
-          referencia: item.referencia,
-          cantidad: item.cantidad,
-          inventario: 0
-        }));
-        onAdjustmentComplete(directData);
-        setAdjustedReferences([]);
-        setLoading(false);
-        setProgress(100);
-      }
+      // Siempre procesar el inventario para obtener el desglose BOM completo
+      // Solo cambia el uso del inventario en la fórmula de Diferencia
+      processInventoryAdjustment();
     }
   }, [data, useInventory]);
 

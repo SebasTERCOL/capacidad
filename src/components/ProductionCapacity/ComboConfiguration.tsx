@@ -56,6 +56,7 @@ interface ComboConfigurationProps {
   onNext: () => void;
   onBack: () => void;
   onComboConfigComplete: (combos: ComboSuggestion[]) => void;
+  useInventory: boolean;
 }
 
 interface ComboManagementDialogProps {
@@ -563,7 +564,8 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
   data,
   onNext,
   onBack,
-  onComboConfigComplete
+  onComboConfigComplete,
+  useInventory
 }) => {
   const [references, setReferences] = useState<ReferenceCMB[]>([]);
   const [combos, setCombos] = useState<ComboSuggestion[]>([]);
@@ -1652,7 +1654,10 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     }));
                     
                     const totalProduced = producingCombos.reduce((sum, pc) => sum + pc.quantity, 0);
-                    const difference = inventory + totalProduced - adjustedRequired;
+                    // Fórmula de diferencia depende de si se usa inventario
+                    const difference = useInventory 
+                      ? inventory + totalProduced - adjustedRequired
+                      : totalProduced - adjustedRequired;
                     const isSufficient = difference >= 0;
                     const timeConsumed = selectedComboOption && ref.quantityToProduce > 0
                       ? selectedComboOption.cycleTime * ref.quantityToProduce
