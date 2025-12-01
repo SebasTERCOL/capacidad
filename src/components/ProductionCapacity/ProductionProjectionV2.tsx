@@ -359,15 +359,21 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       // Procesar cada referencia de entrada (datos posiblemente ajustados por inventario)
       for (const item of data) {
-        console.log(`🔍 Procesando referencia de entrada (ajustada): ${item.referencia} (cantidad: ${item.cantidad})`);
+        // Calcular cantidad efectiva considerando inventario si está habilitado
+        const inventoryAmount = ('inventario' in item && typeof item.inventario === 'number') ? item.inventario : 0;
+        const effectiveQuantity = useInventory 
+          ? Math.max(0, item.cantidad - inventoryAmount)
+          : item.cantidad;
         
-        // Intentar obtener BOM para esta referencia
-        const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
+        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad original: ${item.cantidad}, inventario: ${inventoryAmount}, efectiva: ${effectiveQuantity}, useInventory: ${useInventory})`);
+        
+        // Intentar obtener BOM para esta referencia usando cantidad efectiva
+        const allComponents = getRecursiveBOMOptimized(item.referencia, effectiveQuantity, 0, new Set(), bomData);
         
         if (allComponents.size > 0) {
           // Si tiene BOM, agregar a referencias principales Y expandir componentes
           const currentMainQty = mainReferences.get(item.referencia) || 0;
-          mainReferences.set(item.referencia, currentMainQty + item.cantidad);
+          mainReferences.set(item.referencia, currentMainQty + effectiveQuantity);
           
           // Agregar SOLO los componentes (no la referencia principal)
           for (const [componentId, quantity] of allComponents.entries()) {
@@ -378,7 +384,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         } else {
           // Si NO tiene BOM, agregar SOLO a componentes consolidados (NO duplicar)
           const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
-          consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
+          consolidatedComponents.set(item.referencia, currentComponentQty + effectiveQuantity);
           console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa (sin duplicar)`);
         }
       }
