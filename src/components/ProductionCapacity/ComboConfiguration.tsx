@@ -690,9 +690,21 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
       const totalRefs = data.length;
       for (let i = 0; i < data.length; i++) {
         const item = data[i];
+        const ref = item.referencia.trim().toUpperCase();
         setCurrentStep(`Analizando ${item.referencia} (${i + 1}/${totalRefs})`);
         console.log(`\n🎯 [COMBO CONFIG] Analizando ${item.referencia} (cantidad: ${item.cantidad})`);
-        await getRecursiveBOM(item.referencia, item.cantidad, 0, globalVisited, allRequiredComponents);
+        
+        if (ref.endsWith('-CMB')) {
+          // Referencias CMB: usar cantidad ajustada directamente de InventoryAdjustment
+          const existing = allRequiredComponents.get(ref) || 0;
+          allRequiredComponents.set(ref, existing + item.cantidad);
+          console.log(`📋 [COMBO CONFIG] ✅ Referencia CMB directa desde inventario ajustado: ${ref} = ${item.cantidad}`);
+        } else {
+          // Referencias NO-CMB (productos terminados): descomponer BOM para encontrar sus componentes -CMB
+          console.log(`🔍 [COMBO CONFIG] Desglosando BOM para ${ref}`);
+          await getRecursiveBOM(item.referencia, item.cantidad, 0, globalVisited, allRequiredComponents);
+        }
+        
         setProgress(10 + (i + 1) / totalRefs * 30); // 10% a 40%
       }
       
