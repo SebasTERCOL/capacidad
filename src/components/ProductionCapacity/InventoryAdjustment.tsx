@@ -331,13 +331,13 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
               alerta
             });
             
-            // Solo agregar a producción lo que falta
-            // Excepto MP (Materia Prima) que no se produce
-            if (cantidadAProducir > 0 && productData.type !== 'MP') {
+            // Agregar todos los componentes que no sean MP
+            // Pasar cantidad original (requerida) e inventario disponible
+            if (productData.type !== 'MP') {
               itemAdjusted.push({
                 referencia: componentId,
-                cantidad: cantidadAProducir,
-                inventario: usadoEnEsteProducto
+                cantidad: cantidadRequerida, // Valor original sin ajustar
+                inventario: usadoEnEsteProducto // Inventario usado
               });
             }
           }
