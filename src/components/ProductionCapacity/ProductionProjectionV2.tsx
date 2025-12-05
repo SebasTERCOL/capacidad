@@ -362,13 +362,37 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
 
-      // Crear mapa de inventario por referencia para uso posterior a nivel de proceso
+      // Crear mapa de inventario por referencia DESDE LA BASE DE DATOS (products.quantity)
       const inventoryByRef = new Map<string, number>();
-      for (const item of data) {
-        const inventoryAmount = ('inventario' in item && typeof item.inventario === 'number') ? item.inventario : 0;
-        inventoryByRef.set(normalizeRefId(item.referencia), inventoryAmount);
+      
+      if (useInventory) {
+        // Cargar inventario real desde products.quantity
+        const { data: productsInventory, error: invError } = await supabase
+          .from('products')
+          .select('reference, quantity');
+        
+        if (invError) {
+          console.error('❌ Error cargando inventario de productos:', invError);
+        } else if (productsInventory) {
+          for (const prod of productsInventory) {
+            if (prod.quantity > 0) {
+              inventoryByRef.set(normalizeRefId(prod.reference), prod.quantity);
+            }
+          }
+          console.log(`📦 Inventario cargado desde BD: ${inventoryByRef.size} referencias con stock > 0`);
+          
+          // Log ejemplos específicos para depuración
+          const testRefs = ['TAPA12-95', 'BSCENTRO-125B'];
+          for (const ref of testRefs) {
+            const inv = inventoryByRef.get(normalizeRefId(ref));
+            if (inv !== undefined) {
+              console.log(`   📦 ${ref}: inventario = ${inv}`);
+            }
+          }
+        }
+      } else {
+        console.log(`📦 Inventario deshabilitado - no se cargarán datos de products.quantity`);
       }
-      console.log(`📦 Inventario mapeado para ${inventoryByRef.size} referencias`);
 
       // Procesar cada referencia de entrada - SIEMPRE usar cantidad original
       // El descuento de inventario se aplicará a nivel de PROCESO según processes.inventario
