@@ -574,7 +574,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             });
 
           if (existingComponent) {
-            // No sumar para mainReferences: solo fusionar opciones de máquinas y completar SAM
+            // Actualizar cantidad con efectivo (incluye descuento de inventario si aplica)
+            existingComponent.quantity = effectiveQuantity;
             if (!existingComponent.sam || existingComponent.sam === 0) {
               const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
               existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
@@ -670,7 +671,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           }
 
           if (existingComponent) {
-            // No sumar aquí: la cantidad ya fue consolidada a nivel global (evitar duplicar por cada máquina)
+            // Actualizar cantidad con efectivo (incluye descuento de inventario si aplica)
+            existingComponent.quantity = effectiveQuantity;
             if (!existingComponent.sam || existingComponent.sam === 0) {
               const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
               existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
