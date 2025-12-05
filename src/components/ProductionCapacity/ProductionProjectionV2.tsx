@@ -320,6 +320,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       return;
     }
 
+    // 🎛️ LOG CRÍTICO: Verificar que el flag useInventory llega correctamente
+    console.log(`\n🎛️ ========================================`);
+    console.log(`🎛️ useInventory FLAG: ${useInventory}`);
+    console.log(`🎛️ ========================================\n`);
+
     setLoading(true);
     setError(null);
     setStartTime(Date.now());
@@ -523,6 +528,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           const refNormalized = normalizeRefId(ref);
           const inventoryForRef = inventoryByRef.get(refNormalized) || 0;
           
+          // 🔍 LOG DIAGNÓSTICO DETALLADO
+          console.log(`     🔍 REF: ${ref} -> Normalizada: ${refNormalized}`);
+          console.log(`        useInventory=${useInventory}, isExcludedProcess=${isExcludedProcess}, inventarioEncontrado=${inventoryForRef}`);
+          
           let effectiveQuantity: number;
           if (isExcludedProcess) {
             // Proceso con inventario = false: usar cantidad original
@@ -535,6 +544,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           } else {
             // useInventory deshabilitado o sin inventario
             effectiveQuantity = quantity;
+            if (useInventory && inventoryForRef === 0) {
+              console.log(`     ⚠️ useInventory=true pero inventario=0 para ${ref}`);
+            }
           }
           
           if (!processGroups.has(processName)) {
@@ -656,6 +668,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // - Si inventario = true (isExcludedProcess = false) Y useInventory está habilitado: descontar inventario
           const inventoryForComponent = inventoryByRef.get(normId) || 0;
           
+          // 🔍 LOG DIAGNÓSTICO DETALLADO PARA COMPONENTES
+          console.log(`     🔍 COMP: ${display} -> Normalizada: ${normId}`);
+          console.log(`        useInventory=${useInventory}, isExcludedProcess=${isExcludedProcess}, inventarioEncontrado=${inventoryForComponent}`);
+          
           let effectiveQuantity: number;
           if (isExcludedProcess) {
             // Proceso con inventario = false: usar cantidad original
@@ -668,6 +684,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           } else {
             // useInventory deshabilitado o sin inventario
             effectiveQuantity = quantity;
+            if (useInventory && inventoryForComponent === 0) {
+              console.log(`     ⚠️ useInventory=true pero inventario=0 para componente ${display}`);
+            }
           }
 
           if (existingComponent) {
@@ -853,6 +872,28 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     setProgress({ current: 0, total: 0, currentRef: '' });
   };
 
+  // Función helper para determinar prioridad de pintura (PPOLVO1 vs PPOLVO3)
+  // Prioridad 1: Referencias que usan PPOLVO1 (máxima prioridad)
+  // Prioridad 2: Referencias que usan PPOLVO3 (producir después si hay tiempo sobrante)
+  // Prioridad 0: Sin prioridad especial
+  const getPaintPriority = (ref: string, bomData: any[]): number => {
+    const refNormalized = normalizeRefId(ref);
+    
+    // Buscar en BOM si la referencia usa PPOLVO1 o PPOLVO3 como componente
+    const usesPolvo1 = bomData.some(b => 
+      normalizeRefId(b.product_id) === refNormalized && 
+      normalizeRefId(b.component_id) === 'PPOLVO1'
+    );
+    const usesPolvo3 = bomData.some(b => 
+      normalizeRefId(b.product_id) === refNormalized && 
+      normalizeRefId(b.component_id) === 'PPOLVO3'
+    );
+    
+    if (usesPolvo1) return 1; // Prioridad alta - producir primero
+    if (usesPolvo3) return 2; // Prioridad baja - producir después
+    return 0; // Sin prioridad especial
+  };
+
   // Función helper para seleccionar la mejor máquina
   const selectBestMachine = (
     availableMachineProcesses: any[],
@@ -1010,8 +1051,35 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     console.log(`   ⏰ Total horas extras disponibles: ${totalHorasExtrasDisponibles.toFixed(2)}h`);
     console.log(`   ⏱️ Total horas con extras: ${totalHorasConExtras.toFixed(2)}h`);
     
-    // Procesar cada componente
-    for (const [componentId, componentData] of processGroup.components.entries()) {
+    // Ordenar componentes: Para proceso Pintura, priorizar PPOLVO1 sobre PPOLVO3
+    let componentsToProcess = Array.from(processGroup.components.entries());
+    
+    if (processName.toLowerCase() === 'pintura') {
+      console.log(`   🎨 Proceso PINTURA detectado - aplicando prioridad PPOLVO1 > PPOLVO3`);
+      
+      componentsToProcess.sort((a, b) => {
+        const priorityA = getPaintPriority(a[0], allBomData);
+        const priorityB = getPaintPriority(b[0], allBomData);
+        
+        // Prioridad 1 (PPOLVO1) viene primero, luego prioridad 2 (PPOLVO3), luego prioridad 0
+        if (priorityA === 1 && priorityB !== 1) return -1;
+        if (priorityB === 1 && priorityA !== 1) return 1;
+        if (priorityA === 2 && priorityB === 0) return -1;
+        if (priorityB === 2 && priorityA === 0) return 1;
+        return 0;
+      });
+      
+      // Log de orden de procesamiento
+      console.log(`   📋 Orden de procesamiento para Pintura:`);
+      componentsToProcess.forEach(([id], idx) => {
+        const priority = getPaintPriority(id, allBomData);
+        const priorityLabel = priority === 1 ? 'PPOLVO1' : priority === 2 ? 'PPOLVO3' : 'OTRO';
+        console.log(`      ${idx + 1}. ${id} (${priorityLabel})`);
+      });
+    }
+
+    // Procesar cada componente (ya ordenados por prioridad si es Pintura)
+    for (const [componentId, componentData] of componentsToProcess) {
       console.log(`   📦 Distribuyendo ${componentId} (cantidad: ${componentData.quantity})`);
       
       // Encontrar máquinas compatibles entre las seleccionadas
