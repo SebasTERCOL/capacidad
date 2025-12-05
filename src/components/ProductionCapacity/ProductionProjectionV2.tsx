@@ -326,17 +326,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     setProgress({ current: 0, total: 6, currentRef: 'Cargando datos...' });
     
     try {
-      // 0. Cargar procesos excluidos dinámicamente desde la columna 'inventario' de la tabla 'processes'
+      // 0. Cargar configuración de inventario por proceso desde la tabla 'processes'
       setProgress({ current: 0, total: 7, currentRef: 'Cargando configuración...' });
-      const { data: excludedProcesses } = await supabase
+      const { data: allProcesses } = await supabase
         .from('processes')
-        .select('id, name')
-        .eq('inventario', false);
+        .select('id, name, inventario');
       
-      const excludedIds = excludedProcesses?.map(p => p.id) || [];
-      const excludedNames = excludedProcesses?.map(p => `${p.name} (${p.id})`).join(', ') || 'Ninguno';
+      // Procesos donde NO se descuenta inventario (inventario = false)
+      const excludedIds = allProcesses?.filter(p => p.inventario === false).map(p => p.id) || [];
+      const excludedNames = allProcesses?.filter(p => p.inventario === false).map(p => `${p.name} (${p.id})`).join(', ') || 'Ninguno';
       
-      console.log(`🚫 Procesos excluidos de ajuste de inventario (inventario=false): ${excludedNames}`);
+      // Procesos donde SÍ se descuenta inventario (inventario = true)
+      const inventoryEnabledIds = allProcesses?.filter(p => p.inventario === true).map(p => p.id) || [];
+      const inventoryEnabledNames = allProcesses?.filter(p => p.inventario === true).map(p => `${p.name} (${p.id})`).join(', ') || 'Ninguno';
+      
+      console.log(`🚫 Procesos SIN descuento de inventario (inventario=false): ${excludedNames}`);
+      console.log(`✅ Procesos CON descuento de inventario (inventario=true): ${inventoryEnabledNames}`);
       
       // 1. Cargar todos los datos
       setProgress({ current: 1, total: 7, currentRef: 'Cargando BOM...' });
@@ -357,35 +362,39 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
 
-      // Procesar cada referencia de entrada (datos posiblemente ajustados por inventario)
+      // Crear mapa de inventario por referencia para uso posterior a nivel de proceso
+      const inventoryByRef = new Map<string, number>();
       for (const item of data) {
-        // Calcular cantidad efectiva considerando inventario si está habilitado
         const inventoryAmount = ('inventario' in item && typeof item.inventario === 'number') ? item.inventario : 0;
-        const effectiveQuantity = useInventory 
-          ? Math.max(0, item.cantidad - inventoryAmount)
-          : item.cantidad;
+        inventoryByRef.set(normalizeRefId(item.referencia), inventoryAmount);
+      }
+      console.log(`📦 Inventario mapeado para ${inventoryByRef.size} referencias`);
+
+      // Procesar cada referencia de entrada - SIEMPRE usar cantidad original
+      // El descuento de inventario se aplicará a nivel de PROCESO según processes.inventario
+      for (const item of data) {
+        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
         
-        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad original: ${item.cantidad}, inventario: ${inventoryAmount}, efectiva: ${effectiveQuantity}, useInventory: ${useInventory})`);
-        
-        // Intentar obtener BOM para esta referencia usando cantidad efectiva
-        const allComponents = getRecursiveBOMOptimized(item.referencia, effectiveQuantity, 0, new Set(), bomData);
+        // Usar cantidad original SIN restar inventario aquí
+        // El inventario se restará a nivel de proceso si processes.inventario = true
+        const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
         
         if (allComponents.size > 0) {
           // Si tiene BOM, agregar a referencias principales Y expandir componentes
           const currentMainQty = mainReferences.get(item.referencia) || 0;
-          mainReferences.set(item.referencia, currentMainQty + effectiveQuantity);
+          mainReferences.set(item.referencia, currentMainQty + item.cantidad);
           
           // Agregar SOLO los componentes (no la referencia principal)
           for (const [componentId, quantity] of allComponents.entries()) {
             const currentQty = consolidatedComponents.get(componentId) || 0;
             consolidatedComponents.set(componentId, currentQty + quantity);
           }
-          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes (referencia principal incluida en mainReferences)`);
+          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes`);
         } else {
           // Si NO tiene BOM, agregar SOLO a componentes consolidados (NO duplicar)
           const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
-          consolidatedComponents.set(item.referencia, currentComponentQty + effectiveQuantity);
-          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa (sin duplicar)`);
+          consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
+          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa`);
         }
       }
 
@@ -484,13 +493,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           
           console.log(`     · Proceso original: ${processNameOriginal} (ID: ${mp.id_process}) -> Normalizado: ${processName}`);
 
-          // Para procesos excluidos (Lavado id=70, Pintura id=80, Horno id=2, Tapas id=1) 
-          // usar SIEMPRE la cantidad base sin inventario
-          const baseQty = rawMainReferences.get(ref) ?? quantity;
-          const effectiveQuantity = isExcludedProcess ? baseQty : quantity;
+          // Lógica de inventario POR PROCESO basada en processes.inventario
+          // - Si inventario = false (isExcludedProcess = true): NO descontar inventario
+          // - Si inventario = true (isExcludedProcess = false) Y useInventory está habilitado: descontar inventario
+          const refNormalized = normalizeRefId(ref);
+          const inventoryForRef = inventoryByRef.get(refNormalized) || 0;
           
-          if (isExcludedProcess && useInventory) {
-            console.log(`     🔒 Proceso excluido (ID: ${mp.id_process}): Usando cantidad base ${baseQty} en lugar de ${quantity}`);
+          let effectiveQuantity: number;
+          if (isExcludedProcess) {
+            // Proceso con inventario = false: usar cantidad original
+            effectiveQuantity = quantity;
+            console.log(`     🔒 Proceso ${processNameOriginal} (inventario=false): Cantidad sin ajuste = ${quantity}`);
+          } else if (useInventory && inventoryForRef > 0) {
+            // Proceso con inventario = true Y opción habilitada: descontar inventario
+            effectiveQuantity = Math.max(0, quantity - inventoryForRef);
+            console.log(`     📉 Proceso ${processNameOriginal} (inventario=true): ${quantity} - ${inventoryForRef} inv = ${effectiveQuantity}`);
+          } else {
+            // useInventory deshabilitado o sin inventario
+            effectiveQuantity = quantity;
           }
           
           if (!processGroups.has(processName)) {
@@ -519,8 +539,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             .filter((machine: any) => {
               const processConfig = findProcessConfig(processName, operatorConfig);
               if (!processConfig) {
-                console.log(`     ⚠️ No hay configuración para proceso: ${processName}`);
-                return false;
+                // Incluir máquina aunque el proceso no esté configurado (aparecerá con 0 operarios)
+                console.log(`     ⚠️ Proceso ${processName} sin configuración - incluyendo máquina ${machine.machines.name} para mostrar tiempo requerido`);
+                return true;
               }
               const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
               const isOperational = machineConfig?.isOperational || false;
@@ -595,8 +616,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             .filter((machine: any) => {
               const processConfig = findProcessConfig(processName, operatorConfig);
               if (!processConfig) {
-                console.log(`     ⚠️ No hay configuración para proceso: ${processName}`);
-                return false;
+                // Incluir máquina aunque el proceso no esté configurado (aparecerá con 0 operarios)
+                console.log(`     ⚠️ Proceso ${processName} sin configuración - incluyendo máquina ${machine.machines.name} para mostrar tiempo requerido`);
+                return true;
               }
               const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
               const isOperational = machineConfig?.isOperational || false;
@@ -604,13 +626,23 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               return isOperational;
             });
 
-          // Cantidad base para este componente (sin inventario) si existe
-          const rawEntry = rawConsolidatedByNorm.get(normId);
-          const baseQty = rawEntry ? rawEntry.quantity : quantity;
-          const effectiveQuantity = isExcludedProcess ? baseQty : quantity;
+          // Lógica de inventario POR PROCESO basada en processes.inventario
+          // - Si inventario = false (isExcludedProcess = true): NO descontar inventario
+          // - Si inventario = true (isExcludedProcess = false) Y useInventory está habilitado: descontar inventario
+          const inventoryForComponent = inventoryByRef.get(normId) || 0;
           
-          if (isExcludedProcess && useInventory) {
-            console.log(`     🔒 Componente en proceso excluido (ID: ${mp.id_process}): Usando cantidad base ${baseQty} en lugar de ${quantity}`);
+          let effectiveQuantity: number;
+          if (isExcludedProcess) {
+            // Proceso con inventario = false: usar cantidad original
+            effectiveQuantity = quantity;
+            console.log(`     🔒 Componente en proceso ${processNameOriginal} (inventario=false): Cantidad sin ajuste = ${quantity}`);
+          } else if (useInventory && inventoryForComponent > 0) {
+            // Proceso con inventario = true Y opción habilitada: descontar inventario
+            effectiveQuantity = Math.max(0, quantity - inventoryForComponent);
+            console.log(`     📉 Componente en proceso ${processNameOriginal} (inventario=true): ${quantity} - ${inventoryForComponent} inv = ${effectiveQuantity}`);
+          } else {
+            // useInventory deshabilitado o sin inventario
+            effectiveQuantity = quantity;
           }
 
           if (existingComponent) {
