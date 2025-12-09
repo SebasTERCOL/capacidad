@@ -12,6 +12,8 @@ import { DeficitInfo, OvertimeConfig } from "./OvertimeConfiguration";
 export interface ProjectionInfo {
   referencia: string;
   cantidadRequerida: number;
+  cantidadOriginal?: number; // Cantidad original sin descuento de inventario
+  inventarioDisponible?: number; // Inventario disponible en products.quantity
   sam: number;
   tiempoTotal: number;
   maquina: string;
@@ -553,7 +555,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       
       const processGroups = new Map<string, {
         processName: string;
-        components: Map<string, { quantity: number; sam: number; machineOptions: any[] }>;
+        components: Map<string, { quantity: number; quantityOriginal: number; inventoryAvailable: number; sam: number; machineOptions: any[] }>;
         availableOperators: number;
         availableHours: number;
       }>();
@@ -657,8 +659,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             existingComponent.machineOptions = merged;
           } else {
             const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
+            // Obtener cantidad original desde rawMainReferences
+            const quantityOriginal = rawMainReferences.get(ref) || quantity;
+            const inventoryAvailable = inventoryByRef.get(refNormalized) || 0;
             processGroup.components.set(ref, {
               quantity: effectiveQuantity,
+              quantityOriginal,
+              inventoryAvailable,
               sam: samForProcess,
               machineOptions: availableMachines
             });
@@ -764,8 +771,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             existingComponent.machineOptions = merged;
           } else {
             const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
+            // Obtener cantidad original desde rawConsolidatedByNorm
+            const rawEntry = rawConsolidatedByNorm.get(normId);
+            const quantityOriginal = rawEntry?.quantity || quantity;
+            const inventoryAvailable = inventoryByRef.get(normId) || 0;
             processGroup.components.set(display, {
               quantity: effectiveQuantity,
+              quantityOriginal,
+              inventoryAvailable,
               sam: samForProcess,
               machineOptions: availableMachines
             });
@@ -881,6 +894,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
             processGroup.components.set(combo.comboName, {
               quantity: combo.suggestedCombos, // Número de combos a realizar
+              quantityOriginal: combo.suggestedCombos, // Para combos, es lo mismo
+              inventoryAvailable: 0, // Combos no tienen inventario
               sam: combo.cycleTime, // Tiempo por combo en minutos
               machineOptions: machinesWithCorrectUnit
             });
@@ -931,6 +946,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           results.push({
             referencia: `(Sin referencias asignadas)`,
             cantidadRequerida: 0,
+            cantidadOriginal: 0,
+            inventarioDisponible: 0,
             sam: 0,
             tiempoTotal: 0,
             maquina: '-',
@@ -1103,7 +1120,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const distributeWorkAcrossMachines = (
     processGroup: {
       processName: string;
-      components: Map<string, { quantity: number; sam: number; machineOptions: any[] }>;
+      components: Map<string, { quantity: number; quantityOriginal: number; inventoryAvailable: number; sam: number; machineOptions: any[] }>;
       availableOperators: number;
       availableHours: number;
     },
@@ -1235,6 +1252,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             results.push({
               referencia: componentId,
               cantidadRequerida: componentData.quantity,
+              cantidadOriginal: componentData.quantityOriginal,
+              inventarioDisponible: componentData.inventoryAvailable,
               sam: componentData.sam,
               tiempoTotal: tiempoTotalMinutos,
               maquina: compatibleMachineData.machines.name,
@@ -1260,6 +1279,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         results.push({
           referencia: componentId,
           cantidadRequerida: componentData.quantity,
+          cantidadOriginal: componentData.quantityOriginal,
+          inventarioDisponible: componentData.inventoryAvailable,
           sam: componentData.sam,
           tiempoTotal: 0,
           maquina: 'Sin máquina compatible',
@@ -1324,6 +1345,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           results.push({
             referencia: componentId,
             cantidadRequerida: cantidadAsignada,
+            cantidadOriginal: componentData.quantityOriginal,
+            inventarioDisponible: componentData.inventoryAvailable,
             sam: componentData.sam,
             tiempoTotal: tiempoAsignado * 60,
             maquina: machineInfo.machine.machines.name,
@@ -1407,6 +1430,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             results.push({
               referencia: componentId,
               cantidadRequerida: cantidadAsignada,
+              cantidadOriginal: componentData.quantityOriginal,
+              inventarioDisponible: componentData.inventoryAvailable,
               sam: componentData.sam,
               tiempoTotal: tiempoAsignado * 60,
               maquina: machineInfo.machine.machines.name,
@@ -1434,6 +1459,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         results.push({
           referencia: componentId,
           cantidadRequerida: Math.round(componentData.quantity * (tiempoRestante / tiempoTotalHoras)),
+          cantidadOriginal: componentData.quantityOriginal,
+          inventarioDisponible: componentData.inventoryAvailable,
           sam: componentData.sam,
           tiempoTotal: tiempoRestante * 60,
           maquina: 'Capacidad insuficiente',
@@ -1790,7 +1817,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           machineId: item.maquina,
           machineName: item.maquina,
           totalTime: 0,
-          references: []
+          references: [] as { referencia: string; cantidadRequerida: number; cantidadOriginal?: number; inventarioDisponible?: number; sam: number; tiempoTotal: number; ocupacionPorcentaje: number; alerta?: string }[]
         });
       }
 
@@ -1800,6 +1827,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       machineGroup.references.push({
         referencia: item.referencia,
         cantidadRequerida: item.cantidadRequerida,
+        cantidadOriginal: item.cantidadOriginal,
+        inventarioDisponible: item.inventarioDisponible,
         sam: item.sam,
         tiempoTotal: item.tiempoTotal,
         ocupacionPorcentaje: item.capacidadPorcentaje,

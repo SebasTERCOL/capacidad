@@ -10,6 +10,8 @@ import { OvertimeShift } from "./OvertimeConfiguration";
 interface ReferenceItem {
   referencia: string;
   cantidadRequerida: number;
+  cantidadOriginal?: number; // Cantidad original sin descuento de inventario
+  inventarioDisponible?: number; // Inventario disponible en products.quantity
   sam: number;
   tiempoTotal: number;
   ocupacionPorcentaje: number;
@@ -341,9 +343,37 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                       {ref.alerta && <AlertTriangle className="h-4 w-4 text-amber-500" />}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-4 text-sm">
-                                      <span className="text-muted-foreground">
-                                        Cant: <span className="font-medium text-foreground">{ref.cantidadRequerida}</span>
-                                      </span>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <span className="text-muted-foreground cursor-help underline decoration-dotted">
+                                              Cant: <span className="font-medium text-foreground">{ref.cantidadRequerida}</span>
+                                            </span>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="top" className="max-w-xs">
+                                            <div className="text-xs space-y-1">
+                                              <div className="font-semibold border-b pb-1 mb-1">Desglose de Inventario</div>
+                                              <div className="flex justify-between gap-4">
+                                                <span>Requerido (original):</span>
+                                                <span className="font-medium">{ref.cantidadOriginal ?? ref.cantidadRequerida}</span>
+                                              </div>
+                                              <div className="flex justify-between gap-4">
+                                                <span>Inventario disponible:</span>
+                                                <span className="font-medium text-green-600">{ref.inventarioDisponible ?? 0}</span>
+                                              </div>
+                                              <div className="flex justify-between gap-4 border-t pt-1 mt-1">
+                                                <span>Cantidad efectiva:</span>
+                                                <span className="font-bold">{ref.cantidadRequerida}</span>
+                                              </div>
+                                              {(ref.inventarioDisponible ?? 0) > 0 && (
+                                                <div className="text-muted-foreground italic mt-1">
+                                                  ✓ Inventario aplicado
+                                                </div>
+                                              )}
+                                            </div>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
                                       <span className="text-muted-foreground">
                                         SAM: <span className="font-medium text-foreground">{ref.sam.toFixed(3)}</span>
                                       </span>
