@@ -387,10 +387,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       // ===================================================================================
       // INVENTARIO EXHAUSTIVO: Sistema robusto de carga y búsqueda de inventario
+      // Enfocado en proceso CORTE (id_process = 10) con matching exacto
       // ===================================================================================
       
-      // Mapa principal: almacena inventario indexado por MÚLTIPLES claves para cada referencia
-      const inventoryMasterMap = new Map<string, { reference: string; quantity: number }>();
+      // Mapa directo por referencia EXACTA (como viene de BD)
+      const inventoryExactMap = new Map<string, number>();
+      // Mapa secundario para búsquedas alternativas
+      const inventoryAltMap = new Map<string, { reference: string; quantity: number }>();
       
       // Cargar inventario real desde products.quantity (SIEMPRE, independiente de useInventory)
       const { data: productsInventory, error: invError } = await supabase
@@ -400,85 +403,88 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       if (invError) {
         console.error('❌ Error cargando inventario de productos:', invError);
       } else if (productsInventory) {
-        console.log(`\n📦 === CARGA EXHAUSTIVA DE INVENTARIO ===`);
+        console.log(`\n📦 === CARGA EXHAUSTIVA DE INVENTARIO (CORTE) ===`);
         console.log(`   Total productos en BD: ${productsInventory.length}`);
         
+        // PASO 1: Indexar por referencia EXACTA (sin modificaciones)
         for (const prod of productsInventory) {
-          const refOriginal = String(prod.reference || '').trim();
+          const refExact = String(prod.reference || '').trim();
           const qty = prod.quantity || 0;
           
-          // Generar MÚLTIPLES claves de búsqueda para cada referencia
-          const keys = new Set<string>();
+          // Mapa principal: referencia exacta
+          inventoryExactMap.set(refExact, qty);
           
-          // 1. Referencia original exacta
-          keys.add(refOriginal);
+          // Mapa alternativo: múltiples variantes
+          const variants = [
+            refExact.toUpperCase(),
+            refExact.toLowerCase(),
+            normalizeRefId(refExact),
+            refExact.replace(/-/g, ''),
+            refExact.replace(/-/g, '').toUpperCase(),
+          ];
           
-          // 2. Versión uppercase
-          keys.add(refOriginal.toUpperCase());
-          
-          // 3. Versión lowercase
-          keys.add(refOriginal.toLowerCase());
-          
-          // 4. Versión normalizada (solo alfanuméricos uppercase)
-          keys.add(normalizeRefId(refOriginal));
-          
-          // 5. Versión sin guiones
-          keys.add(refOriginal.replace(/-/g, '').toUpperCase());
-          
-          // 6. Versión sin espacios
-          keys.add(refOriginal.replace(/\s/g, '').toUpperCase());
-          
-          // 7. Versión sin guiones ni espacios
-          keys.add(refOriginal.replace(/[-\s]/g, '').toUpperCase());
-          
-          // Almacenar con cada clave
-          for (const key of keys) {
-            if (key && key.length > 0) {
-              inventoryMasterMap.set(key, { reference: refOriginal, quantity: qty });
+          for (const variant of variants) {
+            if (variant && !inventoryAltMap.has(variant)) {
+              inventoryAltMap.set(variant, { reference: refExact, quantity: qty });
             }
           }
         }
         
-        console.log(`   Claves de inventario generadas: ${inventoryMasterMap.size}`);
+        console.log(`   Inventario exacto: ${inventoryExactMap.size} referencias`);
+        console.log(`   Inventario alternativo: ${inventoryAltMap.size} variantes`);
         
-        // Verificación exhaustiva de referencias problemáticas
-        const testRefs = ['T-CE1515', 'TCE1515', 'T-CE2020', 'TCE2020', 'CUE12D', 'CNCE125-CMB', 'CNCE125CMB', 'CA-30', 'CA30'];
-        console.log('\n🔍 === VERIFICACIÓN DE REFERENCIAS CRÍTICAS ===');
-        for (const ref of testRefs) {
-          const result = inventoryMasterMap.get(ref) || inventoryMasterMap.get(ref.toUpperCase()) || inventoryMasterMap.get(normalizeRefId(ref));
-          console.log(`   📦 ${ref}: ${result ? `${result.quantity} unidades (ref: ${result.reference})` : '⚠️ NO ENCONTRADO'}`);
+        // VERIFICACIÓN ESPECÍFICA para referencias problemáticas de CORTE
+        const corteRefs = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125-CMB', 'CUE1295D', 'CUE1295I', 'CUE1295M'];
+        console.log('\n🔍 === VERIFICACIÓN REFERENCIAS CORTE (id_process=10) ===');
+        for (const ref of corteRefs) {
+          const exactQty = inventoryExactMap.get(ref);
+          const altResult = inventoryAltMap.get(ref) || inventoryAltMap.get(ref.toUpperCase()) || inventoryAltMap.get(normalizeRefId(ref));
+          
+          if (exactQty !== undefined) {
+            console.log(`   ✅ ${ref}: ${exactQty} unidades (exacto)`);
+          } else if (altResult) {
+            console.log(`   🔄 ${ref}: ${altResult.quantity} unidades (via ${altResult.reference})`);
+          } else {
+            console.log(`   ❌ ${ref}: NO ENCONTRADO`);
+          }
         }
       }
       
-      // Función helper EXHAUSTIVA para buscar inventario
+      // Función helper EXHAUSTIVA para buscar inventario (prioriza exacto)
       const getInventoryForRef = (ref: string): number => {
         if (!ref) return 0;
         
         const refClean = String(ref).trim();
         
-        // Intentar con múltiples variantes de la clave de búsqueda
+        // 1. Búsqueda EXACTA (prioridad máxima)
+        const exactQty = inventoryExactMap.get(refClean);
+        if (exactQty !== undefined) {
+          return exactQty;
+        }
+        
+        // 2. Búsqueda por variantes en mapa alternativo
         const searchKeys = [
-          refClean,                                    // Original
-          refClean.toUpperCase(),                      // Uppercase
-          refClean.toLowerCase(),                      // Lowercase  
-          normalizeRefId(refClean),                    // Normalizado (solo alfanuméricos)
-          refClean.replace(/-/g, '').toUpperCase(),    // Sin guiones
-          refClean.replace(/\s/g, '').toUpperCase(),   // Sin espacios
-          refClean.replace(/[-\s]/g, '').toUpperCase() // Sin guiones ni espacios
+          refClean.toUpperCase(),
+          refClean.toLowerCase(),
+          normalizeRefId(refClean),
+          refClean.replace(/-/g, ''),
+          refClean.replace(/-/g, '').toUpperCase(),
+          refClean.replace(/\s/g, '').toUpperCase(),
+          refClean.replace(/[-\s]/g, '').toUpperCase()
         ];
         
         for (const key of searchKeys) {
-          const result = inventoryMasterMap.get(key);
-          if (result !== undefined && result.quantity > 0) {
+          const result = inventoryAltMap.get(key);
+          if (result !== undefined) {
             return result.quantity;
           }
         }
         
-        // Si no encontró con cantidad > 0, buscar cualquier coincidencia
+        // 3. Último intento: buscar exacto en inventoryExactMap con variantes
         for (const key of searchKeys) {
-          const result = inventoryMasterMap.get(key);
-          if (result !== undefined) {
-            return result.quantity;
+          const exactVariant = inventoryExactMap.get(key);
+          if (exactVariant !== undefined) {
+            return exactVariant;
           }
         }
         
@@ -597,22 +603,31 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // =====================================================
       const effectiveQuantityByRef = new Map<string, number>();
       
-      // Referencias problemáticas para diagnóstico (incluimos tanto variantes normalizadas como originales)
-      const debugRefs = ['CNCE125CMB', 'CNCE125-CMB', 'TCE1515', 'T-CE1515', 'TCE2020', 'T-CE2020', 'CUE12D', 'CA30', 'CA-30', 'ADAPTER12', 'ADAPTER34', 'CA35', 'CA-35', 'CA40', 'CA-40'];
+      // Referencias problemáticas para diagnóstico (enfocadas en CORTE id_process=10)
+      const debugRefs = ['CNCE125CMB', 'CNCE125-CMB', 'TCE1515', 'T-CE1515', 'TCE2020', 'T-CE2020', 'CUE12D', 'CUE12I', 'CUE1295D', 'CUE1295I', 'CA30', 'CA-30', 'ADAPTER12', 'ADAPTER34'];
       
-      // Log para verificar el inventario cargado para referencias problemáticas
-      console.log('\n📦 === VERIFICACIÓN DE INVENTARIO PARA DEBUGGING ===');
-      for (const dbRef of debugRefs) {
+      // Log para verificar el inventario cargado para referencias problemáticas (CORTE)
+      console.log('\n📦 === VERIFICACIÓN INVENTARIO CORTE (id=10) ===');
+      const corteTestRefs = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125-CMB', 'CUE1295D', 'CUE1295I', 'CUE1295M'];
+      for (const dbRef of corteTestRefs) {
         const inv = getInventoryForRef(dbRef);
         console.log(`   📦 ${dbRef}: inventario = ${inv}`);
       }
       
       console.log('\n📊 === PRE-CÁLCULO DE CANTIDADES EFECTIVAS ===');
       
+      // Referencias de CORTE para log especial
+      const corteDebugRefs = ['TCE1515', 'T-CE1515', 'TCE2020', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125CMB', 'CNCE125-CMB', 'CUE1295D', 'CUE1295I'];
+      
       // Pre-calcular para referencias principales
       for (const [ref, quantity] of mainReferences.entries()) {
         const refNorm = normalizeRefId(ref);
-        const inventoryForRef = getInventoryForRef(ref);
+        // Búsqueda exhaustiva de inventario
+        let inventoryForRef = getInventoryForRef(ref);
+        if (inventoryForRef === 0) {
+          inventoryForRef = getInventoryForRef(refNorm);
+        }
+        
         let effectiveQty: number;
         
         if (useInventory && inventoryForRef > 0) {
@@ -623,16 +638,22 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         
         effectiveQuantityByRef.set(refNorm, effectiveQty);
         
-        // Log detallado para referencias problemáticas
-        if (debugRefs.includes(refNorm)) {
-          console.log(`🔎 DEBUG MAIN ${ref}: cantidad=${quantity}, inventario=${inventoryForRef}, effectiveQty=${effectiveQty}, useInventory=${useInventory}`);
+        // Log detallado para referencias de CORTE
+        const isCorteRef = corteDebugRefs.some(cr => refNorm.includes(normalizeRefId(cr)));
+        if (isCorteRef || debugRefs.includes(refNorm)) {
+          console.log(`🔎 MAIN ${ref}: original=${quantity}, inventario=${inventoryForRef}, efectiva=${effectiveQty}, useInventory=${useInventory}`);
         }
       }
       
       // Pre-calcular para componentes consolidados
       for (const [normId, entry] of consolidatedByNorm.entries()) {
         const { quantity, display } = entry;
-        const inventoryForComp = getInventoryForRef(display);
+        // Búsqueda exhaustiva de inventario
+        let inventoryForComp = getInventoryForRef(display);
+        if (inventoryForComp === 0) {
+          inventoryForComp = getInventoryForRef(normId);
+        }
+        
         let effectiveQty: number;
         
         if (useInventory && inventoryForComp > 0) {
@@ -644,9 +665,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         // Guardar cantidad efectiva (reemplaza si ya existe)
         effectiveQuantityByRef.set(normId, effectiveQty);
         
-        // Log detallado para referencias problemáticas
-        if (debugRefs.includes(normId)) {
-          console.log(`🔎 DEBUG COMP ${display}: cantidad=${quantity}, inventario=${inventoryForComp}, effectiveQty=${effectiveQty}, useInventory=${useInventory}`);
+        // Log detallado para referencias de CORTE
+        const isCorteRef = corteDebugRefs.some(cr => normId.includes(normalizeRefId(cr)));
+        if (isCorteRef || debugRefs.includes(normId)) {
+          console.log(`🔎 COMP ${display}: original=${quantity}, inventario=${inventoryForComp}, efectiva=${effectiveQty}, useInventory=${useInventory}`);
         }
       }
       
@@ -740,17 +762,30 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // El inventario ya fue descontado UNA VEZ en effectiveQuantityByRef
           // Aquí solo decidimos si usar la cantidad efectiva o la original según processes.inventario
           const refNormalized = normalizeRefId(ref);
+          const mpRefExact = String(mp.ref || '').trim();
           const preCalculatedEffective = effectiveQuantityByRef.get(refNormalized) ?? quantity;
-          const inventoryForRef = getInventoryForRef(ref);
+          
+          // BÚSQUEDA EXHAUSTIVA DE INVENTARIO
+          let inventoryForRef = getInventoryForRef(ref);
+          if (inventoryForRef === 0) {
+            inventoryForRef = getInventoryForRef(mpRefExact);
+          }
+          if (inventoryForRef === 0) {
+            inventoryForRef = getInventoryForRef(refNormalized);
+          }
           
           // 🔍 LOG DIAGNÓSTICO DETALLADO
-          const isDebugRef = debugRefs.includes(refNormalized);
-          if (isDebugRef) {
-            console.log(`\n🔎 === DEBUG REF PRINCIPAL: ${ref} ===`);
+          const isDebugRef = debugRefs.includes(refNormalized) || 
+                            ['TCE1515', 'TCE2020', 'CUE12D', 'CNCE125CMB'].includes(refNormalized);
+          const isCorteProcess = mp.id_process === 10;
+          
+          if (isDebugRef || (isCorteProcess && inventoryForRef > 0)) {
+            console.log(`\n🔎 === DEBUG REF PRINCIPAL: ${ref} (CORTE=${isCorteProcess}) ===`);
+            console.log(`     Ref exacta MP: ${mpRefExact}`);
             console.log(`     Normalizada: ${refNormalized}`);
             console.log(`     Cantidad original: ${quantity}`);
             console.log(`     Cantidad efectiva pre-calculada: ${preCalculatedEffective}`);
-            console.log(`     Inventario: ${inventoryForRef}`);
+            console.log(`     Inventario encontrado: ${inventoryForRef}`);
             console.log(`     useInventory: ${useInventory}`);
             console.log(`     isExcludedProcess: ${isExcludedProcess}`);
             console.log(`     Proceso: ${processNameOriginal} (ID: ${mp.id_process})`);
@@ -805,7 +840,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
           // Obtener valores originales desde rawMainReferences
           const quantityOriginalFromRaw = rawMainReferences.get(ref) || quantity;
-          const inventoryAvailableFromDB = getInventoryForRef(ref);
+          // USAR inventoryForRef ya calculado con búsqueda exhaustiva
+          const inventoryAvailableFromDB = inventoryForRef;
           
           if (existingComponent) {
             // Actualizar cantidad con efectivo (incluye descuento de inventario si aplica)
@@ -910,16 +946,29 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // CORRECCIÓN: Usar cantidad efectiva pre-calculada
           // El inventario ya fue descontado UNA VEZ en effectiveQuantityByRef
           const preCalculatedEffective = effectiveQuantityByRef.get(normId) ?? quantity;
-          const inventoryForComponent = getInventoryForRef(display);
+          
+          // BÚSQUEDA EXHAUSTIVA DE INVENTARIO: intentar con múltiples referencias
+          const mpRefExact = String(mp.ref || '').trim();
+          let inventoryForComponent = getInventoryForRef(display);
+          if (inventoryForComponent === 0) {
+            inventoryForComponent = getInventoryForRef(mpRefExact);
+          }
+          if (inventoryForComponent === 0) {
+            inventoryForComponent = getInventoryForRef(normId);
+          }
           
           // 🔍 LOG DIAGNÓSTICO DETALLADO PARA COMPONENTES
-          const isDebugComp = debugRefs.includes(normId);
-          if (isDebugComp) {
-            console.log(`\n🔎 === DEBUG COMPONENTE: ${display} ===`);
+          const isDebugComp = debugRefs.includes(normId) || 
+                             ['TCE1515', 'TCE2020', 'CUE12D', 'CNCE125CMB'].includes(normId);
+          const isCorteProcess = mp.id_process === 10;
+          
+          if (isDebugComp || (isCorteProcess && inventoryForComponent > 0)) {
+            console.log(`\n🔎 === DEBUG COMPONENTE: ${display} (CORTE=${isCorteProcess}) ===`);
+            console.log(`     Ref exacta MP: ${mpRefExact}`);
             console.log(`     Normalizada: ${normId}`);
             console.log(`     Cantidad original: ${quantity}`);
             console.log(`     Cantidad efectiva pre-calculada: ${preCalculatedEffective}`);
-            console.log(`     Inventario: ${inventoryForComponent}`);
+            console.log(`     Inventario encontrado: ${inventoryForComponent}`);
             console.log(`     useInventory: ${useInventory}`);
             console.log(`     isExcludedProcess: ${isExcludedProcess}`);
             console.log(`     Proceso: ${processNameOriginal} (ID: ${mp.id_process})`);
@@ -939,7 +988,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // Obtener valores originales desde rawConsolidatedByNorm
           const rawEntry = rawConsolidatedByNorm.get(normId);
           const quantityOriginalFromRaw = rawEntry?.quantity || quantity;
-          const inventoryAvailableFromDB = getInventoryForRef(display);
+          // USAR inventoryForComponent ya calculado con búsqueda exhaustiva
+          const inventoryAvailableFromDB = inventoryForComponent;
           
           if (existingComponent) {
             // Actualizar cantidad con efectivo (incluye descuento de inventario si aplica)
@@ -1116,6 +1166,35 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         } else {
           console.log(`   ✅ Proceso ${processName} ya tiene componentes asignados`);
         }
+      }
+
+      // =====================================================
+      // LOG ESPECÍFICO PARA PROCESO CORTE (id_process = 10)
+      // Verificar que las referencias tienen los valores correctos
+      // =====================================================
+      console.log('\n🔪 === RESUMEN PROCESO CORTE (ANTES DE DISTRIBUCIÓN) ===');
+      const corteGroup = processGroups.get('Corte') || processGroups.get('corte');
+      if (corteGroup) {
+        console.log(`   Operarios: ${corteGroup.availableOperators}`);
+        console.log(`   Horas disponibles: ${corteGroup.availableHours}`);
+        console.log(`   Referencias: ${corteGroup.components.size}`);
+        console.log('   Detalle por referencia:');
+        for (const [ref, data] of corteGroup.components.entries()) {
+          const isCorteDebug = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125-CMB', 'CUE1295D', 'CUE1295I'].some(r => 
+            ref.toUpperCase().includes(r.replace('-', ''))
+          );
+          if (isCorteDebug || data.inventoryAvailable > 0) {
+            console.log(`     📋 ${ref}:`);
+            console.log(`        - Cantidad efectiva: ${data.quantity}`);
+            console.log(`        - Cantidad original: ${data.quantityOriginal}`);
+            console.log(`        - Inventario: ${data.inventoryAvailable}`);
+            console.log(`        - SAM: ${data.sam}`);
+            console.log(`        - Diferencia esperada: ${data.quantityOriginal} - ${data.inventoryAvailable} = ${(data.quantityOriginal || 0) - (data.inventoryAvailable || 0)}`);
+          }
+        }
+      } else {
+        console.log('   ⚠️ Proceso Corte no encontrado en processGroups');
+        console.log('   Procesos disponibles:', [...processGroups.keys()]);
       }
 
       // 4. FASE DE DISTRIBUCIÓN INTELIGENTE: Aplicar algoritmo de distribución óptima
