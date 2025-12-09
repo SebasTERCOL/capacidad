@@ -478,6 +478,61 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       console.log(`✅ Componentes consolidados normalizados (ajustados): ${consolidatedByNorm.size}`);
       console.log(`✅ Componentes base normalizados (sin inventario): ${rawConsolidatedByNorm.size}`);
+
+      // =====================================================
+      // CORRECCIÓN CRÍTICA: Pre-calcular effectiveQuantity por referencia
+      // El inventario se resta UNA VEZ por referencia, y esa cantidad efectiva
+      // se usa en TODOS los procesos de esa referencia (donde inventario=true)
+      // =====================================================
+      const effectiveQuantityByRef = new Map<string, number>();
+      
+      // Referencias problemáticas para diagnóstico
+      const debugRefs = ['CNCE125CMB', 'TCE1515', 'TCE2020', 'CUE12D', 'CA30', 'ADAPTER12', 'ADAPTER34'];
+      
+      console.log('\n📊 === PRE-CÁLCULO DE CANTIDADES EFECTIVAS ===');
+      
+      // Pre-calcular para referencias principales
+      for (const [ref, quantity] of mainReferences.entries()) {
+        const refNorm = normalizeRefId(ref);
+        const inventoryForRef = inventoryByRef.get(refNorm) || 0;
+        let effectiveQty: number;
+        
+        if (useInventory && inventoryForRef > 0) {
+          effectiveQty = Math.max(0, quantity - inventoryForRef);
+        } else {
+          effectiveQty = quantity;
+        }
+        
+        effectiveQuantityByRef.set(refNorm, effectiveQty);
+        
+        // Log detallado para referencias problemáticas
+        if (debugRefs.includes(refNorm)) {
+          console.log(`🔎 DEBUG MAIN ${ref}: cantidad=${quantity}, inventario=${inventoryForRef}, effectiveQty=${effectiveQty}, useInventory=${useInventory}`);
+        }
+      }
+      
+      // Pre-calcular para componentes consolidados
+      for (const [normId, entry] of consolidatedByNorm.entries()) {
+        const { quantity, display } = entry;
+        const inventoryForComp = inventoryByRef.get(normId) || 0;
+        let effectiveQty: number;
+        
+        if (useInventory && inventoryForComp > 0) {
+          effectiveQty = Math.max(0, quantity - inventoryForComp);
+        } else {
+          effectiveQty = quantity;
+        }
+        
+        // Guardar cantidad efectiva (reemplaza si ya existe)
+        effectiveQuantityByRef.set(normId, effectiveQty);
+        
+        // Log detallado para referencias problemáticas
+        if (debugRefs.includes(normId)) {
+          console.log(`🔎 DEBUG COMP ${display}: cantidad=${quantity}, inventario=${inventoryForComp}, effectiveQty=${effectiveQty}, useInventory=${useInventory}`);
+        }
+      }
+      
+      console.log(`✅ Cantidades efectivas pre-calculadas: ${effectiveQuantityByRef.size} referencias`);
       
       // Log all available processes from machines_processes
       console.log('\n🔍 === PROCESOS ENCONTRADOS EN BD ===');
@@ -522,31 +577,35 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           
           console.log(`     · Proceso original: ${processNameOriginal} (ID: ${mp.id_process}) -> Normalizado: ${processName}`);
 
-          // Lógica de inventario POR PROCESO basada en processes.inventario
-          // - Si inventario = false (isExcludedProcess = true): NO descontar inventario
-          // - Si inventario = true (isExcludedProcess = false) Y useInventory está habilitado: descontar inventario
+          // CORRECCIÓN: Usar cantidad efectiva pre-calculada
+          // El inventario ya fue descontado UNA VEZ en effectiveQuantityByRef
+          // Aquí solo decidimos si usar la cantidad efectiva o la original según processes.inventario
           const refNormalized = normalizeRefId(ref);
+          const preCalculatedEffective = effectiveQuantityByRef.get(refNormalized) ?? quantity;
           const inventoryForRef = inventoryByRef.get(refNormalized) || 0;
           
           // 🔍 LOG DIAGNÓSTICO DETALLADO
-          console.log(`     🔍 REF: ${ref} -> Normalizada: ${refNormalized}`);
-          console.log(`        useInventory=${useInventory}, isExcludedProcess=${isExcludedProcess}, inventarioEncontrado=${inventoryForRef}`);
+          const isDebugRef = debugRefs.includes(refNormalized);
+          if (isDebugRef) {
+            console.log(`\n🔎 === DEBUG REF PRINCIPAL: ${ref} ===`);
+            console.log(`     Normalizada: ${refNormalized}`);
+            console.log(`     Cantidad original: ${quantity}`);
+            console.log(`     Cantidad efectiva pre-calculada: ${preCalculatedEffective}`);
+            console.log(`     Inventario: ${inventoryForRef}`);
+            console.log(`     useInventory: ${useInventory}`);
+            console.log(`     isExcludedProcess: ${isExcludedProcess}`);
+            console.log(`     Proceso: ${processNameOriginal} (ID: ${mp.id_process})`);
+          }
           
           let effectiveQuantity: number;
           if (isExcludedProcess) {
-            // Proceso con inventario = false: usar cantidad original
+            // Proceso con inventario = false: usar cantidad original SIN descuento
             effectiveQuantity = quantity;
-            console.log(`     🔒 Proceso ${processNameOriginal} (inventario=false): Cantidad sin ajuste = ${quantity}`);
-          } else if (useInventory && inventoryForRef > 0) {
-            // Proceso con inventario = true Y opción habilitada: descontar inventario
-            effectiveQuantity = Math.max(0, quantity - inventoryForRef);
-            console.log(`     📉 Proceso ${processNameOriginal} (inventario=true): ${quantity} - ${inventoryForRef} inv = ${effectiveQuantity}`);
+            if (isDebugRef) console.log(`     🔒 Proceso ${processNameOriginal} (inventario=false): usando cantidad original = ${quantity}`);
           } else {
-            // useInventory deshabilitado o sin inventario
-            effectiveQuantity = quantity;
-            if (useInventory && inventoryForRef === 0) {
-              console.log(`     ⚠️ useInventory=true pero inventario=0 para ${ref}`);
-            }
+            // Proceso con inventario = true: usar cantidad efectiva pre-calculada
+            effectiveQuantity = preCalculatedEffective;
+            if (isDebugRef) console.log(`     📉 Proceso ${processNameOriginal} (inventario=true): usando cantidad efectiva = ${preCalculatedEffective}`);
           }
           
           if (!processGroups.has(processName)) {
@@ -663,30 +722,33 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               return isOperational;
             });
 
-          // Lógica de inventario POR PROCESO basada en processes.inventario
-          // - Si inventario = false (isExcludedProcess = true): NO descontar inventario
-          // - Si inventario = true (isExcludedProcess = false) Y useInventory está habilitado: descontar inventario
+          // CORRECCIÓN: Usar cantidad efectiva pre-calculada
+          // El inventario ya fue descontado UNA VEZ en effectiveQuantityByRef
+          const preCalculatedEffective = effectiveQuantityByRef.get(normId) ?? quantity;
           const inventoryForComponent = inventoryByRef.get(normId) || 0;
           
           // 🔍 LOG DIAGNÓSTICO DETALLADO PARA COMPONENTES
-          console.log(`     🔍 COMP: ${display} -> Normalizada: ${normId}`);
-          console.log(`        useInventory=${useInventory}, isExcludedProcess=${isExcludedProcess}, inventarioEncontrado=${inventoryForComponent}`);
+          const isDebugComp = debugRefs.includes(normId);
+          if (isDebugComp) {
+            console.log(`\n🔎 === DEBUG COMPONENTE: ${display} ===`);
+            console.log(`     Normalizada: ${normId}`);
+            console.log(`     Cantidad original: ${quantity}`);
+            console.log(`     Cantidad efectiva pre-calculada: ${preCalculatedEffective}`);
+            console.log(`     Inventario: ${inventoryForComponent}`);
+            console.log(`     useInventory: ${useInventory}`);
+            console.log(`     isExcludedProcess: ${isExcludedProcess}`);
+            console.log(`     Proceso: ${processNameOriginal} (ID: ${mp.id_process})`);
+          }
           
           let effectiveQuantity: number;
           if (isExcludedProcess) {
-            // Proceso con inventario = false: usar cantidad original
+            // Proceso con inventario = false: usar cantidad original SIN descuento
             effectiveQuantity = quantity;
-            console.log(`     🔒 Componente en proceso ${processNameOriginal} (inventario=false): Cantidad sin ajuste = ${quantity}`);
-          } else if (useInventory && inventoryForComponent > 0) {
-            // Proceso con inventario = true Y opción habilitada: descontar inventario
-            effectiveQuantity = Math.max(0, quantity - inventoryForComponent);
-            console.log(`     📉 Componente en proceso ${processNameOriginal} (inventario=true): ${quantity} - ${inventoryForComponent} inv = ${effectiveQuantity}`);
+            if (isDebugComp) console.log(`     🔒 Componente en ${processNameOriginal} (inventario=false): usando cantidad original = ${quantity}`);
           } else {
-            // useInventory deshabilitado o sin inventario
-            effectiveQuantity = quantity;
-            if (useInventory && inventoryForComponent === 0) {
-              console.log(`     ⚠️ useInventory=true pero inventario=0 para componente ${display}`);
-            }
+            // Proceso con inventario = true: usar cantidad efectiva pre-calculada
+            effectiveQuantity = preCalculatedEffective;
+            if (isDebugComp) console.log(`     📉 Componente en ${processNameOriginal} (inventario=true): usando cantidad efectiva = ${preCalculatedEffective}`);
           }
 
           if (existingComponent) {
@@ -831,6 +893,26 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         }
       }
 
+      // =====================================================
+      // CORRECCIÓN: Asegurar que TODOS los procesos configurados aparezcan
+      // Incluso si no tienen componentes asignados (mostrarán 0% ocupación)
+      // =====================================================
+      console.log('\n🔄 === VERIFICANDO PROCESOS CONFIGURADOS ===');
+      for (const processConfig of operatorConfig.processes) {
+        const processName = processConfig.processName;
+        if (!processGroups.has(processName)) {
+          console.log(`   ⚠️ Proceso ${processName} configurado pero sin componentes - agregando al análisis`);
+          processGroups.set(processName, {
+            processName,
+            components: new Map(),
+            availableOperators: processConfig.operatorCount || 0,
+            availableHours: processConfig.availableHours || operatorConfig.availableHours
+          });
+        } else {
+          console.log(`   ✅ Proceso ${processName} ya tiene componentes asignados`);
+        }
+      }
+
       // 4. FASE DE DISTRIBUCIÓN INTELIGENTE: Aplicar algoritmo de distribución óptima
       setProgress({ current: 6, total: 7, currentRef: 'Aplicando distribución inteligente...' });
       
@@ -842,7 +924,27 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         console.log(`   Operarios disponibles: ${processGroup.availableOperators}`);
         console.log(`   Componentes a procesar: ${processGroup.components.size}`);
 
-        if (processGroup.components.size === 0) continue;
+        // Aunque no tenga componentes, agregar al resultado con 0% ocupación
+        if (processGroup.components.size === 0) {
+          console.log(`   ℹ️ Proceso ${processName} sin componentes - mostrando con 0% ocupación`);
+          // Agregar entrada vacía para que el proceso aparezca en la vista
+          results.push({
+            referencia: `(Sin referencias asignadas)`,
+            cantidadRequerida: 0,
+            sam: 0,
+            tiempoTotal: 0,
+            maquina: '-',
+            estadoMaquina: '-',
+            proceso: processName,
+            operadoresRequeridos: 0,
+            operadoresDisponibles: processGroup.availableOperators,
+            capacidadPorcentaje: 0,
+            ocupacionMaquina: 0,
+            ocupacionProceso: 0,
+            alerta: 'ℹ️ Sin referencias asignadas a este proceso'
+          });
+          continue;
+        }
 
         // Obtener intersección de máquinas que pueden procesar múltiples componentes
         const machineIntersection = findOptimalMachineDistribution(processGroup);
