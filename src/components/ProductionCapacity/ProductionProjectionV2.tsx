@@ -372,6 +372,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // Crear mapa de inventario por referencia DESDE LA BASE DE DATOS (products.quantity)
       // IMPORTANTE: SIEMPRE cargar inventario para mostrar en tooltip, solo la resta es condicional
       const inventoryByRef = new Map<string, number>();
+      // Mapa adicional: referencia original (sin normalizar) -> cantidad
+      const inventoryByOriginalRef = new Map<string, number>();
       
       // Cargar inventario real desde products.quantity (SIEMPRE, independiente de useInventory)
       const { data: productsInventory, error: invError } = await supabase
@@ -381,20 +383,53 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       if (invError) {
         console.error('❌ Error cargando inventario de productos:', invError);
       } else if (productsInventory) {
-        for (const prod of productsInventory) {
-          // Guardar TODOS los inventarios, incluso los que son 0 o negativos
-          inventoryByRef.set(normalizeRefId(prod.reference), prod.quantity || 0);
-        }
-        console.log(`📦 Inventario cargado desde BD: ${inventoryByRef.size} referencias total`);
+        console.log(`📦 Cargando inventario exhaustivamente desde BD: ${productsInventory.length} productos...`);
         
-        // Log ejemplos específicos para depuración
-        const testRefs = ['T-CE1515', 'TAPA12-95', 'BSCENTRO-125B', 'CA-30'];
+        for (const prod of productsInventory) {
+          const originalRef = String(prod.reference || '').trim().toUpperCase();
+          const normalizedRef = normalizeRefId(prod.reference);
+          const qty = prod.quantity || 0;
+          
+          // Guardar en AMBOS mapas para búsqueda flexible
+          inventoryByRef.set(normalizedRef, qty);
+          inventoryByOriginalRef.set(originalRef, qty);
+          
+          // También guardar la versión original tal cual
+          inventoryByRef.set(originalRef, qty);
+        }
+        
+        console.log(`📦 Inventario cargado: ${inventoryByRef.size} entradas (normalizado + original)`);
+        
+        // Log ejemplos específicos para depuración exhaustiva
+        const testRefs = ['T-CE1515', 'TCE1515', 'TAPA12-95', 'TAPA1295', 'CNCE125-CMB', 'CNCE125CMB', 'BSCENTRO-125B', 'CA-30'];
+        console.log('\n🔍 === VERIFICACIÓN EXHAUSTIVA DE INVENTARIO ===');
         for (const ref of testRefs) {
           const normRef = normalizeRefId(ref);
-          const inv = inventoryByRef.get(normRef);
-          console.log(`   📦 ${ref} (norm: ${normRef}): inventario = ${inv ?? 'NO ENCONTRADO'}`);
+          const upperRef = ref.trim().toUpperCase();
+          const invNorm = inventoryByRef.get(normRef);
+          const invOrig = inventoryByRef.get(upperRef);
+          console.log(`   📦 Ref: "${ref}" -> norm: "${normRef}", upper: "${upperRef}"`);
+          console.log(`      - Por normalizado (${normRef}): ${invNorm ?? 'NO ENCONTRADO'}`);
+          console.log(`      - Por original (${upperRef}): ${invOrig ?? 'NO ENCONTRADO'}`);
         }
       }
+      
+      // Función helper para buscar inventario de múltiples formas
+      const getInventoryForRef = (ref: string): number => {
+        const normalizedRef = normalizeRefId(ref);
+        const upperRef = String(ref || '').trim().toUpperCase();
+        
+        // Intentar múltiples formas de búsqueda
+        let inventory = inventoryByRef.get(normalizedRef);
+        if (inventory === undefined) {
+          inventory = inventoryByRef.get(upperRef);
+        }
+        if (inventory === undefined) {
+          inventory = inventoryByOriginalRef.get(upperRef);
+        }
+        
+        return inventory ?? 0;
+      };
       
       console.log(`🎛️ useInventory = ${useInventory} (el inventario se carga siempre para tooltip, solo la resta es condicional)`);
 
@@ -506,14 +541,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // =====================================================
       const effectiveQuantityByRef = new Map<string, number>();
       
-      // Referencias problemáticas para diagnóstico (agregamos más para verificar)
-      const debugRefs = ['CNCE125CMB', 'TCE1515', 'TCE2020', 'CUE12D', 'CA30', 'ADAPTER12', 'ADAPTER34', 'CA35', 'CA40'];
+      // Referencias problemáticas para diagnóstico (incluimos tanto variantes normalizadas como originales)
+      const debugRefs = ['CNCE125CMB', 'CNCE125-CMB', 'TCE1515', 'T-CE1515', 'TCE2020', 'T-CE2020', 'CUE12D', 'CA30', 'CA-30', 'ADAPTER12', 'ADAPTER34', 'CA35', 'CA-35', 'CA40', 'CA-40'];
       
       // Log para verificar el inventario cargado para referencias problemáticas
       console.log('\n📦 === VERIFICACIÓN DE INVENTARIO PARA DEBUGGING ===');
       for (const dbRef of debugRefs) {
-        const inv = inventoryByRef.get(dbRef);
-        console.log(`   📦 ${dbRef}: inventario = ${inv ?? 'NO ENCONTRADO'}`);
+        const inv = getInventoryForRef(dbRef);
+        console.log(`   📦 ${dbRef}: inventario = ${inv}`);
       }
       
       console.log('\n📊 === PRE-CÁLCULO DE CANTIDADES EFECTIVAS ===');
@@ -521,7 +556,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // Pre-calcular para referencias principales
       for (const [ref, quantity] of mainReferences.entries()) {
         const refNorm = normalizeRefId(ref);
-        const inventoryForRef = inventoryByRef.get(refNorm) || 0;
+        const inventoryForRef = getInventoryForRef(ref);
         let effectiveQty: number;
         
         if (useInventory && inventoryForRef > 0) {
@@ -541,7 +576,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // Pre-calcular para componentes consolidados
       for (const [normId, entry] of consolidatedByNorm.entries()) {
         const { quantity, display } = entry;
-        const inventoryForComp = inventoryByRef.get(normId) || 0;
+        const inventoryForComp = getInventoryForRef(display);
         let effectiveQty: number;
         
         if (useInventory && inventoryForComp > 0) {
@@ -628,7 +663,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // Aquí solo decidimos si usar la cantidad efectiva o la original según processes.inventario
           const refNormalized = normalizeRefId(ref);
           const preCalculatedEffective = effectiveQuantityByRef.get(refNormalized) ?? quantity;
-          const inventoryForRef = inventoryByRef.get(refNormalized) || 0;
+          const inventoryForRef = getInventoryForRef(ref);
           
           // 🔍 LOG DIAGNÓSTICO DETALLADO
           const isDebugRef = debugRefs.includes(refNormalized);
@@ -692,7 +727,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
           // Obtener valores originales desde rawMainReferences
           const quantityOriginalFromRaw = rawMainReferences.get(ref) || quantity;
-          const inventoryAvailableFromDB = inventoryByRef.get(refNormalized) || 0;
+          const inventoryAvailableFromDB = getInventoryForRef(ref);
           
           if (existingComponent) {
             // Actualizar cantidad con efectivo (incluye descuento de inventario si aplica)
@@ -788,7 +823,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // CORRECCIÓN: Usar cantidad efectiva pre-calculada
           // El inventario ya fue descontado UNA VEZ en effectiveQuantityByRef
           const preCalculatedEffective = effectiveQuantityByRef.get(normId) ?? quantity;
-          const inventoryForComponent = inventoryByRef.get(normId) || 0;
+          const inventoryForComponent = getInventoryForRef(display);
           
           // 🔍 LOG DIAGNÓSTICO DETALLADO PARA COMPONENTES
           const isDebugComp = debugRefs.includes(normId);
@@ -817,7 +852,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // Obtener valores originales desde rawConsolidatedByNorm
           const rawEntry = rawConsolidatedByNorm.get(normId);
           const quantityOriginalFromRaw = rawEntry?.quantity || quantity;
-          const inventoryAvailableFromDB = inventoryByRef.get(normId) || 0;
+          const inventoryAvailableFromDB = getInventoryForRef(display);
           
           if (existingComponent) {
             // Actualizar cantidad con efectivo (incluye descuento de inventario si aplica)
