@@ -370,36 +370,33 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
 
       // Crear mapa de inventario por referencia DESDE LA BASE DE DATOS (products.quantity)
+      // IMPORTANTE: SIEMPRE cargar inventario para mostrar en tooltip, solo la resta es condicional
       const inventoryByRef = new Map<string, number>();
       
-      if (useInventory) {
-        // Cargar inventario real desde products.quantity
-        const { data: productsInventory, error: invError } = await supabase
-          .from('products')
-          .select('reference, quantity');
-        
-        if (invError) {
-          console.error('❌ Error cargando inventario de productos:', invError);
-        } else if (productsInventory) {
-          for (const prod of productsInventory) {
-            if (prod.quantity > 0) {
-              inventoryByRef.set(normalizeRefId(prod.reference), prod.quantity);
-            }
-          }
-          console.log(`📦 Inventario cargado desde BD: ${inventoryByRef.size} referencias con stock > 0`);
-          
-          // Log ejemplos específicos para depuración
-          const testRefs = ['TAPA12-95', 'BSCENTRO-125B'];
-          for (const ref of testRefs) {
-            const inv = inventoryByRef.get(normalizeRefId(ref));
-            if (inv !== undefined) {
-              console.log(`   📦 ${ref}: inventario = ${inv}`);
-            }
-          }
+      // Cargar inventario real desde products.quantity (SIEMPRE, independiente de useInventory)
+      const { data: productsInventory, error: invError } = await supabase
+        .from('products')
+        .select('reference, quantity');
+      
+      if (invError) {
+        console.error('❌ Error cargando inventario de productos:', invError);
+      } else if (productsInventory) {
+        for (const prod of productsInventory) {
+          // Guardar TODOS los inventarios, incluso los que son 0 o negativos
+          inventoryByRef.set(normalizeRefId(prod.reference), prod.quantity || 0);
         }
-      } else {
-        console.log(`📦 Inventario deshabilitado - no se cargarán datos de products.quantity`);
+        console.log(`📦 Inventario cargado desde BD: ${inventoryByRef.size} referencias total`);
+        
+        // Log ejemplos específicos para depuración
+        const testRefs = ['T-CE1515', 'TAPA12-95', 'BSCENTRO-125B', 'CA-30'];
+        for (const ref of testRefs) {
+          const normRef = normalizeRefId(ref);
+          const inv = inventoryByRef.get(normRef);
+          console.log(`   📦 ${ref} (norm: ${normRef}): inventario = ${inv ?? 'NO ENCONTRADO'}`);
+        }
       }
+      
+      console.log(`🎛️ useInventory = ${useInventory} (el inventario se carga siempre para tooltip, solo la resta es condicional)`);
 
       // Procesar cada referencia de entrada - SIEMPRE usar cantidad original
       // El descuento de inventario se aplicará a nivel de PROCESO según processes.inventario
@@ -488,8 +485,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // =====================================================
       const effectiveQuantityByRef = new Map<string, number>();
       
-      // Referencias problemáticas para diagnóstico
-      const debugRefs = ['CNCE125CMB', 'TCE1515', 'TCE2020', 'CUE12D', 'CA30', 'ADAPTER12', 'ADAPTER34'];
+      // Referencias problemáticas para diagnóstico (agregamos más para verificar)
+      const debugRefs = ['CNCE125CMB', 'TCE1515', 'TCE2020', 'CUE12D', 'CA30', 'ADAPTER12', 'ADAPTER34', 'CA30', 'CA35', 'CA40'];
       
       console.log('\n📊 === PRE-CÁLCULO DE CANTIDADES EFECTIVAS ===');
       
@@ -561,10 +558,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }>();
 
       // Incluir referencias principales
+      console.log('\n🏭 === PROCESANDO REFERENCIAS PRINCIPALES ===');
+      console.log(`   Total de referencias principales: ${mainReferences.size}`);
+      for (const [ref, qty] of mainReferences.entries()) {
+        console.log(`   📋 ${ref}: ${qty} unidades`);
+      }
+      
       for (const [ref, quantity] of mainReferences.entries()) {
         const machinesProcesses = machinesData.filter((mp: any) => 
           normalizeRefId(mp.ref) === normalizeRefId(ref)
         );
+        
+        // Log específico para referencias de Ensamble
+        const ensambleProcesses = machinesProcesses.filter((mp: any) => 
+          mp.processes.name === 'Ensamble' || mp.processes.name === 'EnsambleInt'
+        );
+        if (ensambleProcesses.length > 0) {
+          console.log(`   🔧 Ref ${ref} tiene ${ensambleProcesses.length} entradas en Ensamble/EnsambleInt`);
+        }
         
         for (const mp of machinesProcesses) {
           const processName = resolveProcessName(mp);
@@ -575,6 +586,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           if (processName === null) {
             console.log(`     ❌ Proceso excluido: ${processNameOriginal}`);
             continue;
+          }
+          
+          // Log especial para Ensamble
+          if (processNameOriginal === 'Ensamble' || processNameOriginal === 'EnsambleInt') {
+            console.log(`   🏭 ENSAMBLE: ${ref} -> Proceso: ${processNameOriginal} (ID: ${mp.id_process}), Máquina: ${mp.machines.name}`);
           }
           
           console.log(`     · Proceso original: ${processNameOriginal} (ID: ${mp.id_process}) -> Normalizado: ${processName}`);
