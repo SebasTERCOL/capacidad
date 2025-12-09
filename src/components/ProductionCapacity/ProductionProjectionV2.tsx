@@ -455,9 +455,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const consolidatedByNorm = new Map<string, { quantity: number; display: string }>();
       const rawConsolidatedByNorm = new Map<string, { quantity: number; display: string }>();
 
+      // Consolidar componentes normalizados con logging detallado
       for (const [id, qty] of consolidatedComponents.entries()) {
         const norm = normalizeRefId(id);
         const existing = consolidatedByNorm.get(norm);
+        
+        // Log detallado para CNCE125-CMB y T-CE1515
+        if (norm === 'CNCE125CMB' || norm === 'TCE1515') {
+          console.log(`🔍 CONSOLIDANDO ${id} (norm: ${norm}): qty=${qty}, existente=${existing?.quantity ?? 'NO'}`);
+        }
+        
         if (existing) {
           existing.quantity += qty;
         } else {
@@ -468,6 +475,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       for (const [id, qty] of rawConsolidatedComponents.entries()) {
         const norm = normalizeRefId(id);
         const existing = rawConsolidatedByNorm.get(norm);
+        
+        // Log detallado para CNCE125-CMB y T-CE1515
+        if (norm === 'CNCE125CMB' || norm === 'TCE1515') {
+          console.log(`🔍 RAW CONSOLIDANDO ${id} (norm: ${norm}): qty=${qty}, existente=${existing?.quantity ?? 'NO'}`);
+        }
+        
         if (existing) {
           existing.quantity += qty;
         } else {
@@ -477,6 +490,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       console.log(`✅ Componentes consolidados normalizados (ajustados): ${consolidatedByNorm.size}`);
       console.log(`✅ Componentes base normalizados (sin inventario): ${rawConsolidatedByNorm.size}`);
+      
+      // Log valores finales para referencias problemáticas
+      const refsCritical = ['CNCE125CMB', 'TCE1515'];
+      for (const normRef of refsCritical) {
+        const consolidated = consolidatedByNorm.get(normRef);
+        const rawConsolidated = rawConsolidatedByNorm.get(normRef);
+        console.log(`📊 VALOR FINAL ${normRef}: consolidated=${consolidated?.quantity ?? 'N/A'}, raw=${rawConsolidated?.quantity ?? 'N/A'}`);
+      }
 
       // =====================================================
       // CORRECCIÓN CRÍTICA: Pre-calcular effectiveQuantity por referencia
@@ -486,7 +507,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const effectiveQuantityByRef = new Map<string, number>();
       
       // Referencias problemáticas para diagnóstico (agregamos más para verificar)
-      const debugRefs = ['CNCE125CMB', 'TCE1515', 'TCE2020', 'CUE12D', 'CA30', 'ADAPTER12', 'ADAPTER34', 'CA30', 'CA35', 'CA40'];
+      const debugRefs = ['CNCE125CMB', 'TCE1515', 'TCE2020', 'CUE12D', 'CA30', 'ADAPTER12', 'ADAPTER34', 'CA35', 'CA40'];
+      
+      // Log para verificar el inventario cargado para referencias problemáticas
+      console.log('\n📦 === VERIFICACIÓN DE INVENTARIO PARA DEBUGGING ===');
+      for (const dbRef of debugRefs) {
+        const inv = inventoryByRef.get(dbRef);
+        console.log(`   📦 ${dbRef}: inventario = ${inv ?? 'NO ENCONTRADO'}`);
+      }
       
       console.log('\n📊 === PRE-CÁLCULO DE CANTIDADES EFECTIVAS ===');
       
@@ -662,9 +690,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               return isOperational;
             });
 
+          // Obtener valores originales desde rawMainReferences
+          const quantityOriginalFromRaw = rawMainReferences.get(ref) || quantity;
+          const inventoryAvailableFromDB = inventoryByRef.get(refNormalized) || 0;
+          
           if (existingComponent) {
             // Actualizar cantidad con efectivo (incluye descuento de inventario si aplica)
             existingComponent.quantity = effectiveQuantity;
+            // CRÍTICO: También actualizar quantityOriginal e inventoryAvailable
+            existingComponent.quantityOriginal = quantityOriginalFromRaw;
+            existingComponent.inventoryAvailable = inventoryAvailableFromDB;
             if (!existingComponent.sam || existingComponent.sam === 0) {
               const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
               existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
@@ -673,18 +708,23 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             const merged = [...existingComponent.machineOptions];
             for (const m of availableMachines) if (!existingNames.has(m.machines.name)) merged.push(m);
             existingComponent.machineOptions = merged;
+            
+            if (isDebugRef) {
+              console.log(`     🔄 Componente existente actualizado: quantity=${effectiveQuantity}, quantityOriginal=${quantityOriginalFromRaw}, inventoryAvailable=${inventoryAvailableFromDB}`);
+            }
           } else {
             const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
-            // Obtener cantidad original desde rawMainReferences
-            const quantityOriginal = rawMainReferences.get(ref) || quantity;
-            const inventoryAvailable = inventoryByRef.get(refNormalized) || 0;
             processGroup.components.set(ref, {
               quantity: effectiveQuantity,
-              quantityOriginal,
-              inventoryAvailable,
+              quantityOriginal: quantityOriginalFromRaw,
+              inventoryAvailable: inventoryAvailableFromDB,
               sam: samForProcess,
               machineOptions: availableMachines
             });
+            
+            if (isDebugRef) {
+              console.log(`     ➕ Nuevo componente creado: quantity=${effectiveQuantity}, quantityOriginal=${quantityOriginalFromRaw}, inventoryAvailable=${inventoryAvailableFromDB}`);
+            }
           }
         }
       }
@@ -774,9 +814,17 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             if (isDebugComp) console.log(`     📉 Componente en ${processNameOriginal} (inventario=true): usando cantidad efectiva = ${preCalculatedEffective}`);
           }
 
+          // Obtener valores originales desde rawConsolidatedByNorm
+          const rawEntry = rawConsolidatedByNorm.get(normId);
+          const quantityOriginalFromRaw = rawEntry?.quantity || quantity;
+          const inventoryAvailableFromDB = inventoryByRef.get(normId) || 0;
+          
           if (existingComponent) {
             // Actualizar cantidad con efectivo (incluye descuento de inventario si aplica)
             existingComponent.quantity = effectiveQuantity;
+            // CRÍTICO: También actualizar quantityOriginal e inventoryAvailable
+            existingComponent.quantityOriginal = quantityOriginalFromRaw;
+            existingComponent.inventoryAvailable = inventoryAvailableFromDB;
             if (!existingComponent.sam || existingComponent.sam === 0) {
               const samFromOptions = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam;
               existingComponent.sam = samFromOptions ?? mp.sam ?? 0;
@@ -785,19 +833,23 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             const merged = [...existingComponent.machineOptions];
             for (const m of availableMachines) if (!existingNames.has(m.machines.name)) merged.push(m);
             existingComponent.machineOptions = merged;
+            
+            if (isDebugComp) {
+              console.log(`     🔄 Componente existente actualizado: quantity=${effectiveQuantity}, quantityOriginal=${quantityOriginalFromRaw}, inventoryAvailable=${inventoryAvailableFromDB}`);
+            }
           } else {
             const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? mp.sam ?? 0;
-            // Obtener cantidad original desde rawConsolidatedByNorm
-            const rawEntry = rawConsolidatedByNorm.get(normId);
-            const quantityOriginal = rawEntry?.quantity || quantity;
-            const inventoryAvailable = inventoryByRef.get(normId) || 0;
             processGroup.components.set(display, {
               quantity: effectiveQuantity,
-              quantityOriginal,
-              inventoryAvailable,
+              quantityOriginal: quantityOriginalFromRaw,
+              inventoryAvailable: inventoryAvailableFromDB,
               sam: samForProcess,
               machineOptions: availableMachines
             });
+            
+            if (isDebugComp) {
+              console.log(`     ➕ Nuevo componente creado: quantity=${effectiveQuantity}, quantityOriginal=${quantityOriginalFromRaw}, inventoryAvailable=${inventoryAvailableFromDB}`);
+            }
           }
         }
       }
