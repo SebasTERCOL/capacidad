@@ -217,20 +217,36 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     // Fuente de datos: preferir override local si existe para evitar races con setState
     const source = bomDataOverride ?? allBomData;
 
-    // Buscar en datos precargados
-    const bomItems = source.filter((item: any) => 
-      String(item.product_id).trim().toUpperCase() === String(productId).trim().toUpperCase()
-    );
+    // Normalizar productId para búsqueda
+    const productIdNorm = normalizeRefId(productId);
+    const productIdUpper = String(productId).trim().toUpperCase();
     
-    console.log(`🔍 Buscando BOM para ${productId}:`, {
-      productId: String(productId).trim().toUpperCase(),
-      totalBomRecords: source.length,
-      foundItems: bomItems.length,
-      sampleProductIds: source.slice(0, 5).map((item: any) => item.product_id)
+    // Buscar en datos precargados con MÚLTIPLES estrategias de coincidencia
+    const bomItems = source.filter((item: any) => {
+      const itemProductId = String(item.product_id || '').trim();
+      const itemNorm = normalizeRefId(itemProductId);
+      const itemUpper = itemProductId.toUpperCase();
+      
+      // Coincidir por cualquiera de estas variantes
+      return itemNorm === productIdNorm || 
+             itemUpper === productIdUpper ||
+             itemProductId === productId;
     });
     
+    // Log solo para referencias específicas para evitar spam
+    const isDebugRef = ['CA30', 'CA-30', 'CA35', 'CA-35', 'CA40', 'CA-40'].includes(productId) || 
+                       ['CA30', 'CA35', 'CA40'].includes(productIdNorm);
+    if (isDebugRef) {
+      console.log(`🔍 Buscando BOM para ${productId}:`, {
+        productIdNorm,
+        productIdUpper,
+        totalBomRecords: source.length,
+        foundItems: bomItems.length
+      });
+    }
+    
     if (bomItems.length === 0) {
-      console.log(`⚠️ No se encontraron componentes BOM para ${productId}`);
+      if (isDebugRef) console.log(`⚠️ No se encontraron componentes BOM para ${productId}`);
       // Es un componente final, cachear resultado vacío
       bomCache.set(cacheKey, componentsMap);
       return componentsMap;
@@ -369,11 +385,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       console.log('\n🔄 === FASE DE CONSOLIDACIÓN (SIN DUPLICACIÓN)===');
 
-      // Crear mapa de inventario por referencia DESDE LA BASE DE DATOS (products.quantity)
-      // IMPORTANTE: SIEMPRE cargar inventario para mostrar en tooltip, solo la resta es condicional
-      const inventoryByRef = new Map<string, number>();
-      // Mapa adicional: referencia original (sin normalizar) -> cantidad
-      const inventoryByOriginalRef = new Map<string, number>();
+      // ===================================================================================
+      // INVENTARIO EXHAUSTIVO: Sistema robusto de carga y búsqueda de inventario
+      // ===================================================================================
+      
+      // Mapa principal: almacena inventario indexado por MÚLTIPLES claves para cada referencia
+      const inventoryMasterMap = new Map<string, { reference: string; quantity: number }>();
       
       // Cargar inventario real desde products.quantity (SIEMPRE, independiente de useInventory)
       const { data: productsInventory, error: invError } = await supabase
@@ -383,53 +400,92 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       if (invError) {
         console.error('❌ Error cargando inventario de productos:', invError);
       } else if (productsInventory) {
-        console.log(`📦 Cargando inventario exhaustivamente desde BD: ${productsInventory.length} productos...`);
+        console.log(`\n📦 === CARGA EXHAUSTIVA DE INVENTARIO ===`);
+        console.log(`   Total productos en BD: ${productsInventory.length}`);
         
         for (const prod of productsInventory) {
-          const originalRef = String(prod.reference || '').trim().toUpperCase();
-          const normalizedRef = normalizeRefId(prod.reference);
+          const refOriginal = String(prod.reference || '').trim();
           const qty = prod.quantity || 0;
           
-          // Guardar en AMBOS mapas para búsqueda flexible
-          inventoryByRef.set(normalizedRef, qty);
-          inventoryByOriginalRef.set(originalRef, qty);
+          // Generar MÚLTIPLES claves de búsqueda para cada referencia
+          const keys = new Set<string>();
           
-          // También guardar la versión original tal cual
-          inventoryByRef.set(originalRef, qty);
+          // 1. Referencia original exacta
+          keys.add(refOriginal);
+          
+          // 2. Versión uppercase
+          keys.add(refOriginal.toUpperCase());
+          
+          // 3. Versión lowercase
+          keys.add(refOriginal.toLowerCase());
+          
+          // 4. Versión normalizada (solo alfanuméricos uppercase)
+          keys.add(normalizeRefId(refOriginal));
+          
+          // 5. Versión sin guiones
+          keys.add(refOriginal.replace(/-/g, '').toUpperCase());
+          
+          // 6. Versión sin espacios
+          keys.add(refOriginal.replace(/\s/g, '').toUpperCase());
+          
+          // 7. Versión sin guiones ni espacios
+          keys.add(refOriginal.replace(/[-\s]/g, '').toUpperCase());
+          
+          // Almacenar con cada clave
+          for (const key of keys) {
+            if (key && key.length > 0) {
+              inventoryMasterMap.set(key, { reference: refOriginal, quantity: qty });
+            }
+          }
         }
         
-        console.log(`📦 Inventario cargado: ${inventoryByRef.size} entradas (normalizado + original)`);
+        console.log(`   Claves de inventario generadas: ${inventoryMasterMap.size}`);
         
-        // Log ejemplos específicos para depuración exhaustiva
-        const testRefs = ['T-CE1515', 'TCE1515', 'TAPA12-95', 'TAPA1295', 'CNCE125-CMB', 'CNCE125CMB', 'BSCENTRO-125B', 'CA-30'];
-        console.log('\n🔍 === VERIFICACIÓN EXHAUSTIVA DE INVENTARIO ===');
+        // Verificación exhaustiva de referencias problemáticas
+        const testRefs = ['T-CE1515', 'TCE1515', 'T-CE2020', 'TCE2020', 'CUE12D', 'CNCE125-CMB', 'CNCE125CMB', 'CA-30', 'CA30'];
+        console.log('\n🔍 === VERIFICACIÓN DE REFERENCIAS CRÍTICAS ===');
         for (const ref of testRefs) {
-          const normRef = normalizeRefId(ref);
-          const upperRef = ref.trim().toUpperCase();
-          const invNorm = inventoryByRef.get(normRef);
-          const invOrig = inventoryByRef.get(upperRef);
-          console.log(`   📦 Ref: "${ref}" -> norm: "${normRef}", upper: "${upperRef}"`);
-          console.log(`      - Por normalizado (${normRef}): ${invNorm ?? 'NO ENCONTRADO'}`);
-          console.log(`      - Por original (${upperRef}): ${invOrig ?? 'NO ENCONTRADO'}`);
+          const result = inventoryMasterMap.get(ref) || inventoryMasterMap.get(ref.toUpperCase()) || inventoryMasterMap.get(normalizeRefId(ref));
+          console.log(`   📦 ${ref}: ${result ? `${result.quantity} unidades (ref: ${result.reference})` : '⚠️ NO ENCONTRADO'}`);
         }
       }
       
-      // Función helper para buscar inventario de múltiples formas
+      // Función helper EXHAUSTIVA para buscar inventario
       const getInventoryForRef = (ref: string): number => {
-        const normalizedRef = normalizeRefId(ref);
-        const upperRef = String(ref || '').trim().toUpperCase();
+        if (!ref) return 0;
         
-        // Intentar múltiples formas de búsqueda
-        let inventory = inventoryByRef.get(normalizedRef);
-        if (inventory === undefined) {
-          inventory = inventoryByRef.get(upperRef);
-        }
-        if (inventory === undefined) {
-          inventory = inventoryByOriginalRef.get(upperRef);
+        const refClean = String(ref).trim();
+        
+        // Intentar con múltiples variantes de la clave de búsqueda
+        const searchKeys = [
+          refClean,                                    // Original
+          refClean.toUpperCase(),                      // Uppercase
+          refClean.toLowerCase(),                      // Lowercase  
+          normalizeRefId(refClean),                    // Normalizado (solo alfanuméricos)
+          refClean.replace(/-/g, '').toUpperCase(),    // Sin guiones
+          refClean.replace(/\s/g, '').toUpperCase(),   // Sin espacios
+          refClean.replace(/[-\s]/g, '').toUpperCase() // Sin guiones ni espacios
+        ];
+        
+        for (const key of searchKeys) {
+          const result = inventoryMasterMap.get(key);
+          if (result !== undefined && result.quantity > 0) {
+            return result.quantity;
+          }
         }
         
-        return inventory ?? 0;
+        // Si no encontró con cantidad > 0, buscar cualquier coincidencia
+        for (const key of searchKeys) {
+          const result = inventoryMasterMap.get(key);
+          if (result !== undefined) {
+            return result.quantity;
+          }
+        }
+        
+        return 0;
       };
+      
+      console.log(`\n🎛️ useInventory = ${useInventory} (inventario siempre visible, resta condicional)`);
       
       console.log(`🎛️ useInventory = ${useInventory} (el inventario se carga siempre para tooltip, solo la resta es condicional)`);
 
@@ -628,9 +684,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
       
       for (const [ref, quantity] of mainReferences.entries()) {
-        const machinesProcesses = machinesData.filter((mp: any) => 
-          normalizeRefId(mp.ref) === normalizeRefId(ref)
-        );
+        const refNormalized = normalizeRefId(ref);
+        const refUpper = String(ref).trim().toUpperCase();
+        
+        // Búsqueda flexible en machines_processes
+        const machinesProcesses = machinesData.filter((mp: any) => {
+          const mpRef = String(mp.ref || '').trim();
+          const mpRefNorm = normalizeRefId(mpRef);
+          const mpRefUpper = mpRef.toUpperCase();
+          
+          return mpRefNorm === refNormalized || 
+                 mpRefUpper === refUpper ||
+                 mpRef === ref;
+        });
         
         // Log específico para referencias de Ensamble
         const ensambleProcesses = machinesProcesses.filter((mp: any) => 
@@ -638,6 +704,18 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         );
         if (ensambleProcesses.length > 0) {
           console.log(`   🔧 Ref ${ref} tiene ${ensambleProcesses.length} entradas en Ensamble/EnsambleInt`);
+        }
+        
+        // Log detallado para CA-xx que deberían aparecer en Ensamble
+        const isEnsambleRef = ['CA30', 'CA35', 'CA40', 'CA50', 'CA60', 'CA70'].includes(refNormalized);
+        if (isEnsambleRef) {
+          console.log(`\n🏭 === ENSAMBLE DEBUG: ${ref} ===`);
+          console.log(`   Normalizada: ${refNormalized}`);
+          console.log(`   Procesos encontrados: ${machinesProcesses.length}`);
+          console.log(`   Procesos Ensamble: ${ensambleProcesses.length}`);
+          if (machinesProcesses.length > 0) {
+            console.log(`   Procesos: ${machinesProcesses.map((mp: any) => mp.processes.name).join(', ')}`);
+          }
         }
         
         for (const mp of machinesProcesses) {
@@ -767,9 +845,18 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // Incluir componentes consolidados (normalizados)
       for (const [normId, entry] of consolidatedByNorm.entries()) {
         const { quantity, display } = entry;
-        const machinesProcesses = machinesData.filter((mp: any) => 
-          normalizeRefId(mp.ref) === normId
-        );
+        const displayUpper = String(display).trim().toUpperCase();
+        
+        // Búsqueda flexible en machines_processes
+        const machinesProcesses = machinesData.filter((mp: any) => {
+          const mpRef = String(mp.ref || '').trim();
+          const mpRefNorm = normalizeRefId(mpRef);
+          const mpRefUpper = mpRef.toUpperCase();
+          
+          return mpRefNorm === normId || 
+                 mpRefUpper === displayUpper ||
+                 mpRef === display;
+        });
         
         for (const mp of machinesProcesses) {
           const processName = resolveProcessName(mp);
