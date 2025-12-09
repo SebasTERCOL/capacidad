@@ -1769,6 +1769,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         references: {
           referencia: string;
           cantidadRequerida: number;
+          cantidadOriginal?: number;
+          inventarioDisponible?: number;
           sam: number;
           tiempoTotal: number;
           ocupacionPorcentaje: number;
