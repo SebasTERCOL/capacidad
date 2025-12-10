@@ -379,7 +379,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const mainReferences = new Map<string, number>();
 
       // Mapas base SIN inventario (siempre usando los datos originales de entrada)
-      const baseData = originalData && originalData.length > 0 ? originalData : data;
+      // CORRECCIÓN CRÍTICA: No crear rawMainReferences/rawConsolidatedComponents por separado
+      // ya que esto causaba duplicación cuando se consolidaban ambos mapas
       const rawMainReferences = new Map<string, number>();
       const rawConsolidatedComponents = new Map<string, number>();
 
@@ -491,30 +492,21 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         }
       }
 
-      // Procesar cada referencia usando SIEMPRE los datos originales (sin inventario)
-      // CORRECCIÓN: Mismo tratamiento que arriba - referencias principales SIEMPRE se agregan
-      console.log('\n🔁 === CONSOLIDACIÓN BASE (SIN INVENTARIO) ===');
-      for (const item of baseData) {
-        console.log(`🔍 Procesando referencia base: ${item.referencia} (cantidad: ${item.cantidad})`);
-        
-        // SIEMPRE agregar a rawMainReferences
-        const currentMainQtyBase = rawMainReferences.get(item.referencia) || 0;
-        rawMainReferences.set(item.referencia, currentMainQtyBase + item.cantidad);
-        
-        const allComponentsBase = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
-
-        if (allComponentsBase.size > 0) {
-          for (const [componentId, quantity] of allComponentsBase.entries()) {
-            const currentQtyBase = rawConsolidatedComponents.get(componentId) || 0;
-            rawConsolidatedComponents.set(componentId, currentQtyBase + quantity);
-          }
-        }
+      // CORRECCIÓN: Eliminado el bucle duplicado de baseData que causaba
+      // que las cantidades se sumaran dos veces (una vez en mainReferences/consolidatedComponents
+      // y otra vez en rawMainReferences/rawConsolidatedComponents)
+      // Ahora solo usamos un conjunto de mapas para evitar la duplicación
+      
+      // Copiar los valores consolidados a los mapas "raw" para mantener compatibilidad
+      for (const [ref, qty] of mainReferences.entries()) {
+        rawMainReferences.set(ref, qty);
+      }
+      for (const [id, qty] of consolidatedComponents.entries()) {
+        rawConsolidatedComponents.set(id, qty);
       }
 
-      console.log(`✅ Referencias principales consolidadas (ajustadas): ${mainReferences.size}`);
-      console.log(`✅ Componentes consolidados (ajustados): ${consolidatedComponents.size}`);
-      console.log(`✅ Referencias principales base (sin inventario): ${rawMainReferences.size}`);
-      console.log(`✅ Componentes base (sin inventario): ${rawConsolidatedComponents.size}`);
+      console.log(`✅ Referencias principales consolidadas: ${mainReferences.size}`);
+      console.log(`✅ Componentes consolidados: ${consolidatedComponents.size}`);
 
       // Consolidar por referencia normalizada para unificar claves como "TAPA12R" y "TAPA 12R"
       const consolidatedByNorm = new Map<string, { quantity: number; display: string }>();
