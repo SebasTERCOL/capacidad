@@ -451,40 +451,72 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
       
       // Función helper EXHAUSTIVA para buscar inventario (prioriza exacto)
+      // CORRECCIÓN: Asegurar que la búsqueda sea realmente exhaustiva
       const getInventoryForRef = (ref: string): number => {
         if (!ref) return 0;
         
         const refClean = String(ref).trim();
         
-        // 1. Búsqueda EXACTA (prioridad máxima)
-        const exactQty = inventoryExactMap.get(refClean);
-        if (exactQty !== undefined) {
+        // 1. Búsqueda EXACTA (prioridad máxima) - como viene del parámetro
+        let exactQty = inventoryExactMap.get(refClean);
+        if (exactQty !== undefined && exactQty > 0) {
           return exactQty;
         }
         
-        // 2. Búsqueda por variantes en mapa alternativo
+        // 2. Búsqueda exacta con UPPER
+        exactQty = inventoryExactMap.get(refClean.toUpperCase());
+        if (exactQty !== undefined && exactQty > 0) {
+          return exactQty;
+        }
+        
+        // 3. Generar todas las variantes de búsqueda
         const searchKeys = [
+          refClean,
           refClean.toUpperCase(),
           refClean.toLowerCase(),
-          normalizeRefId(refClean),
           refClean.replace(/-/g, ''),
           refClean.replace(/-/g, '').toUpperCase(),
+          refClean.replace(/\s/g, ''),
           refClean.replace(/\s/g, '').toUpperCase(),
-          refClean.replace(/[-\s]/g, '').toUpperCase()
+          refClean.replace(/[-\s]/g, ''),
+          refClean.replace(/[-\s]/g, '').toUpperCase(),
+          normalizeRefId(refClean)
         ];
         
+        // Intentar primero en mapa exacto con todas las variantes
+        for (const key of searchKeys) {
+          const result = inventoryExactMap.get(key);
+          if (result !== undefined && result > 0) {
+            return result;
+          }
+        }
+        
+        // Luego intentar en mapa alternativo
         for (const key of searchKeys) {
           const result = inventoryAltMap.get(key);
-          if (result !== undefined) {
+          if (result !== undefined && result.quantity > 0) {
             return result.quantity;
           }
         }
         
-        // 3. Último intento: buscar exacto en inventoryExactMap con variantes
-        for (const key of searchKeys) {
-          const exactVariant = inventoryExactMap.get(key);
-          if (exactVariant !== undefined) {
-            return exactVariant;
+        // 4. Búsqueda inversa: agregar guión si no lo tiene (TCE1515 -> T-CE1515)
+        if (!refClean.includes('-') && refClean.length > 3) {
+          // Intentar patrones comunes de referencia
+          const patterns = [
+            refClean.slice(0, 1) + '-' + refClean.slice(1),  // T-CE1515
+            refClean.slice(0, 2) + '-' + refClean.slice(2),  // XX-YYY
+            refClean.slice(0, 3) + '-' + refClean.slice(3),  // XXX-YYY
+          ];
+          
+          for (const pattern of patterns) {
+            const result = inventoryExactMap.get(pattern);
+            if (result !== undefined && result > 0) {
+              return result;
+            }
+            const resultUpper = inventoryExactMap.get(pattern.toUpperCase());
+            if (resultUpper !== undefined && resultUpper > 0) {
+              return resultUpper;
+            }
           }
         }
         
@@ -497,49 +529,51 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       // Procesar cada referencia de entrada - SIEMPRE usar cantidad original
       // El descuento de inventario se aplicará a nivel de PROCESO según processes.inventario
+      // 
+      // ⚠️ CORRECCIÓN CRÍTICA: Las referencias del CSV deben procesarse SIEMPRE en mainReferences
+      // INCLUSO si tienen el mismo nombre que componentes del BOM (ej. CA-30 es válida tanto
+      // como referencia principal para Ensamble/Empaque como componente en otras estructuras)
       for (const item of data) {
         console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
+        
+        // SIEMPRE agregar a referencias principales (para procesos como Ensamble, Empaque, RoscadoConectores)
+        const currentMainQty = mainReferences.get(item.referencia) || 0;
+        mainReferences.set(item.referencia, currentMainQty + item.cantidad);
+        console.log(`   ✅ Agregada a mainReferences: ${item.referencia} = ${currentMainQty + item.cantidad}`);
         
         // Usar cantidad original SIN restar inventario aquí
         // El inventario se restará a nivel de proceso si processes.inventario = true
         const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
         
         if (allComponents.size > 0) {
-          // Si tiene BOM, agregar a referencias principales Y expandir componentes
-          const currentMainQty = mainReferences.get(item.referencia) || 0;
-          mainReferences.set(item.referencia, currentMainQty + item.cantidad);
-          
-          // Agregar SOLO los componentes (no la referencia principal)
+          // Agregar los componentes del BOM (no incluye la referencia principal para evitar duplicación)
           for (const [componentId, quantity] of allComponents.entries()) {
             const currentQty = consolidatedComponents.get(componentId) || 0;
             consolidatedComponents.set(componentId, currentQty + quantity);
           }
-          console.log(`✅ BOM expandido para ${item.referencia}: ${allComponents.size} componentes`);
+          console.log(`   ✅ BOM expandido: ${allComponents.size} componentes`);
         } else {
-          // Si NO tiene BOM, agregar SOLO a componentes consolidados (NO duplicar)
-          const currentComponentQty = consolidatedComponents.get(item.referencia) || 0;
-          consolidatedComponents.set(item.referencia, currentComponentQty + item.cantidad);
-          console.log(`⚠️ No se encontró BOM para ${item.referencia}, usando referencia directa`);
+          console.log(`   ⚠️ Sin BOM para ${item.referencia}`);
         }
       }
 
       // Procesar cada referencia usando SIEMPRE los datos originales (sin inventario)
+      // CORRECCIÓN: Mismo tratamiento que arriba - referencias principales SIEMPRE se agregan
       console.log('\n🔁 === CONSOLIDACIÓN BASE (SIN INVENTARIO) ===');
       for (const item of baseData) {
         console.log(`🔍 Procesando referencia base: ${item.referencia} (cantidad: ${item.cantidad})`);
+        
+        // SIEMPRE agregar a rawMainReferences
+        const currentMainQtyBase = rawMainReferences.get(item.referencia) || 0;
+        rawMainReferences.set(item.referencia, currentMainQtyBase + item.cantidad);
+        
         const allComponentsBase = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
 
         if (allComponentsBase.size > 0) {
-          const currentMainQtyBase = rawMainReferences.get(item.referencia) || 0;
-          rawMainReferences.set(item.referencia, currentMainQtyBase + item.cantidad);
-
           for (const [componentId, quantity] of allComponentsBase.entries()) {
             const currentQtyBase = rawConsolidatedComponents.get(componentId) || 0;
             rawConsolidatedComponents.set(componentId, currentQtyBase + quantity);
           }
-        } else {
-          const currentComponentQtyBase = rawConsolidatedComponents.get(item.referencia) || 0;
-          rawConsolidatedComponents.set(item.referencia, currentComponentQtyBase + item.cantidad);
         }
       }
 
@@ -701,6 +735,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // Incluir referencias principales
       console.log('\n🏭 === PROCESANDO REFERENCIAS PRINCIPALES ===');
       console.log(`   Total de referencias principales: ${mainReferences.size}`);
+      
+      // Verificar específicamente referencias que deberían estar en Ensamble/Empaque
+      const ensambleEmpaqueRefs = ['CA-30', 'CA-35', 'CA-40', 'CA-50', 'CA-60', 'CA-70', 'CA30', 'TRP336T'];
+      console.log('\n🔍 === VERIFICACIÓN REFERENCIAS ENSAMBLE/EMPAQUE ===');
+      for (const testRef of ensambleEmpaqueRefs) {
+        const found = mainReferences.has(testRef);
+        const normalized = normalizeRefId(testRef);
+        const foundNormalized = [...mainReferences.keys()].some(r => normalizeRefId(r) === normalized);
+        if (found || foundNormalized) {
+          const qty = mainReferences.get(testRef) || [...mainReferences.entries()].find(([k]) => normalizeRefId(k) === normalized)?.[1];
+          console.log(`   ✅ ${testRef}: encontrada (cantidad: ${qty})`);
+        }
+      }
+      
       for (const [ref, qty] of mainReferences.entries()) {
         console.log(`   📋 ${ref}: ${qty} unidades`);
       }
@@ -828,13 +876,19 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             .filter((machine: any) => {
               const processConfig = findProcessConfig(processName, operatorConfig);
               if (!processConfig) {
-                // Incluir máquina aunque el proceso no esté configurado (aparecerá con 0 operarios)
-                console.log(`     ⚠️ Proceso ${processName} sin configuración - incluyendo máquina ${machine.machines.name} para mostrar tiempo requerido`);
+                // CRÍTICO: Incluir máquina aunque el proceso no esté configurado
+                // Esto permite que procesos como Ensamble/Empaque aparezcan con tiempo requerido
+                console.log(`     ⚠️ Proceso ${processName} sin configuración - incluyendo máquina ${machine.machines.name}`);
                 return true;
               }
               const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
-              const isOperational = machineConfig?.isOperational || false;
-              console.log(`     🔧 Máquina ${machine.machines.name} (ID: ${machine.id_machine}) - Operacional: ${isOperational}`);
+              // CRÍTICO: Si no hay configuración de máquina específica, incluirla de todas formas
+              // Esto evita que referencias válidas se pierdan por falta de configuración
+              if (!machineConfig) {
+                console.log(`     ⚠️ Máquina ${machine.machines.name} (ID: ${machine.id_machine}) sin configuración específica - incluyendo por defecto`);
+                return true;
+              }
+              const isOperational = machineConfig.isOperational || false;
               return isOperational;
             });
 
@@ -933,13 +987,17 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             .filter((machine: any) => {
               const processConfig = findProcessConfig(processName, operatorConfig);
               if (!processConfig) {
-                // Incluir máquina aunque el proceso no esté configurado (aparecerá con 0 operarios)
-                console.log(`     ⚠️ Proceso ${processName} sin configuración - incluyendo máquina ${machine.machines.name} para mostrar tiempo requerido`);
+                // CRÍTICO: Incluir máquina aunque el proceso no esté configurado
+                console.log(`     ⚠️ Proceso ${processName} sin configuración - incluyendo máquina ${machine.machines.name}`);
                 return true;
               }
               const machineConfig = processConfig.machines.find(m => m.id === machine.id_machine);
-              const isOperational = machineConfig?.isOperational || false;
-              console.log(`     🔧 Máquina ${machine.machines.name} (ID: ${machine.id_machine}) - Operacional: ${isOperational}`);
+              // CRÍTICO: Si no hay configuración de máquina específica, incluirla de todas formas
+              if (!machineConfig) {
+                console.log(`     ⚠️ Máquina ${machine.machines.name} (ID: ${machine.id_machine}) sin configuración específica - incluyendo por defecto`);
+                return true;
+              }
+              const isOperational = machineConfig.isOperational || false;
               return isOperational;
             });
 
@@ -1169,9 +1227,60 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       // =====================================================
-      // LOG ESPECÍFICO PARA PROCESO CORTE (id_process = 10)
-      // Verificar que las referencias tienen los valores correctos
+      // LOG ESPECÍFICO PARA PROCESOS CRÍTICOS
       // =====================================================
+      
+      // ENSAMBLE (id_process = 90)
+      console.log('\n🏭 === RESUMEN PROCESO ENSAMBLE (ANTES DE DISTRIBUCIÓN) ===');
+      const ensambleGroup = processGroups.get('Ensamble');
+      if (ensambleGroup) {
+        console.log(`   Operarios: ${ensambleGroup.availableOperators}`);
+        console.log(`   Horas disponibles: ${ensambleGroup.availableHours}`);
+        console.log(`   Referencias: ${ensambleGroup.components.size}`);
+        let totalTimeEnsamble = 0;
+        console.log('   Detalle por referencia:');
+        for (const [ref, data] of ensambleGroup.components.entries()) {
+          const timeMinutes = data.quantity * data.sam;
+          totalTimeEnsamble += timeMinutes;
+          console.log(`     📋 ${ref}: cantidad=${data.quantity}, SAM=${data.sam}, tiempo=${(timeMinutes / 60).toFixed(2)}h`);
+        }
+        console.log(`   ⏱️ TIEMPO TOTAL ENSAMBLE: ${(totalTimeEnsamble / 60).toFixed(2)}h`);
+      } else {
+        console.log('   ⚠️ Proceso Ensamble no encontrado en processGroups');
+        console.log('   Procesos disponibles:', [...processGroups.keys()]);
+      }
+      
+      // EMPAQUE (id_process = 100)
+      console.log('\n📦 === RESUMEN PROCESO EMPAQUE (ANTES DE DISTRIBUCIÓN) ===');
+      const empaqueGroup = processGroups.get('Empaque');
+      if (empaqueGroup) {
+        console.log(`   Operarios: ${empaqueGroup.availableOperators}`);
+        console.log(`   Referencias: ${empaqueGroup.components.size}`);
+        let totalTimeEmpaque = 0;
+        for (const [ref, data] of empaqueGroup.components.entries()) {
+          const timeMinutes = data.quantity * data.sam;
+          totalTimeEmpaque += timeMinutes;
+          console.log(`     📋 ${ref}: cantidad=${data.quantity}, SAM=${data.sam}, tiempo=${(timeMinutes / 60).toFixed(2)}h`);
+        }
+        console.log(`   ⏱️ TIEMPO TOTAL EMPAQUE: ${(totalTimeEmpaque / 60).toFixed(2)}h`);
+      } else {
+        console.log('   ⚠️ Proceso Empaque no encontrado');
+      }
+      
+      // ROSCADOCONECTORES (id_process = 170)
+      console.log('\n🔩 === RESUMEN PROCESO ROSCADOCONECTORES (ANTES DE DISTRIBUCIÓN) ===');
+      const roscadoGroup = processGroups.get('RoscadoConectores');
+      if (roscadoGroup) {
+        console.log(`   Operarios: ${roscadoGroup.availableOperators}`);
+        console.log(`   Referencias: ${roscadoGroup.components.size}`);
+        for (const [ref, data] of roscadoGroup.components.entries()) {
+          console.log(`     📋 ${ref}: cantidad=${data.quantity}, SAM=${data.sam}`);
+        }
+      } else {
+        console.log('   ⚠️ Proceso RoscadoConectores no encontrado');
+      }
+      
+      // CORTE (id_process = 10) - Con verificación de inventario
       console.log('\n🔪 === RESUMEN PROCESO CORTE (ANTES DE DISTRIBUCIÓN) ===');
       const corteGroup = processGroups.get('Corte') || processGroups.get('corte');
       if (corteGroup) {
