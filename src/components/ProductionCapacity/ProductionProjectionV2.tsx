@@ -606,7 +606,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
       
       // Pre-calcular para componentes consolidados
+      // CORRECCIÓN: Crear set de referencias principales normalizadas para excluir
+      const mainRefNormsForEffective = new Set([...mainReferences.keys()].map(r => normalizeRefId(r)));
+      
       for (const [normId, entry] of consolidatedByNorm.entries()) {
+        // SKIP: Si ya fue pre-calculado como referencia principal, no sobrescribir
+        if (mainRefNormsForEffective.has(normId)) {
+          console.log(`   ⏭️ Saltando precálculo de ${entry.display} (ya calculado como ref principal)`);
+          continue;
+        }
+        
         const { quantity, display } = entry;
         // Búsqueda exhaustiva de inventario
         let inventoryForComp = getInventoryForRef(display);
@@ -622,8 +631,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           effectiveQty = quantity;
         }
         
-        // Guardar cantidad efectiva (reemplaza si ya existe)
-        effectiveQuantityByRef.set(normId, effectiveQty);
+        // Guardar cantidad efectiva (NO reemplaza si ya existe de mainReferences)
+        if (!effectiveQuantityByRef.has(normId)) {
+          effectiveQuantityByRef.set(normId, effectiveQty);
+        }
         
         // Log detallado para referencias de CORTE
         const isCorteRef = corteDebugRefs.some(cr => normId.includes(normalizeRefId(cr)));
@@ -633,6 +644,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
       
       console.log(`✅ Cantidades efectivas pre-calculadas: ${effectiveQuantityByRef.size} referencias`);
+      
+      // DEBUG: Verificar valor final de CNCE125-CMB
+      const cnceEffective = effectiveQuantityByRef.get('CNCE125CMB');
+      const cnceMain = mainReferences.get('CNCE125-CMB') || mainReferences.get('CNCE125CMB');
+      const cnceCons = consolidatedByNorm.get('CNCE125CMB');
+      console.log(`🔍 DEBUG CNCE125-CMB: mainRef=${cnceMain}, consolidado=${cnceCons?.quantity}, efectivo=${cnceEffective}`);
       
       // Log all available processes from machines_processes
       console.log('\n🔍 === PROCESOS ENCONTRADOS EN BD ===');
