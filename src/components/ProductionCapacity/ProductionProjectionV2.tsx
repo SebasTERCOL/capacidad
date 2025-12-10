@@ -860,7 +860,17 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       // Incluir componentes consolidados (normalizados)
+      // CORRECCIÓN CRÍTICA: Excluir referencias que ya fueron procesadas como mainReferences
+      // para evitar duplicación de cantidades
+      const processedMainRefNorms = new Set([...mainReferences.keys()].map(r => normalizeRefId(r)));
+      
       for (const [normId, entry] of consolidatedByNorm.entries()) {
+        // SKIP: Si esta referencia ya fue procesada como referencia principal
+        if (processedMainRefNorms.has(normId)) {
+          console.log(`   ⏭️ Saltando componente ${entry.display} (ya procesado como referencia principal)`);
+          continue;
+        }
+        
         const { quantity, display } = entry;
         const displayUpper = String(display).trim().toUpperCase();
         
