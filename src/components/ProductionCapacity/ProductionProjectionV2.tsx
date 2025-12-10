@@ -391,71 +391,71 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // ===================================================================================
       
       // ===================================================================================
-      // INVENTARIO: Mapa simple de referencia -> cantidad (exacto + normalizado)
+      // INVENTARIO SIMPLIFICADO: Un solo mapa normalizado con paginación
       // ===================================================================================
       
-      const inventoryExact = new Map<string, number>();  // Exacto como viene de BD
-      const inventoryNorm = new Map<string, number>();   // Normalizado (sin guiones, uppercase)
+      const inventoryByNorm = new Map<string, number>();
       
-      const { data: productsInventory, error: invError } = await supabase
-        .from('products')
-        .select('reference, quantity');
+      // CARGAR TODOS los productos con paginación (Supabase límite por defecto 1000)
+      console.log('\n📦 === CARGANDO INVENTARIO CON PAGINACIÓN ===');
+      const pageSize = 1000;
+      let inventoryFrom = 0;
+      let allProducts: any[] = [];
       
-      if (invError) {
-        console.error('❌ Error cargando inventario:', invError);
-      } else if (productsInventory) {
-        console.log(`\n📦 === INVENTARIO CARGADO ===`);
-        console.log(`   Total productos: ${productsInventory.length}`);
+      while (true) {
+        const { data: productsPage, error: invError } = await supabase
+          .from('products')
+          .select('reference, quantity')
+          .range(inventoryFrom, inventoryFrom + pageSize - 1);
         
-        for (const prod of productsInventory) {
-          const ref = String(prod.reference || '').trim();
-          const qty = prod.quantity || 0;
-          
-          // Guardar exacto (incluso si qty = 0, para saber que existe)
-          inventoryExact.set(ref, qty);
-          
-          // Guardar normalizado (solo si qty > 0)
-          if (qty > 0) {
-            const normRef = ref.toUpperCase().replace(/[-\s]/g, '');
-            inventoryNorm.set(normRef, qty);
-          }
+        if (invError) {
+          console.error('❌ Error cargando inventario:', invError);
+          break;
         }
         
-        console.log(`   Inventario exacto: ${inventoryExact.size} referencias`);
-        console.log(`   Inventario normalizado (>0): ${inventoryNorm.size} referencias`);
+        const chunk = productsPage || [];
+        allProducts = allProducts.concat(chunk);
+        console.log(`   Página ${Math.floor(inventoryFrom / pageSize) + 1}: ${chunk.length} productos`);
         
-        // Verificar referencias específicas de CORTE
-        const corteRefs = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125-CMB'];
-        console.log('\n🔍 === VERIFICACIÓN INVENTARIO CORTE ===');
-        for (const ref of corteRefs) {
-          const exactQty = inventoryExact.get(ref);
-          const normQty = inventoryNorm.get(ref.toUpperCase().replace(/[-\s]/g, ''));
-          if (exactQty !== undefined && exactQty > 0) {
-            console.log(`   ✅ ${ref}: ${exactQty} unidades (exacto)`);
-          } else if (normQty !== undefined && normQty > 0) {
-            console.log(`   🔄 ${ref}: ${normQty} unidades (normalizado)`);
-          } else {
-            console.log(`   ❌ ${ref}: NO ENCONTRADO o qty=0`);
-          }
-        }
+        if (chunk.length < pageSize) break;
+        inventoryFrom += pageSize;
       }
       
-      // Función para buscar inventario (exacta primero, luego normalizada)
-      const getInventoryForRef = (ref: string): number => {
+      console.log(`✅ Total productos cargados: ${allProducts.length}`);
+      
+      // Poblar el mapa normalizado
+      for (const prod of allProducts) {
+        const rawRef = prod.reference as string | null;
+        const qtyRaw = prod.quantity as number | null;
+        
+        if (!rawRef) continue;
+        const qty = Number(qtyRaw ?? 0);
+        
+        const normRef = normalizeRefId(rawRef);
+        const current = inventoryByNorm.get(normRef) || 0;
+        inventoryByNorm.set(normRef, current + qty);
+      }
+      
+      console.log(`   Referencias únicas normalizadas: ${inventoryByNorm.size}`);
+      
+      // DEBUG: Verificar referencias específicas de CORTE
+      const corteTestRefs = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125-CMB'];
+      console.log('\n🔍 === VERIFICACIÓN INVENTARIO CORTE ===');
+      for (const testRef of corteTestRefs) {
+        const normTest = normalizeRefId(testRef);
+        const qty = inventoryByNorm.get(normTest) ?? 0;
+        console.log(`   ${testRef} (norm: ${normTest}): ${qty} unidades`);
+      }
+      
+      // Función ÚNICA para buscar inventario (SIEMPRE normalizado)
+      const getInventoryByNorm = (ref: string): number => {
         if (!ref) return 0;
-        const refClean = String(ref).trim();
-        
-        // 1. Búsqueda exacta
-        const exact = inventoryExact.get(refClean);
-        if (exact !== undefined && exact > 0) return exact;
-        
-        // 2. Búsqueda normalizada
-        const normRef = refClean.toUpperCase().replace(/[-\s]/g, '');
-        const norm = inventoryNorm.get(normRef);
-        if (norm !== undefined && norm > 0) return norm;
-        
-        return 0;
+        const norm = normalizeRefId(ref);
+        return inventoryByNorm.get(norm) ?? 0;
       };
+      
+      // Alias para compatibilidad con código existente
+      const getInventoryForRef = getInventoryByNorm;
       
       console.log(`\n🎛️ useInventory = ${useInventory} (inventario siempre visible, resta condicional)`);
       
@@ -575,12 +575,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const debugRefs = ['CNCE125CMB', 'CNCE125-CMB', 'TCE1515', 'T-CE1515', 'TCE2020', 'T-CE2020', 'CUE12D', 'CUE12I', 'CUE1295D', 'CUE1295I', 'CA30', 'CA-30', 'ADAPTER12', 'ADAPTER34'];
       
       console.log('\n📦 === TEST INVENTARIO ESPECÍFICO ===');
-      // Test directo con getInventoryForRef
+      // Test directo con getInventoryByNorm
       for (const testRef of ['T-CE1515', 'T-CE2020', 'CUE12D', 'CNCE125-CMB', 'CA-30']) {
-        const invFound = getInventoryForRef(testRef);
-        const exactFound = inventoryExact.get(testRef);
-        const normFound = inventoryNorm.get(testRef.toUpperCase().replace(/[-\s]/g, ''));
-        console.log(`   ${testRef}: getInventoryForRef=${invFound}, exacto=${exactFound ?? 'N/A'}, normalizado=${normFound ?? 'N/A'}`);
+        const invFound = getInventoryByNorm(testRef);
+        const normKey = normalizeRefId(testRef);
+        console.log(`   ${testRef} (norm: ${normKey}): ${invFound} unidades`);
       }
       
       console.log('\n📊 === PRE-CÁLCULO DE CANTIDADES EFECTIVAS ===');
