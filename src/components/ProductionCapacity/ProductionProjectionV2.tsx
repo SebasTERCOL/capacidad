@@ -390,135 +390,69 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // Enfocado en proceso CORTE (id_process = 10) con matching exacto
       // ===================================================================================
       
-      // Mapa directo por referencia EXACTA (como viene de BD)
-      const inventoryExactMap = new Map<string, number>();
-      // Mapa secundario para búsquedas alternativas
-      const inventoryAltMap = new Map<string, { reference: string; quantity: number }>();
+      // ===================================================================================
+      // INVENTARIO: Mapa simple de referencia -> cantidad (exacto + normalizado)
+      // ===================================================================================
       
-      // Cargar inventario real desde products.quantity (SIEMPRE, independiente de useInventory)
+      const inventoryExact = new Map<string, number>();  // Exacto como viene de BD
+      const inventoryNorm = new Map<string, number>();   // Normalizado (sin guiones, uppercase)
+      
       const { data: productsInventory, error: invError } = await supabase
         .from('products')
         .select('reference, quantity');
       
       if (invError) {
-        console.error('❌ Error cargando inventario de productos:', invError);
+        console.error('❌ Error cargando inventario:', invError);
       } else if (productsInventory) {
-        console.log(`\n📦 === CARGA EXHAUSTIVA DE INVENTARIO (CORTE) ===`);
-        console.log(`   Total productos en BD: ${productsInventory.length}`);
+        console.log(`\n📦 === INVENTARIO CARGADO ===`);
+        console.log(`   Total productos: ${productsInventory.length}`);
         
-        // PASO 1: Indexar por referencia EXACTA (sin modificaciones)
         for (const prod of productsInventory) {
-          const refExact = String(prod.reference || '').trim();
+          const ref = String(prod.reference || '').trim();
           const qty = prod.quantity || 0;
           
-          // Mapa principal: referencia exacta
-          inventoryExactMap.set(refExact, qty);
+          // Guardar exacto (incluso si qty = 0, para saber que existe)
+          inventoryExact.set(ref, qty);
           
-          // Mapa alternativo: múltiples variantes
-          const variants = [
-            refExact.toUpperCase(),
-            refExact.toLowerCase(),
-            normalizeRefId(refExact),
-            refExact.replace(/-/g, ''),
-            refExact.replace(/-/g, '').toUpperCase(),
-          ];
-          
-          for (const variant of variants) {
-            if (variant && !inventoryAltMap.has(variant)) {
-              inventoryAltMap.set(variant, { reference: refExact, quantity: qty });
-            }
+          // Guardar normalizado (solo si qty > 0)
+          if (qty > 0) {
+            const normRef = ref.toUpperCase().replace(/[-\s]/g, '');
+            inventoryNorm.set(normRef, qty);
           }
         }
         
-        console.log(`   Inventario exacto: ${inventoryExactMap.size} referencias`);
-        console.log(`   Inventario alternativo: ${inventoryAltMap.size} variantes`);
+        console.log(`   Inventario exacto: ${inventoryExact.size} referencias`);
+        console.log(`   Inventario normalizado (>0): ${inventoryNorm.size} referencias`);
         
-        // VERIFICACIÓN ESPECÍFICA para referencias problemáticas de CORTE
-        const corteRefs = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125-CMB', 'CUE1295D', 'CUE1295I', 'CUE1295M'];
-        console.log('\n🔍 === VERIFICACIÓN REFERENCIAS CORTE (id_process=10) ===');
+        // Verificar referencias específicas de CORTE
+        const corteRefs = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125-CMB'];
+        console.log('\n🔍 === VERIFICACIÓN INVENTARIO CORTE ===');
         for (const ref of corteRefs) {
-          const exactQty = inventoryExactMap.get(ref);
-          const altResult = inventoryAltMap.get(ref) || inventoryAltMap.get(ref.toUpperCase()) || inventoryAltMap.get(normalizeRefId(ref));
-          
-          if (exactQty !== undefined) {
+          const exactQty = inventoryExact.get(ref);
+          const normQty = inventoryNorm.get(ref.toUpperCase().replace(/[-\s]/g, ''));
+          if (exactQty !== undefined && exactQty > 0) {
             console.log(`   ✅ ${ref}: ${exactQty} unidades (exacto)`);
-          } else if (altResult) {
-            console.log(`   🔄 ${ref}: ${altResult.quantity} unidades (via ${altResult.reference})`);
+          } else if (normQty !== undefined && normQty > 0) {
+            console.log(`   🔄 ${ref}: ${normQty} unidades (normalizado)`);
           } else {
-            console.log(`   ❌ ${ref}: NO ENCONTRADO`);
+            console.log(`   ❌ ${ref}: NO ENCONTRADO o qty=0`);
           }
         }
       }
       
-      // Función helper EXHAUSTIVA para buscar inventario (prioriza exacto)
-      // CORRECCIÓN: Asegurar que la búsqueda sea realmente exhaustiva
+      // Función para buscar inventario (exacta primero, luego normalizada)
       const getInventoryForRef = (ref: string): number => {
         if (!ref) return 0;
-        
         const refClean = String(ref).trim();
         
-        // 1. Búsqueda EXACTA (prioridad máxima) - como viene del parámetro
-        let exactQty = inventoryExactMap.get(refClean);
-        if (exactQty !== undefined && exactQty > 0) {
-          return exactQty;
-        }
+        // 1. Búsqueda exacta
+        const exact = inventoryExact.get(refClean);
+        if (exact !== undefined && exact > 0) return exact;
         
-        // 2. Búsqueda exacta con UPPER
-        exactQty = inventoryExactMap.get(refClean.toUpperCase());
-        if (exactQty !== undefined && exactQty > 0) {
-          return exactQty;
-        }
-        
-        // 3. Generar todas las variantes de búsqueda
-        const searchKeys = [
-          refClean,
-          refClean.toUpperCase(),
-          refClean.toLowerCase(),
-          refClean.replace(/-/g, ''),
-          refClean.replace(/-/g, '').toUpperCase(),
-          refClean.replace(/\s/g, ''),
-          refClean.replace(/\s/g, '').toUpperCase(),
-          refClean.replace(/[-\s]/g, ''),
-          refClean.replace(/[-\s]/g, '').toUpperCase(),
-          normalizeRefId(refClean)
-        ];
-        
-        // Intentar primero en mapa exacto con todas las variantes
-        for (const key of searchKeys) {
-          const result = inventoryExactMap.get(key);
-          if (result !== undefined && result > 0) {
-            return result;
-          }
-        }
-        
-        // Luego intentar en mapa alternativo
-        for (const key of searchKeys) {
-          const result = inventoryAltMap.get(key);
-          if (result !== undefined && result.quantity > 0) {
-            return result.quantity;
-          }
-        }
-        
-        // 4. Búsqueda inversa: agregar guión si no lo tiene (TCE1515 -> T-CE1515)
-        if (!refClean.includes('-') && refClean.length > 3) {
-          // Intentar patrones comunes de referencia
-          const patterns = [
-            refClean.slice(0, 1) + '-' + refClean.slice(1),  // T-CE1515
-            refClean.slice(0, 2) + '-' + refClean.slice(2),  // XX-YYY
-            refClean.slice(0, 3) + '-' + refClean.slice(3),  // XXX-YYY
-          ];
-          
-          for (const pattern of patterns) {
-            const result = inventoryExactMap.get(pattern);
-            if (result !== undefined && result > 0) {
-              return result;
-            }
-            const resultUpper = inventoryExactMap.get(pattern.toUpperCase());
-            if (resultUpper !== undefined && resultUpper > 0) {
-              return resultUpper;
-            }
-          }
-        }
+        // 2. Búsqueda normalizada
+        const normRef = refClean.toUpperCase().replace(/[-\s]/g, '');
+        const norm = inventoryNorm.get(normRef);
+        if (norm !== undefined && norm > 0) return norm;
         
         return 0;
       };
@@ -640,12 +574,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // Referencias problemáticas para diagnóstico (enfocadas en CORTE id_process=10)
       const debugRefs = ['CNCE125CMB', 'CNCE125-CMB', 'TCE1515', 'T-CE1515', 'TCE2020', 'T-CE2020', 'CUE12D', 'CUE12I', 'CUE1295D', 'CUE1295I', 'CA30', 'CA-30', 'ADAPTER12', 'ADAPTER34'];
       
-      // Log para verificar el inventario cargado para referencias problemáticas (CORTE)
-      console.log('\n📦 === VERIFICACIÓN INVENTARIO CORTE (id=10) ===');
-      const corteTestRefs = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CUE12I', 'CNCE125-CMB', 'CUE1295D', 'CUE1295I', 'CUE1295M'];
-      for (const dbRef of corteTestRefs) {
-        const inv = getInventoryForRef(dbRef);
-        console.log(`   📦 ${dbRef}: inventario = ${inv}`);
+      console.log('\n📦 === TEST INVENTARIO ESPECÍFICO ===');
+      // Test directo con getInventoryForRef
+      for (const testRef of ['T-CE1515', 'T-CE2020', 'CUE12D', 'CNCE125-CMB', 'CA-30']) {
+        const invFound = getInventoryForRef(testRef);
+        const exactFound = inventoryExact.get(testRef);
+        const normFound = inventoryNorm.get(testRef.toUpperCase().replace(/[-\s]/g, ''));
+        console.log(`   ${testRef}: getInventoryForRef=${invFound}, exacto=${exactFound ?? 'N/A'}, normalizado=${normFound ?? 'N/A'}`);
       }
       
       console.log('\n📊 === PRE-CÁLCULO DE CANTIDADES EFECTIVAS ===');
@@ -768,12 +703,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
                  mpRef === ref;
         });
         
-        // Log específico para referencias de Ensamble
-        const ensambleProcesses = machinesProcesses.filter((mp: any) => 
-          mp.processes.name === 'Ensamble' || mp.processes.name === 'EnsambleInt'
-        );
-        if (ensambleProcesses.length > 0) {
-          console.log(`   🔧 Ref ${ref} tiene ${ensambleProcesses.length} entradas en Ensamble/EnsambleInt`);
+        // === LOG ESPECÍFICO PARA ENSAMBLE/EMPAQUE/ROSCADO ===
+        const ensambleProcesses = machinesProcesses.filter((mp: any) => mp.id_process === 90);
+        const empaqueProcesses = machinesProcesses.filter((mp: any) => mp.id_process === 100);
+        const roscadoProcesses = machinesProcesses.filter((mp: any) => mp.id_process === 170);
+        
+        if (ensambleProcesses.length > 0 || empaqueProcesses.length > 0 || roscadoProcesses.length > 0) {
+          console.log(`\n🏭 REF ${ref} -> Ensamble: ${ensambleProcesses.length}, Empaque: ${empaqueProcesses.length}, Roscado: ${roscadoProcesses.length}`);
         }
         
         // Log detallado para CA-xx que deberían aparecer en Ensamble
