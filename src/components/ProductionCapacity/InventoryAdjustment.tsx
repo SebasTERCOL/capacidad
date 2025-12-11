@@ -313,7 +313,15 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
           // Usar el mapa de productos cargado con paginación (ya no hacemos queries individuales)
           // Esto asegura consistencia con ProductionProjectionV2
           const componentAnalysis: BOMComponent[] = [];
-          const itemAdjusted: AdjustedProductionData[] = [];
+          
+          // SIEMPRE agregar el producto terminado raíz para que llegue a Ensamble/Empaque
+          // Esto asegura que TRP336T aparezca en adjustedProductionData y ProductionProjectionV2 lo procese
+          const itemAdjusted: AdjustedProductionData[] = [{
+            referencia: item.referencia,  // ej. TRP336T
+            cantidad: item.cantidad,      // cantidad del CSV
+            inventario: 0                 // el inventario se gestiona por proceso en ProductionProjectionV2
+          }];
+          console.log(`✅ Agregando producto raíz a adjustedData: ${item.referencia} (cantidad: ${item.cantidad})`);
           
           // Consolidar componentes para evitar duplicación por proceso
           const consolidatedComponents = new Map<string, number>();
@@ -396,9 +404,14 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
               alerta
             });
             
-            // Agregar todos los componentes que no sean MP
-            // Pasar cantidad original (requerida) e inventario disponible
-            if (productData.type !== 'MP') {
+            // Determinar si el componente tiene procesos definidos en machines_processes
+            // (es decir, consume capacidad en algún proceso: corte, punzonado, roscado, etc.)
+            const componentHasProcesses = componentProcesses && componentProcesses.size > 0;
+
+            // Solo agregar componentes que tengan procesos asociados
+            // Esto incluye referencias MP que tienen procesos (como RoscadoConectores)
+            // y excluye materias primas sin procesos que no consumen capacidad
+            if (componentHasProcesses) {
               itemAdjusted.push({
                 referencia: componentId,
                 cantidad: cantidadRequerida, // Valor original sin ajustar
