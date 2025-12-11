@@ -136,6 +136,14 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
     return componentsMap;
   };
 
+  // Normalización de referencias para matching consistente
+  const normalizeRefId = (ref: string) => {
+    return String(ref || '')
+      .normalize('NFKC')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+  };
+
   const processInventoryAdjustment = async () => {
     setLoading(true);
     setError(null);
@@ -156,16 +164,85 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
       
       console.log(`🚫 Procesos excluidos de ajuste de inventario (inventario=false): ${excludedNames}`);
       
-      // Paso 1: Obtener tipos de todas las referencias principales Y sus procesos asociados
-      const allReferences = data.map(item => item.referencia.trim().toUpperCase());
-      const { data: mainProducts } = await supabase
-        .from('products')
-        .select('reference, type')
-        .in('reference', allReferences);
+      // === CARGAR TODOS LOS PRODUCTOS CON PAGINACIÓN (igual que ProductionProjectionV2) ===
+      console.log('\n📦 === CARGANDO INVENTARIO COMPLETO CON PAGINACIÓN ===');
+      const pageSize = 1000;
+      let inventoryFrom = 0;
+      let allProducts: any[] = [];
       
-      const mainProductsMap = new Map(
-        mainProducts?.map(p => [p.reference.trim().toUpperCase(), p.type]) || []
-      );
+      while (true) {
+        const { data: productsPage, error: invError } = await supabase
+          .from('products')
+          .select('reference, quantity, type, minimum_unit, maximum_unit')
+          .range(inventoryFrom, inventoryFrom + pageSize - 1);
+        
+        if (invError) {
+          console.error('❌ Error cargando inventario:', invError);
+          break;
+        }
+        
+        const chunk = productsPage || [];
+        allProducts = allProducts.concat(chunk);
+        console.log(`   Página ${Math.floor(inventoryFrom / pageSize) + 1}: ${chunk.length} productos`);
+        
+        if (chunk.length < pageSize) break;
+        inventoryFrom += pageSize;
+      }
+      
+      console.log(`✅ Total productos cargados: ${allProducts.length}`);
+      
+      // Crear mapas normalizados para inventario
+      const inventoryByNorm = new Map<string, number>();
+      const productDataByNorm = new Map<string, any>();
+      
+      for (const prod of allProducts) {
+        const rawRef = prod.reference as string | null;
+        if (!rawRef) continue;
+        
+        const normRef = normalizeRefId(rawRef);
+        const qty = Number(prod.quantity ?? 0);
+        
+        // Inventario acumulado por referencia normalizada
+        const currentQty = inventoryByNorm.get(normRef) || 0;
+        inventoryByNorm.set(normRef, currentQty + qty);
+        
+        // Guardar datos del producto
+        if (!productDataByNorm.has(normRef)) {
+          productDataByNorm.set(normRef, prod);
+        }
+      }
+      
+      console.log(`   Referencias únicas normalizadas: ${inventoryByNorm.size}`);
+      
+      // DEBUG: Verificar referencias específicas
+      const testRefs = ['T-CE1515', 'T-CE2020', 'CUE12D', 'CNCE125-CMB'];
+      console.log('\n🔍 === VERIFICACIÓN INVENTARIO ===');
+      for (const testRef of testRefs) {
+        const normTest = normalizeRefId(testRef);
+        const qty = inventoryByNorm.get(normTest) ?? 0;
+        console.log(`   ${testRef} (norm: ${normTest}): ${qty} unidades`);
+      }
+      
+      // Función para buscar inventario normalizado
+      const getInventoryByNorm = (ref: string): number => {
+        if (!ref) return 0;
+        return inventoryByNorm.get(normalizeRefId(ref)) ?? 0;
+      };
+      
+      const getProductDataByNorm = (ref: string): any | undefined => {
+        if (!ref) return undefined;
+        return productDataByNorm.get(normalizeRefId(ref));
+      };
+      
+      // Paso 1: Obtener tipos de todas las referencias principales
+      const mainProductsMap = new Map<string, string>();
+      for (const item of data) {
+        const refNorm = normalizeRefId(item.referencia);
+        const prodData = productDataByNorm.get(refNorm);
+        if (prodData) {
+          mainProductsMap.set(item.referencia.trim().toUpperCase(), prodData.type);
+        }
+      }
 
       // Obtener procesos asociados a cada componente para aplicar excepciones
       const { data: allMachinesProcesses } = await supabase
@@ -175,14 +252,19 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
       const componentProcessesMap = new Map<string, Set<number>>();
       allMachinesProcesses?.forEach(mp => {
         const ref = mp.ref.trim().toUpperCase();
+        const refNorm = normalizeRefId(mp.ref);
         if (!componentProcessesMap.has(ref)) {
           componentProcessesMap.set(ref, new Set());
         }
         componentProcessesMap.get(ref)!.add(mp.id_process);
+        // También agregar versión normalizada
+        if (!componentProcessesMap.has(refNorm)) {
+          componentProcessesMap.set(refNorm, new Set());
+        }
+        componentProcessesMap.get(refNorm)!.add(mp.id_process);
       });
 
       // Mapas globales para controlar el uso de inventario por componente
-      // Evita que la misma cantidad de inventario se reste varias veces
       const inventoryTotals = new Map<string, number>();
       const inventoryUsed = new Map<string, number>();
       
@@ -228,17 +310,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             };
           }
           
-          // Obtener información de productos (batch query)
-          const componentIds = Array.from(allComponents.keys());
-          const { data: productsData } = await supabase
-            .from('products')
-            .select('reference, quantity, type, minimum_unit, maximum_unit')
-            .in('reference', componentIds);
-          
-          const productsMap = new Map(
-            productsData?.map(p => [p.reference.trim().toUpperCase(), p]) || []
-          );
-          
+          // Usar el mapa de productos cargado con paginación (ya no hacemos queries individuales)
+          // Esto asegura consistencia con ProductionProjectionV2
           const componentAnalysis: BOMComponent[] = [];
           const itemAdjusted: AdjustedProductionData[] = [];
           
@@ -250,7 +323,10 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
           }
           
           for (const [componentId, cantidadNecesaria] of consolidatedComponents) {
-            const productData = productsMap.get(componentId);
+            // Buscar datos usando normalización
+            const componentNorm = normalizeRefId(componentId);
+            const productData = getProductDataByNorm(componentId);
+            const inventarioDisponible = getInventoryByNorm(componentId);
             
             // Si no existe en products o es PT, no se ajusta
             if (!productData || productData.type === 'PT') {
@@ -262,8 +338,8 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
               continue;
             }
 
-            // Verificar si el componente tiene procesos excluidos
-            const componentProcesses = componentProcessesMap.get(componentId);
+            // Verificar si el componente tiene procesos excluidos (usar versión normalizada también)
+            const componentProcesses = componentProcessesMap.get(componentId) || componentProcessesMap.get(componentNorm);
             const hasExcludedProcess = componentProcesses ? 
               Array.from(componentProcesses).some(processId => excludedIds.includes(processId)) : 
               false;
@@ -272,20 +348,20 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             const cantidadRequerida = Math.ceil(cantidadNecesaria);
 
             // Calcular inventario disponible de forma GLOBAL para este componente
-            // de modo que la suma de inventario usado en todos los productos nunca
-            // supere lo que hay en la base de datos.
             let totalDisponible = 0;
             if (hasExcludedProcess) {
               // Procesos excluidos: se ignora inventario (se produce todo)
               totalDisponible = 0;
             } else {
-              if (!inventoryTotals.has(componentId)) {
-                inventoryTotals.set(componentId, productData.quantity || 0);
+              // Usar clave normalizada para consistencia
+              if (!inventoryTotals.has(componentNorm)) {
+                inventoryTotals.set(componentNorm, inventarioDisponible);
               }
-              totalDisponible = inventoryTotals.get(componentId)!;
+              totalDisponible = inventoryTotals.get(componentNorm)!;
             }
 
-            const usadoHastaAhora = inventoryUsed.get(componentId) || 0;
+            // Usar clave normalizada para consistencia
+            const usadoHastaAhora = inventoryUsed.get(componentNorm) || 0;
             const restante = Math.max(0, totalDisponible - usadoHastaAhora);
             const usadoEnEsteProducto = Math.min(restante, cantidadRequerida);
 
@@ -294,7 +370,7 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
 
             // Actualizar uso global de inventario solo si no es proceso excluido
             if (!hasExcludedProcess && usadoEnEsteProducto > 0) {
-              inventoryUsed.set(componentId, usadoHastaAhora + usadoEnEsteProducto);
+              inventoryUsed.set(componentNorm, usadoHastaAhora + usadoEnEsteProducto);
             }
 
             // Log detallado para diagnóstico
