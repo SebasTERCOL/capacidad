@@ -291,28 +291,22 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
           }];
           console.log(`✅ Agregando producto raíz a adjustedData: ${item.referencia} → ${ref} (cantidad: ${item.cantidad})`);
           
-          const productType = mainProductsMap.get(ref);
+          const productType = mainProductsMap.get(ref) || 'UNKNOWN';
           
-          // Si no es PT, retornamos solo la referencia raíz (sin BOM)
-          if (productType !== 'PT') {
-            console.log(`   ℹ️ ${ref} no es PT (tipo: ${productType || 'undefined'}), solo se incluye la referencia principal`);
-            return {
-              adjusted: itemAdjusted,
-              analysis: null
-            };
-          }
-          
-          // Obtener BOM recursivo
+          // SIEMPRE intentar obtener BOM, independientemente del tipo
+          // Esto asegura que referencias como TRP336T expandan su BOM aunque no estén marcadas como PT
           const allComponents = await getRecursiveBOM(ref, item.cantidad);
           
-          // Si no tiene BOM, retornamos solo la referencia raíz
+          // Si no tiene BOM, retornamos solo la referencia raíz (aún válida para Ensamble/Empaque)
           if (allComponents.size === 0) {
-            console.log(`   ℹ️ ${ref} sin BOM, solo se incluye la referencia principal`);
+            console.log(`   ℹ️ ${ref} (tipo: ${productType}) sin BOM, solo se incluye la referencia principal`);
             return {
               adjusted: itemAdjusted,
               analysis: null
             };
           }
+          
+          console.log(`   ✅ ${ref} (tipo: ${productType}) con BOM de ${allComponents.size} componentes`);
           
           // Usar el mapa de productos cargado con paginación
           const componentAnalysis: BOMComponent[] = [];
@@ -440,6 +434,29 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
       }
       
       setAdjustedReferences(results);
+      
+      // 📊 Debug antes de onAdjustmentComplete
+      const csvRoots = new Set(
+        data.map(d => d.referencia.trim().toUpperCase())
+      );
+      const adjustedRoots = new Set(
+        adjustedProductionData.map(a => a.referencia)
+      );
+
+      console.log("\n📊 === RESUMEN FINAL INVENTORY ADJUSTMENT ===");
+      console.log("📊 CSV - total filas:", data.length);
+      console.log("📊 CSV - refs únicas:", csvRoots.size);
+      console.log("📊 adjustedData - total items:", adjustedProductionData.length);
+      console.log("📊 adjustedData - refs únicas:", adjustedRoots.size);
+
+      // Verificar que todas las referencias del CSV lleguen
+      const missingFromAdjusted = [...csvRoots].filter(r => !adjustedRoots.has(r));
+      if (missingFromAdjusted.length > 0) {
+        console.log("⚠️ Referencias del CSV que NO están en adjustedData:", missingFromAdjusted.slice(0, 20));
+      } else {
+        console.log("✅ Todas las referencias del CSV están en adjustedData");
+      }
+      
       onAdjustmentComplete(adjustedProductionData);
       
       console.log(`✅ Ajuste completado: ${adjustedProductionData.length} referencias ajustadas`);
