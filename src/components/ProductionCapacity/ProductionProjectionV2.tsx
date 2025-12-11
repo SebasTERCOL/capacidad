@@ -181,6 +181,44 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       .replace(/[^A-Z0-9]/g, ''); // dejar solo alfanuméricos
   };
 
+  // Genera variantes de una referencia para hacer matching flexible
+  // Ejemplo: TRP336T genera ['TRP336T', 'TRP336', 'TRP-336T', 'TRP-336']
+  const generateRefVariants = (ref: string): string[] => {
+    const upper = String(ref || '').trim().toUpperCase();
+    const norm = normalizeRefId(ref);
+    const variants = new Set<string>();
+    
+    variants.add(upper);
+    variants.add(norm);
+    
+    // Variante sin sufijo de letra final (TRP336T -> TRP336)
+    const withoutFinalLetter = norm.replace(/([0-9])([A-Z])$/i, '$1');
+    if (withoutFinalLetter !== norm) {
+      variants.add(withoutFinalLetter);
+    }
+    
+    // Variante con guión antes de números (TRP336 -> TRP-336)
+    const withHyphen = norm.replace(/([A-Z]+)([0-9]+)/, '$1-$2');
+    if (withHyphen !== norm) {
+      variants.add(withHyphen);
+    }
+    
+    // Variante base sin versión (.V1, .V2, etc)
+    const withoutVersion = upper.replace(/\.V\d+.*$/, '');
+    if (withoutVersion !== upper) {
+      variants.add(withoutVersion);
+      variants.add(normalizeRefId(withoutVersion));
+    }
+    
+    // Variante agregando sufijos comunes
+    const commonSuffixes = ['T', 'G', 'B', '-BM'];
+    for (const suffix of commonSuffixes) {
+      variants.add(norm + suffix);
+    }
+    
+    return Array.from(variants);
+  };
+
   // Resuelve el nombre del proceso usando normalización consistente
   const resolveProcessName = (mp: any) => {
     const original = mp?.processes?.name ?? '';
@@ -699,17 +737,42 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       for (const [ref, quantity] of mainReferences.entries()) {
         const refNormalized = normalizeRefId(ref);
         const refUpper = String(ref).trim().toUpperCase();
+        const refVariants = generateRefVariants(ref);
         
-        // Búsqueda flexible en machines_processes
+        // Búsqueda FLEXIBLE usando variantes de la referencia
+        // Esto permite que TRP336T encuentre entradas para TRP336 en Ensamble
         const machinesProcesses = machinesData.filter((mp: any) => {
           const mpRef = String(mp.ref || '').trim();
           const mpRefNorm = normalizeRefId(mpRef);
           const mpRefUpper = mpRef.toUpperCase();
           
-          return mpRefNorm === refNormalized || 
-                 mpRefUpper === refUpper ||
-                 mpRef === ref;
+          // Match directo
+          if (mpRefNorm === refNormalized || mpRefUpper === refUpper || mpRef === ref) {
+            return true;
+          }
+          
+          // Match por variantes: ¿alguna variante del CSV coincide con la ref de machines_processes?
+          if (refVariants.includes(mpRefNorm) || refVariants.includes(mpRefUpper)) {
+            return true;
+          }
+          
+          // Match inverso: ¿la ref de machines_processes genera variantes que coincidan?
+          const mpVariants = generateRefVariants(mpRef);
+          if (mpVariants.includes(refNormalized) || mpVariants.includes(refUpper)) {
+            return true;
+          }
+          
+          return false;
         });
+        
+        // Log para debugging de variantes en procesos terminales
+        const isTerminalRef = ['TRP336T', 'TRP336', 'CA30', 'CA-30', 'CCA30'].some(t => 
+          refVariants.includes(normalizeRefId(t)) || refNormalized === normalizeRefId(t)
+        );
+        if (isTerminalRef && machinesProcesses.length > 0) {
+          console.log(`\n🔗 REF ${ref} - Variantes generadas: ${refVariants.slice(0, 5).join(', ')}`);
+          console.log(`   Matches encontrados: ${machinesProcesses.length}`);
+        }
         
         // === LOG ESPECÍFICO PARA ENSAMBLE/EMPAQUE/ROSCADO ===
         const ensambleProcesses = machinesProcesses.filter((mp: any) => mp.id_process === 90);
@@ -890,16 +953,31 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         
         const { quantity, display } = entry;
         const displayUpper = String(display).trim().toUpperCase();
+        const componentVariants = generateRefVariants(display);
         
-        // Búsqueda flexible en machines_processes
+        // Búsqueda FLEXIBLE usando variantes de la referencia
         const machinesProcesses = machinesData.filter((mp: any) => {
           const mpRef = String(mp.ref || '').trim();
           const mpRefNorm = normalizeRefId(mpRef);
           const mpRefUpper = mpRef.toUpperCase();
           
-          return mpRefNorm === normId || 
-                 mpRefUpper === displayUpper ||
-                 mpRef === display;
+          // Match directo
+          if (mpRefNorm === normId || mpRefUpper === displayUpper || mpRef === display) {
+            return true;
+          }
+          
+          // Match por variantes
+          if (componentVariants.includes(mpRefNorm) || componentVariants.includes(mpRefUpper)) {
+            return true;
+          }
+          
+          // Match inverso
+          const mpVariants = generateRefVariants(mpRef);
+          if (mpVariants.includes(normId) || mpVariants.includes(displayUpper)) {
+            return true;
+          }
+          
+          return false;
         });
         
         for (const mp of machinesProcesses) {
