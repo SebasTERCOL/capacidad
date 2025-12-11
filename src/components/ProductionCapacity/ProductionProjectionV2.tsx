@@ -28,6 +28,13 @@ export interface ProjectionInfo {
   especial?: boolean;
 }
 
+// Interfaz para árbol de procesos por referencia (visualización de rutas)
+export interface ProcessTreeNode {
+  ref: string;           // Referencia, ej: 'TRP336T'
+  procesos: string[];    // Lista de procesos asociados a esa referencia
+  children: ProcessTreeNode[]; // Subcomponentes (según BOM)
+}
+
 interface ProductionProjectionV2Props {
   data: { referencia: string; cantidad: number }[];
   /** Datos originales sin ajuste de inventario (productionData crudo) */
@@ -62,6 +69,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0, currentRef: '' });
   const [startTime, setStartTime] = useState<number>(0);
+  const [processTrees, setProcessTrees] = useState<ProcessTreeNode[]>([]);
   
   // Cache para BOM y machines_processes para evitar consultas repetidas
   const [bomCache] = useState(new Map<string, Map<string, number>>());
@@ -188,6 +196,75 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     
     // Mantiene los nombres de procesos separados para análisis independiente
     return normalized;
+  };
+
+  // Función para construir árbol de procesos por referencia (para visualización de rutas)
+  const buildProcessTreeForRef = (
+    ref: string,
+    bomData: any[],
+    machinesData: any[],
+    visited: Set<string> = new Set()
+  ): ProcessTreeNode => {
+    const normRef = normalizeRefId(ref);
+
+    // Evitar ciclos en estructuras BOM
+    if (visited.has(normRef)) {
+      return { ref, procesos: ['(ciclo detectado)'], children: [] };
+    }
+
+    const newVisited = new Set(visited);
+    newVisited.add(normRef);
+
+    // Procesos asociados a esta referencia en machines_processes
+    const procesos = Array.from(
+      new Set(
+        machinesData
+          .filter((mp: any) => normalizeRefId(mp.ref || '') === normRef)
+          .map((mp: any) => resolveProcessName(mp))
+          .filter((name: string | null): name is string => !!name)
+      )
+    );
+
+    // Hijos directos en BOM (componentes)
+    const childrenIds = Array.from(
+      new Set(
+        bomData
+          .filter((b: any) => normalizeRefId(b.product_id || '') === normRef)
+          .map((b: any) => String(b.component_id || '').trim())
+          .filter(id => id.length > 0)
+      )
+    );
+
+    // Construir recursivamente los hijos
+    const children = childrenIds.map(childRef =>
+      buildProcessTreeForRef(childRef, bomData, machinesData, newVisited)
+    );
+
+    return { ref, procesos, children };
+  };
+
+  // Genera variantes de una referencia para búsqueda flexible
+  const generateRefVariants = (ref: string): string[] => {
+    const variants: string[] = [ref];
+    const norm = normalizeRefId(ref);
+    variants.push(norm);
+    
+    // Variantes sin sufijos comunes (T, G, TG, V#, etc.)
+    if (ref.endsWith('T')) variants.push(ref.slice(0, -1));
+    if (ref.endsWith('G')) variants.push(ref.slice(0, -1));
+    if (ref.endsWith('TG')) variants.push(ref.slice(0, -2));
+    if (norm.endsWith('T')) variants.push(norm.slice(0, -1));
+    if (norm.endsWith('G')) variants.push(norm.slice(0, -1));
+    
+    // Con y sin guiones
+    if (ref.includes('-')) variants.push(ref.replace(/-/g, ''));
+    else {
+      // Intentar agregar guiones en posiciones comunes (CA30 -> CA-30)
+      const match = ref.match(/^([A-Z]+)(\d+)(.*)$/i);
+      if (match) variants.push(`${match[1]}-${match[2]}${match[3]}`);
+    }
+    
+    return [...new Set(variants)];
   };
 
   // Función recursiva optimizada con cache
@@ -508,6 +585,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       console.log(`✅ Referencias principales consolidadas: ${mainReferences.size}`);
       console.log(`✅ Componentes consolidados: ${consolidatedComponents.size}`);
 
+      // 🌳 Construir árboles de procesos por referencia principal (para visualización de rutas)
+      const trees: ProcessTreeNode[] = [];
+      for (const [ref] of mainReferences.entries()) {
+        const tree = buildProcessTreeForRef(ref, bomData, machinesData);
+        trees.push(tree);
+      }
+      setProcessTrees(trees);
+      console.log('🌳 Árboles de procesos construidos:', trees.length);
+
       // Consolidar por referencia normalizada para unificar claves como "TAPA12R" y "TAPA 12R"
       const consolidatedByNorm = new Map<string, { quantity: number; display: string }>();
       const rawConsolidatedByNorm = new Map<string, { quantity: number; display: string }>();
@@ -700,15 +786,36 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const refNormalized = normalizeRefId(ref);
         const refUpper = String(ref).trim().toUpperCase();
         
-        // Búsqueda flexible en machines_processes
+        // Búsqueda flexible en machines_processes con variantes
+        const refVariants = generateRefVariants(ref);
         const machinesProcesses = machinesData.filter((mp: any) => {
           const mpRef = String(mp.ref || '').trim();
           const mpRefNorm = normalizeRefId(mpRef);
           const mpRefUpper = mpRef.toUpperCase();
           
-          return mpRefNorm === refNormalized || 
-                 mpRefUpper === refUpper ||
-                 mpRef === ref;
+          // Match exacto o normalizado
+          if (mpRefNorm === refNormalized || mpRefUpper === refUpper || mpRef === ref) {
+            return true;
+          }
+          
+          // Match por variantes (TRP336T -> TRP336, CA-30 -> CA30)
+          for (const variant of refVariants) {
+            const variantNorm = normalizeRefId(variant);
+            if (mpRefNorm === variantNorm || mpRefUpper === variant.toUpperCase()) {
+              return true;
+            }
+          }
+          
+          // Match por prefijo/sufijo (para procesos terminales como Ensamble/Empaque)
+          // TRP336T en CSV debe matchear TRP336 en machines_processes
+          if (mpRefNorm.length >= 3 && refNormalized.startsWith(mpRefNorm)) {
+            return true;
+          }
+          if (refNormalized.length >= 3 && mpRefNorm.startsWith(refNormalized)) {
+            return true;
+          }
+          
+          return false;
         });
         
         // === LOG ESPECÍFICO PARA ENSAMBLE/EMPAQUE/ROSCADO ===
@@ -891,15 +998,35 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const { quantity, display } = entry;
         const displayUpper = String(display).trim().toUpperCase();
         
-        // Búsqueda flexible en machines_processes
+        // Búsqueda flexible en machines_processes con variantes
+        const displayVariants = generateRefVariants(display);
         const machinesProcesses = machinesData.filter((mp: any) => {
           const mpRef = String(mp.ref || '').trim();
           const mpRefNorm = normalizeRefId(mpRef);
           const mpRefUpper = mpRef.toUpperCase();
           
-          return mpRefNorm === normId || 
-                 mpRefUpper === displayUpper ||
-                 mpRef === display;
+          // Match exacto o normalizado
+          if (mpRefNorm === normId || mpRefUpper === displayUpper || mpRef === display) {
+            return true;
+          }
+          
+          // Match por variantes
+          for (const variant of displayVariants) {
+            const variantNorm = normalizeRefId(variant);
+            if (mpRefNorm === variantNorm || mpRefUpper === variant.toUpperCase()) {
+              return true;
+            }
+          }
+          
+          // Match por prefijo/sufijo
+          if (mpRefNorm.length >= 3 && normId.startsWith(mpRefNorm)) {
+            return true;
+          }
+          if (normId.length >= 3 && mpRefNorm.startsWith(normId)) {
+            return true;
+          }
+          
+          return false;
         });
         
         for (const mp of machinesProcesses) {
@@ -2518,7 +2645,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     .sort((a, b) => getProcessOrder(a.processName) - getProcessOrder(b.processName));
   };
 
-  const [viewMode, setViewMode] = useState<'hierarchical' | 'table'>('hierarchical');
+  const [viewMode, setViewMode] = useState<'hierarchical' | 'table' | 'routes'>('hierarchical');
 
   const totalTime = projection.reduce((sum, item) => sum + item.tiempoTotal, 0);
   const processesWithProblems = projection.filter(p => p.alerta && !p.especial).length;
@@ -2564,6 +2691,85 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           <Button onClick={() => calculateProjection()}>Reintentar</Button>
         </CardContent>
       </Card>
+    );
+  }
+
+  // Componentes para visualización de árbol de procesos
+  const ProcessTreeNodeView: React.FC<{ node: ProcessTreeNode; level?: number }> = ({ node, level = 0 }) => {
+    return (
+      <div className={level === 0 ? "mt-2" : "mt-1 ml-4 border-l border-border pl-4"}>
+        {level > 0 && (
+          <div className="font-medium text-sm">
+            {'• '.repeat(Math.min(level, 3))}
+            {node.ref}
+          </div>
+        )}
+        {node.procesos.length > 0 && (
+          <div className="text-xs text-muted-foreground mb-1">
+            Procesos: {node.procesos.join(' → ')}
+          </div>
+        )}
+        {node.children.map(child => (
+          <ProcessTreeNodeView key={`${node.ref}-${child.ref}`} node={child} level={level + 1} />
+        ))}
+      </div>
+    );
+  };
+
+  // Renderizar vista de rutas de proceso
+  if (viewMode === 'routes') {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Rutas de Proceso por Referencia</CardTitle>
+                <CardDescription>
+                  Despliegue jerárquico de referencias → subensambles → procesos
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setViewMode('hierarchical')}>
+                  Ver Capacidad
+                </Button>
+                <Button variant="outline" size="sm" onClick={onBack}>
+                  Volver
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm text-muted-foreground mb-4">
+              Total de referencias principales: {processTrees.length}
+            </div>
+            <div className="space-y-4 max-h-[600px] overflow-y-auto">
+              {processTrees.map(tree => (
+                <Card key={tree.ref} className="border rounded-lg">
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-sm font-semibold">
+                      🔧 {tree.ref}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {tree.procesos.length > 0 
+                        ? `Procesos directos: ${tree.procesos.join(' → ')}` 
+                        : 'Sin procesos asociados directamente'}
+                    </CardDescription>
+                  </CardHeader>
+                  {tree.children.length > 0 && (
+                    <CardContent className="py-2">
+                      <div className="text-xs font-medium text-muted-foreground mb-2">
+                        Componentes ({tree.children.length}):
+                      </div>
+                      <ProcessTreeNodeView node={tree} />
+                    </CardContent>
+                  )}
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -2614,14 +2820,26 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const shouldShowOvertimeButton = identifiedDeficits.length > 0;
     
     return (
-      <HierarchicalCapacityView
-        processGroups={processGroups}
-        onBack={onBack}
-        onStartOver={onStartOver}
-        hasDeficits={shouldShowOvertimeButton}
-        onOptimizeWithOvertime={handleOptimizeWithOvertime}
-        onExportCSV={exportToCSV}
-      />
+      <div className="space-y-4">
+        <div className="flex justify-end gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setViewMode('routes')}
+            className="flex items-center gap-2"
+          >
+            🌳 Ver Rutas de Proceso
+          </Button>
+        </div>
+        <HierarchicalCapacityView
+          processGroups={processGroups}
+          onBack={onBack}
+          onStartOver={onStartOver}
+          hasDeficits={shouldShowOvertimeButton}
+          onOptimizeWithOvertime={handleOptimizeWithOvertime}
+          onExportCSV={exportToCSV}
+        />
+      </div>
     );
   }
 
