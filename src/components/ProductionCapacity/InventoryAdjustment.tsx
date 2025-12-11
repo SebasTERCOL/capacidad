@@ -282,51 +282,14 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
           setCurrentReference(ref);
           console.log(`🔄 Procesando ${ref} (${i + batch.indexOf(item) + 1}/${totalItems})`);
           
-          // 🔧 1) AJUSTE DE INVENTARIO PARA LA REFERENCIA RAÍZ (producto terminado PT)
-          const refNorm = normalizeRefId(ref);
-          const rootProcesses = componentProcessesMap.get(ref) || componentProcessesMap.get(refNorm);
-
-          const rootHasExcludedProcess = rootProcesses
-            ? Array.from(rootProcesses).some(processId => excludedIds.includes(processId))
-            : false;
-
-          let rootTotalDisponible = 0;
-          let rootUsadoAhora = 0;
-          let rootCantidadAProducir = item.cantidad;
-
-          if (rootHasExcludedProcess) {
-            // Si alguno de sus procesos está excluido (inventario=false), se produce todo
-            console.log(`   ℹ️ ${ref} tiene procesos excluidos, se ignora inventario de PT`);
-          } else {
-            const rootInventarioBD = getInventoryByNorm(ref);
-            if (!inventoryTotals.has(refNorm)) {
-              inventoryTotals.set(refNorm, rootInventarioBD);
-            }
-            rootTotalDisponible = inventoryTotals.get(refNorm)!;
-
-            const rootUsadoAntes = inventoryUsed.get(refNorm) || 0;
-            const rootRestante = Math.max(0, rootTotalDisponible - rootUsadoAntes);
-            rootUsadoAhora = Math.min(rootRestante, item.cantidad);
-
-            rootCantidadAProducir = Math.max(0, item.cantidad - rootUsadoAhora);
-
-            if (rootUsadoAhora > 0) {
-              inventoryUsed.set(refNorm, rootUsadoAntes + rootUsadoAhora);
-            }
-
-            console.log(
-              `📦 PT ${ref}: Req=${item.cantidad}, InvTotal=${rootTotalDisponible}, ` +
-              `UsadoAhora=${rootUsadoAhora}, AProducir=${rootCantidadAProducir}`
-            );
-          }
-
-          // 🔧 2) REGISTRO DE LA REFERENCIA RAÍZ CON CANTIDAD AJUSTADA
+          // SIEMPRE agregar la referencia raíz del CSV para que llegue a Ensamble/Empaque
+          // CRÍTICO: Usar la referencia normalizada (ref) para que coincida con machines_processes
           const itemAdjusted: AdjustedProductionData[] = [{
-            referencia: ref,
-            cantidad: rootCantidadAProducir,  // ✅ Cantidad ya con inventario PT descontado
-            inventario: rootUsadoAhora        // ✅ Inventario PT usado
+            referencia: ref,  // ✅ Ya normalizada en línea 280: trim().toUpperCase()
+            cantidad: item.cantidad,
+            inventario: 0
           }];
-          console.log(`✅ Agregando producto raíz a adjustedData: ${ref} (cantidad a producir: ${rootCantidadAProducir}, inv usado: ${rootUsadoAhora})`);
+          console.log(`✅ Agregando producto raíz a adjustedData: ${item.referencia} → ${ref} (cantidad: ${item.cantidad})`);
           
           const productType = mainProductsMap.get(ref) || 'UNKNOWN';
           
