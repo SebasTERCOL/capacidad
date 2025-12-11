@@ -343,34 +343,32 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             // Cantidad requerida redondeada
             const cantidadRequerida = Math.ceil(cantidadNecesaria);
 
-            // Calcular inventario disponible de forma GLOBAL para este componente
-            let totalDisponible = 0;
-            if (hasExcludedProcess) {
-              // Procesos excluidos: se ignora inventario (se produce todo)
-              totalDisponible = 0;
-            } else {
-              // Usar clave normalizada para consistencia
-              if (!inventoryTotals.has(componentNorm)) {
-                inventoryTotals.set(componentNorm, inventarioDisponible);
-              }
-              totalDisponible = inventoryTotals.get(componentNorm)!;
+            // SIEMPRE mostrar el inventario disponible real para el componente
+            // Independientemente de si tiene procesos excluidos o no
+            if (!inventoryTotals.has(componentNorm)) {
+              inventoryTotals.set(componentNorm, inventarioDisponible);
             }
+            const totalDisponible = inventoryTotals.get(componentNorm)!;
+            
+            // Para el cálculo de "a producir", solo aplicamos inventario si NO tiene procesos excluidos
+            const inventarioParaCalculo = hasExcludedProcess ? 0 : totalDisponible;
 
             // Usar clave normalizada para consistencia
             const usadoHastaAhora = inventoryUsed.get(componentNorm) || 0;
-            const restante = Math.max(0, totalDisponible - usadoHastaAhora);
+            // Solo calcular inventario restante si NO tiene procesos excluidos
+            const restante = hasExcludedProcess ? 0 : Math.max(0, inventarioParaCalculo - usadoHastaAhora);
             const usadoEnEsteProducto = Math.min(restante, cantidadRequerida);
 
             const cantidadAProducir = Math.max(0, cantidadRequerida - usadoEnEsteProducto);
-            const quedaraDisponible = totalDisponible - (usadoHastaAhora + usadoEnEsteProducto);
+            // Para "quedará disponible", siempre usar el inventario real
+            const quedaraDisponible = hasExcludedProcess 
+              ? totalDisponible  // Si proceso excluido, el inventario queda intacto
+              : totalDisponible - (usadoHastaAhora + usadoEnEsteProducto);
 
             // Actualizar uso global de inventario solo si no es proceso excluido
             if (!hasExcludedProcess && usadoEnEsteProducto > 0) {
               inventoryUsed.set(componentNorm, usadoHastaAhora + usadoEnEsteProducto);
             }
-
-            // Log detallado para diagnóstico
-            console.log(`📊 ${componentId}: Req=${cantidadRequerida}, InvTotal=${totalDisponible}, UsadoAntes=${usadoHastaAhora}, UsadoAhora=${usadoEnEsteProducto}, AProducir=${cantidadAProducir}, Quedará=${quedaraDisponible}`);
             
             let alerta: 'ok' | 'warning' | 'error' = 'ok';
             
@@ -616,7 +614,7 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
                         <TableHead className="text-right">Requerido</TableHead>
                         <TableHead className="text-right">Disponible</TableHead>
                         <TableHead className="text-center">
-                          <Minus className="h-4 w-4 inline" />
+                          <ArrowRight className="h-4 w-4 inline" />
                         </TableHead>
                         <TableHead className="text-right font-bold">A Producir</TableHead>
                         <TableHead className="text-right">Quedará</TableHead>
