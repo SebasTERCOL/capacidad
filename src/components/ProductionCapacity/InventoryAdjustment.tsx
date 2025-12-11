@@ -282,16 +282,22 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
           setCurrentReference(ref);
           console.log(`🔄 Procesando ${ref} (${i + batch.indexOf(item) + 1}/${totalItems})`);
           
+          // SIEMPRE agregar la referencia raíz del CSV para que llegue a Ensamble/Empaque
+          // Esto es CRÍTICO - TODAS las 169 referencias deben llegar a ProductionProjectionV2
+          const itemAdjusted: AdjustedProductionData[] = [{
+            referencia: item.referencia,  // ej. TRP336T - la referencia exacta del CSV
+            cantidad: item.cantidad,      // cantidad del CSV
+            inventario: 0                 // el inventario se gestiona por proceso en ProductionProjectionV2
+          }];
+          console.log(`✅ Agregando producto raíz a adjustedData: ${item.referencia} (cantidad: ${item.cantidad})`);
+          
           const productType = mainProductsMap.get(ref);
           
-          // Si no es PT, no se procesa
+          // Si no es PT, retornamos solo la referencia raíz (sin BOM)
           if (productType !== 'PT') {
+            console.log(`   ℹ️ ${ref} no es PT (tipo: ${productType || 'undefined'}), solo se incluye la referencia principal`);
             return {
-              adjusted: [{
-                referencia: item.referencia,
-                cantidad: item.cantidad,
-                inventario: 0
-              }],
+              adjusted: itemAdjusted,
               analysis: null
             };
           }
@@ -299,29 +305,17 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
           // Obtener BOM recursivo
           const allComponents = await getRecursiveBOM(ref, item.cantidad);
           
+          // Si no tiene BOM, retornamos solo la referencia raíz
           if (allComponents.size === 0) {
+            console.log(`   ℹ️ ${ref} sin BOM, solo se incluye la referencia principal`);
             return {
-              adjusted: [{
-                referencia: item.referencia,
-                cantidad: item.cantidad,
-                inventario: 0
-              }],
+              adjusted: itemAdjusted,
               analysis: null
             };
           }
           
-          // Usar el mapa de productos cargado con paginación (ya no hacemos queries individuales)
-          // Esto asegura consistencia con ProductionProjectionV2
+          // Usar el mapa de productos cargado con paginación
           const componentAnalysis: BOMComponent[] = [];
-          
-          // SIEMPRE agregar el producto terminado raíz para que llegue a Ensamble/Empaque
-          // Esto asegura que TRP336T aparezca en adjustedProductionData y ProductionProjectionV2 lo procese
-          const itemAdjusted: AdjustedProductionData[] = [{
-            referencia: item.referencia,  // ej. TRP336T
-            cantidad: item.cantidad,      // cantidad del CSV
-            inventario: 0                 // el inventario se gestiona por proceso en ProductionProjectionV2
-          }];
-          console.log(`✅ Agregando producto raíz a adjustedData: ${item.referencia} (cantidad: ${item.cantidad})`);
           
           // Consolidar componentes para evitar duplicación por proceso
           const consolidatedComponents = new Map<string, number>();
