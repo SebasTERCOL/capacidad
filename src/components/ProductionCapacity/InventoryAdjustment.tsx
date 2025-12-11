@@ -283,13 +283,13 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
           console.log(`🔄 Procesando ${ref} (${i + batch.indexOf(item) + 1}/${totalItems})`);
           
           // SIEMPRE agregar la referencia raíz del CSV para que llegue a Ensamble/Empaque
-          // Esto es CRÍTICO - TODAS las 169 referencias deben llegar a ProductionProjectionV2
+          // CRÍTICO: Usar la referencia normalizada (ref) para que coincida con machines_processes
           const itemAdjusted: AdjustedProductionData[] = [{
-            referencia: item.referencia,  // ej. TRP336T - la referencia exacta del CSV
-            cantidad: item.cantidad,      // cantidad del CSV
-            inventario: 0                 // el inventario se gestiona por proceso en ProductionProjectionV2
+            referencia: ref,  // ✅ Ya normalizada en línea 280: trim().toUpperCase()
+            cantidad: item.cantidad,
+            inventario: 0
           }];
-          console.log(`✅ Agregando producto raíz a adjustedData: ${item.referencia} (cantidad: ${item.cantidad})`);
+          console.log(`✅ Agregando producto raíz a adjustedData: ${item.referencia} → ${ref} (cantidad: ${item.cantidad})`);
           
           const productType = mainProductsMap.get(ref);
           
