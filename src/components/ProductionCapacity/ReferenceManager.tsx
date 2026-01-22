@@ -19,7 +19,7 @@ interface MachineProcess {
   ref: string;
   frequency: number;
   sam: number;
-  sam_unit: 'min_per_unit' | 'units_per_min';
+  sam_unit: 'min_per_unit' | 'units_per_min' | 'units_per_hour';
   machine_name?: string;
   process_name?: string;
 }
@@ -54,7 +54,7 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
     id_process: number;
     sam: number; 
     frequency: number; 
-    sam_unit: 'min_per_unit' | 'units_per_min' 
+    sam_unit: 'min_per_unit' | 'units_per_min' | 'units_per_hour' 
   }>({ 
     ref: '',
     id_process: 0,
@@ -70,7 +70,7 @@ export const ReferenceManager: React.FC<ReferenceManagerProps> = ({ onClose }) =
     id_machine: '',
     sam: 0,
     frequency: 0,
-    sam_unit: 'units_per_min' as 'min_per_unit' | 'units_per_min'
+    sam_unit: 'units_per_min' as 'min_per_unit' | 'units_per_min' | 'units_per_hour'
   });
 
   const itemsPerPage = 50;
