@@ -739,14 +739,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const refUpper = String(ref).trim().toUpperCase();
         const refVariants = generateRefVariants(ref);
         
-        // Búsqueda FLEXIBLE usando variantes de la referencia
-        // Esto permite que TRP336T encuentre entradas para TRP336 en Ensamble
+        // Búsqueda ESTRICTA usando variantes de la referencia
+        // CORRECCIÓN: Eliminar "match inverso" que causaba falsos positivos masivos
         const machinesProcesses = machinesData.filter((mp: any) => {
           const mpRef = String(mp.ref || '').trim();
           const mpRefNorm = normalizeRefId(mpRef);
           const mpRefUpper = mpRef.toUpperCase();
           
-          // Match directo
+          // Match directo (más confiable)
           if (mpRefNorm === refNormalized || mpRefUpper === refUpper || mpRef === ref) {
             return true;
           }
@@ -756,11 +756,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             return true;
           }
           
-          // Match inverso: ¿la ref de machines_processes genera variantes que coincidan?
-          const mpVariants = generateRefVariants(mpRef);
-          if (mpVariants.includes(refNormalized) || mpVariants.includes(refUpper)) {
-            return true;
-          }
+          // REMOVIDO: Match inverso - generaba variantes para CADA registro de machines_processes (9,247)
+          // y causaba que referencias CMB matchearan incorrectamente con referencias del CSV
           
           return false;
         });
@@ -955,27 +952,26 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const displayUpper = String(display).trim().toUpperCase();
         const componentVariants = generateRefVariants(display);
         
-        // Búsqueda FLEXIBLE usando variantes de la referencia
+        // Búsqueda ESTRICTA usando variantes de la referencia
+        // CORRECCIÓN: Eliminar "match inverso" que causaba falsos positivos
         const machinesProcesses = machinesData.filter((mp: any) => {
           const mpRef = String(mp.ref || '').trim();
           const mpRefNorm = normalizeRefId(mpRef);
           const mpRefUpper = mpRef.toUpperCase();
           
-          // Match directo
+          // Match directo (más confiable)
           if (mpRefNorm === normId || mpRefUpper === displayUpper || mpRef === display) {
             return true;
           }
           
-          // Match por variantes
+          // Match por variantes del componente: verificar si alguna variante del componente coincide con la ref de machines_processes
           if (componentVariants.includes(mpRefNorm) || componentVariants.includes(mpRefUpper)) {
             return true;
           }
           
-          // Match inverso
-          const mpVariants = generateRefVariants(mpRef);
-          if (mpVariants.includes(normId) || mpVariants.includes(displayUpper)) {
-            return true;
-          }
+          // REMOVIDO: Match inverso que causaba falsos positivos
+          // El match inverso generaba variantes para CADA registro de machines_processes
+          // y podía causar que referencias como "CMB.BN12.V1" matchearan incorrectamente
           
           return false;
         });
