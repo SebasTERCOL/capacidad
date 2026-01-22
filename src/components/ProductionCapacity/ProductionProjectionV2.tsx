@@ -803,6 +803,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             continue;
           }
           
+          // ⚡ CORRECCIÓN CRÍTICA: Si hay combos configurados, EXCLUIR referencias del proceso PUNZONADO (id=20)
+          // El tiempo de Punzonado debe venir EXCLUSIVAMENTE de los combos, no del BOM
+          // Esto evita que el tiempo se infle por duplicación (BOM + combos)
+          if (comboData && comboData.length > 0 && mp.id_process === 20) {
+            console.log(`     ⏭️ Saltando ${ref} en Punzonado (tiempo viene de combos)`);
+            continue;
+          }
+          
           // Log especial para Ensamble
           if (processNameOriginal === 'Ensamble' || processNameOriginal === 'EnsambleInt') {
             console.log(`   🏭 ENSAMBLE: ${ref} -> Proceso: ${processNameOriginal} (ID: ${mp.id_process}), Máquina: ${mp.machines.name}`);
@@ -984,6 +992,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           // Saltar procesos excluidos
           if (processName === null) {
             console.log(`     ❌ Proceso excluido: ${processNameOriginal}`);  
+            continue;
+          }
+          
+          // ⚡ CORRECCIÓN CRÍTICA: Si hay combos configurados, EXCLUIR componentes BOM del proceso PUNZONADO (id=20)
+          // El tiempo de Punzonado debe venir EXCLUSIVAMENTE de los combos configurados
+          // Los componentes BOM (-CMB) no deben contribuir tiempo adicional a Punzonado
+          if (comboData && comboData.length > 0 && mp.id_process === 20) {
+            console.log(`     ⏭️ Saltando componente ${display} en Punzonado (tiempo viene de combos)`);
             continue;
           }
           
