@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "13.0.4"
+    PostgrestVersion: "12.2.3 (519615d)"
   }
   public: {
     Tables: {
@@ -24,13 +24,13 @@ export type Database = {
         Insert: {
           amount?: number
           component_id: string
-          id?: never
+          id?: number
           product_id: string
         }
         Update: {
           amount?: number
           component_id?: string
-          id?: never
+          id?: number
           product_id?: string
         }
         Relationships: [
@@ -50,88 +50,75 @@ export type Database = {
           },
         ]
       }
-      buy_order_items: {
+      calidad: {
         Row: {
-          buy_order_id: number
+          fecha: string | null
+          hora: string | null
           id: number
-          quantity: number | null
-          recieve_quantity: number | null
-          reference: string
-          total_price: number | null
-          unit_price: number | null
-          verified_quantity: number | null
+          malas: number
+          motivo: string
+          odp_id: number | null
+          personal_id: number | null
         }
         Insert: {
-          buy_order_id: number
-          id?: never
-          quantity?: number | null
-          recieve_quantity?: number | null
-          reference: string
-          total_price?: number | null
-          unit_price?: number | null
-          verified_quantity?: number | null
+          fecha?: string | null
+          hora?: string | null
+          id?: number
+          malas: number
+          motivo: string
+          odp_id?: number | null
+          personal_id?: number | null
         }
         Update: {
-          buy_order_id?: number
-          id?: never
-          quantity?: number | null
-          recieve_quantity?: number | null
-          reference?: string
-          total_price?: number | null
-          unit_price?: number | null
-          verified_quantity?: number | null
+          fecha?: string | null
+          hora?: string | null
+          id?: number
+          malas?: number
+          motivo?: string
+          odp_id?: number | null
+          personal_id?: number | null
         }
         Relationships: [
           {
-            foreignKeyName: "buy_order_items_buy_order_id_fkey"
-            columns: ["buy_order_id"]
+            foreignKeyName: "calidad_odp_id_fkey"
+            columns: ["odp_id"]
             isOneToOne: false
-            referencedRelation: "buy_orders"
+            referencedRelation: "odp"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "buy_order_items_reference_fkey"
-            columns: ["reference"]
+            foreignKeyName: "calidad_odp_id_fkey"
+            columns: ["odp_id"]
             isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["reference"]
+            referencedRelation: "vista_calidad"
+            referencedColumns: ["odp_id"]
           },
-        ]
-      }
-      buy_orders: {
-        Row: {
-          close_date: string | null
-          conditions: string | null
-          date: string
-          id: number
-          observations: string | null
-          provider_id: number
-          status: Database["public"]["Enums"]["orders_status"] | null
-        }
-        Insert: {
-          close_date?: string | null
-          conditions?: string | null
-          date: string
-          id?: never
-          observations?: string | null
-          provider_id: number
-          status?: Database["public"]["Enums"]["orders_status"] | null
-        }
-        Update: {
-          close_date?: string | null
-          conditions?: string | null
-          date?: string
-          id?: never
-          observations?: string | null
-          provider_id?: number
-          status?: Database["public"]["Enums"]["orders_status"] | null
-        }
-        Relationships: [
           {
-            foreignKeyName: "buy_orders_provider_id_fkey"
-            columns: ["provider_id"]
+            foreignKeyName: "calidad_odp_id_fkey"
+            columns: ["odp_id"]
             isOneToOne: false
-            referencedRelation: "providers"
+            referencedRelation: "vista_minutos_trabajados"
+            referencedColumns: ["odp_id"]
+          },
+          {
+            foreignKeyName: "calidad_odp_id_fkey"
+            columns: ["odp_id"]
+            isOneToOne: false
+            referencedRelation: "vista_oee"
+            referencedColumns: ["odp_id"]
+          },
+          {
+            foreignKeyName: "calidad_odp_id_fkey"
+            columns: ["odp_id"]
+            isOneToOne: false
+            referencedRelation: "vista_rendimiento"
+            referencedColumns: ["odp_id"]
+          },
+          {
+            foreignKeyName: "calidad_personal_id_fkey"
+            columns: ["personal_id"]
+            isOneToOne: false
+            referencedRelation: "personal"
             referencedColumns: ["id"]
           },
         ]
@@ -147,7 +134,7 @@ export type Database = {
           cantidad?: number | null
           combo: string
           component_id?: string | null
-          id: number
+          id?: number
         }
         Update: {
           cantidad?: number | null
@@ -172,20 +159,85 @@ export type Database = {
           },
         ]
       }
+      fallas: {
+        Row: {
+          DEFECTOS: string
+          ZONA: string | null
+        }
+        Insert: {
+          DEFECTOS: string
+          ZONA?: string | null
+        }
+        Update: {
+          DEFECTOS?: string
+          ZONA?: string | null
+        }
+        Relationships: []
+      }
       families: {
         Row: {
           id: number
           name: string | null
         }
         Insert: {
-          id?: never
+          id?: number
           name?: string | null
         }
         Update: {
-          id?: never
+          id?: number
           name?: string | null
         }
         Relationships: []
+      }
+      hora: {
+        Row: {
+          estado_id: boolean | null
+          fecha: string
+          fecha_modificacion: string | null
+          fecha_salida: string | null
+          hora_ingreso: string
+          hora_salida: string | null
+          id: number
+          minutos_anteriores: number | null
+          motivo_cambio: string | null
+          personal_id: number | null
+          usuario_modificacion: string | null
+        }
+        Insert: {
+          estado_id?: boolean | null
+          fecha: string
+          fecha_modificacion?: string | null
+          fecha_salida?: string | null
+          hora_ingreso: string
+          hora_salida?: string | null
+          id?: number
+          minutos_anteriores?: number | null
+          motivo_cambio?: string | null
+          personal_id?: number | null
+          usuario_modificacion?: string | null
+        }
+        Update: {
+          estado_id?: boolean | null
+          fecha?: string
+          fecha_modificacion?: string | null
+          fecha_salida?: string | null
+          hora_ingreso?: string
+          hora_salida?: string | null
+          id?: number
+          minutos_anteriores?: number | null
+          motivo_cambio?: string | null
+          personal_id?: number | null
+          usuario_modificacion?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hora_personal_id_fkey"
+            columns: ["personal_id"]
+            isOneToOne: false
+            referencedRelation: "personal"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       machines: {
         Row: {
@@ -194,12 +246,12 @@ export type Database = {
           status: Database["public"]["Enums"]["status_machine"]
         }
         Insert: {
-          id?: never
+          id?: number
           name: string
           status?: Database["public"]["Enums"]["status_machine"]
         }
         Update: {
-          id?: never
+          id?: number
           name?: string
           status?: Database["public"]["Enums"]["status_machine"]
         }
@@ -219,7 +271,7 @@ export type Database = {
         Insert: {
           condicion_inicial?: number | null
           frequency?: number
-          id?: never
+          id?: number
           id_machine: number
           id_process: number
           ref: string
@@ -229,7 +281,7 @@ export type Database = {
         Update: {
           condicion_inicial?: number | null
           frequency?: number
-          id?: never
+          id?: number
           id_machine?: number
           id_process?: number
           ref?: string
@@ -260,121 +312,167 @@ export type Database = {
           },
         ]
       }
-      movements: {
+      maquinaria: {
         Row: {
-          amount: number
-          consecutive: number
-          current_amount: number
-          date: string
-          description: string | null
-          final_amount: number
-          from_: number | null
+          activo: boolean | null
+          codigo_maquina: string
+          created_at: string | null
           id: number
-          made_by: Database["public"]["Enums"]["movement_made_by"]
-          made_it_id: number | null
-          ref: string
-          to_: number | null
-          type: Database["public"]["Enums"]["movement_type"]
+          nombre_maquina: string | null
+          updated_at: string | null
+          zona: string
         }
         Insert: {
-          amount: number
-          consecutive: number
-          current_amount: number
-          date?: string
-          description?: string | null
-          final_amount: number
-          from_?: number | null
-          id?: never
-          made_by: Database["public"]["Enums"]["movement_made_by"]
-          made_it_id?: number | null
-          ref: string
-          to_?: number | null
-          type: Database["public"]["Enums"]["movement_type"]
+          activo?: boolean | null
+          codigo_maquina: string
+          created_at?: string | null
+          id?: number
+          nombre_maquina?: string | null
+          updated_at?: string | null
+          zona: string
         }
         Update: {
-          amount?: number
-          consecutive?: number
-          current_amount?: number
-          date?: string
-          description?: string | null
-          final_amount?: number
-          from_?: number | null
-          id?: never
-          made_by?: Database["public"]["Enums"]["movement_made_by"]
-          made_it_id?: number | null
-          ref?: string
-          to_?: number | null
-          type?: Database["public"]["Enums"]["movement_type"]
+          activo?: boolean | null
+          codigo_maquina?: string
+          created_at?: string | null
+          id?: number
+          nombre_maquina?: string | null
+          updated_at?: string | null
+          zona?: string
+        }
+        Relationships: []
+      }
+      odp: {
+        Row: {
+          ciclo_maquina: number | null
+          estado_odp: boolean | null
+          fecha_fin_odp: string | null
+          fecha_inicio_odp: string | null
+          hora_fin_odp: string | null
+          hora_inicio_odp: string | null
+          id: number
+          maquina: string
+          orden_produccion: number
+          personal_idodp: number | null
+          realizadas: number
+          referencia: string
+          supervisor: string
+          turno: number | null
+          zona: string
+        }
+        Insert: {
+          ciclo_maquina?: number | null
+          estado_odp?: boolean | null
+          fecha_fin_odp?: string | null
+          fecha_inicio_odp?: string | null
+          hora_fin_odp?: string | null
+          hora_inicio_odp?: string | null
+          id?: number
+          maquina: string
+          orden_produccion: number
+          personal_idodp?: number | null
+          realizadas: number
+          referencia: string
+          supervisor: string
+          turno?: number | null
+          zona: string
+        }
+        Update: {
+          ciclo_maquina?: number | null
+          estado_odp?: boolean | null
+          fecha_fin_odp?: string | null
+          fecha_inicio_odp?: string | null
+          hora_fin_odp?: string | null
+          hora_inicio_odp?: string | null
+          id?: number
+          maquina?: string
+          orden_produccion?: number
+          personal_idodp?: number | null
+          realizadas?: number
+          referencia?: string
+          supervisor?: string
+          turno?: number | null
+          zona?: string
         }
         Relationships: [
           {
-            foreignKeyName: "movements_from__fkey"
-            columns: ["from_"]
+            foreignKeyName: "odp_personal_idodp_fkey"
+            columns: ["personal_idodp"]
             isOneToOne: false
-            referencedRelation: "warehouse"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "movements_ref_fkey"
-            columns: ["ref"]
-            isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["reference"]
-          },
-          {
-            foreignKeyName: "movements_to__fkey"
-            columns: ["to_"]
-            isOneToOne: false
-            referencedRelation: "warehouse"
+            referencedRelation: "personal"
             referencedColumns: ["id"]
           },
         ]
       }
-      permission: {
+      paro_tiempos: {
         Row: {
-          can_create_capability: boolean
-          can_create_inventory: boolean
-          can_create_schedule: boolean
-          can_delete_capability: boolean
-          can_delete_inventory: boolean
-          can_delete_schedule: boolean
-          can_update_capability: boolean
-          can_update_inventory: boolean
-          can_update_schedule: boolean
-          can_view_info_capability: boolean
-          can_view_info_inventory: boolean
-          can_view_info_schedule: boolean
+          activo: boolean | null
+          area: string | null
+          created_at: string | null
           id: number
+          motivo: string
+          updated_at: string | null
+          zona: string
         }
         Insert: {
-          can_create_capability?: boolean
-          can_create_inventory?: boolean
-          can_create_schedule?: boolean
-          can_delete_capability?: boolean
-          can_delete_inventory?: boolean
-          can_delete_schedule?: boolean
-          can_update_capability?: boolean
-          can_update_inventory?: boolean
-          can_update_schedule?: boolean
-          can_view_info_capability?: boolean
-          can_view_info_inventory?: boolean
-          can_view_info_schedule?: boolean
-          id?: never
+          activo?: boolean | null
+          area?: string | null
+          created_at?: string | null
+          id?: number
+          motivo: string
+          updated_at?: string | null
+          zona: string
         }
         Update: {
-          can_create_capability?: boolean
-          can_create_inventory?: boolean
-          can_create_schedule?: boolean
-          can_delete_capability?: boolean
-          can_delete_inventory?: boolean
-          can_delete_schedule?: boolean
-          can_update_capability?: boolean
-          can_update_inventory?: boolean
-          can_update_schedule?: boolean
-          can_view_info_capability?: boolean
-          can_view_info_inventory?: boolean
-          can_view_info_schedule?: boolean
-          id?: never
+          activo?: boolean | null
+          area?: string | null
+          created_at?: string | null
+          id?: number
+          motivo?: string
+          updated_at?: string | null
+          zona?: string
+        }
+        Relationships: []
+      }
+      personal: {
+        Row: {
+          cedula: number
+          id: number
+          nombre_completo: string
+          personal_estado: string | null
+          tipo: string
+        }
+        Insert: {
+          cedula: number
+          id?: number
+          nombre_completo: string
+          personal_estado?: string | null
+          tipo: string
+        }
+        Update: {
+          cedula?: number
+          id?: number
+          nombre_completo?: string
+          personal_estado?: string | null
+          tipo?: string
+        }
+        Relationships: []
+      }
+      procesos: {
+        Row: {
+          description: string | null
+          id: number
+          name: string
+        }
+        Insert: {
+          description?: string | null
+          id?: number
+          name: string
+        }
+        Update: {
+          description?: string | null
+          id?: number
+          name?: string
         }
         Relationships: []
       }
@@ -385,12 +483,12 @@ export type Database = {
           name: string
         }
         Insert: {
-          id?: never
+          id?: number
           inventario?: boolean | null
           name: string
         }
         Update: {
-          id?: never
+          id?: number
           inventario?: boolean | null
           name?: string
         }
@@ -446,204 +544,148 @@ export type Database = {
           },
         ]
       }
-      projection: {
+      ref: {
         Row: {
-          id: number
-          projection_date: string
-          ref: string
-          schedule: number
+          costo: number | null
+          ID: number
+          materia_prima: string | null
+          proceso_zona: string | null
+          referencia: string
+          unidad_por_lamina: number | null
         }
         Insert: {
-          id?: never
-          projection_date: string
-          ref: string
-          schedule: number
+          costo?: number | null
+          ID?: number
+          materia_prima?: string | null
+          proceso_zona?: string | null
+          referencia: string
+          unidad_por_lamina?: number | null
         }
         Update: {
-          id?: never
-          projection_date?: string
-          ref?: string
-          schedule?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "projection_ref_fkey"
-            columns: ["ref"]
-            isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["reference"]
-          },
-          {
-            foreignKeyName: "projection_schedule_fkey"
-            columns: ["schedule"]
-            isOneToOne: false
-            referencedRelation: "schedule"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      providers: {
-        Row: {
-          address: string
-          celphone: string | null
-          email: string | null
-          id: number
-          name: string
-          nit: string
-          phone: string | null
-        }
-        Insert: {
-          address: string
-          celphone?: string | null
-          email?: string | null
-          id?: never
-          name: string
-          nit: string
-          phone?: string | null
-        }
-        Update: {
-          address?: string
-          celphone?: string | null
-          email?: string | null
-          id?: never
-          name?: string
-          nit?: string
-          phone?: string | null
+          costo?: number | null
+          ID?: number
+          materia_prima?: string | null
+          proceso_zona?: string | null
+          referencia?: string
+          unidad_por_lamina?: number | null
         }
         Relationships: []
       }
-      request: {
+      ref_maquina: {
         Row: {
           id: number
-          product_code: string
-          quantity: number
+          machine_id: number
+          process_id: number
+          ref_id: number
+          sam: number
         }
         Insert: {
           id?: never
-          product_code: string
-          quantity: number
+          machine_id: number
+          process_id: number
+          ref_id: number
+          sam: number
         }
         Update: {
           id?: never
-          product_code?: string
-          quantity?: number
-        }
-        Relationships: []
-      }
-      schedule: {
-        Row: {
-          amount: number
-          date_schedule: string
-          id: number
-          ref: string
-          semanas: number[] | null
-        }
-        Insert: {
-          amount: number
-          date_schedule: string
-          id?: never
-          ref: string
-          semanas?: number[] | null
-        }
-        Update: {
-          amount?: number
-          date_schedule?: string
-          id?: never
-          ref?: string
-          semanas?: number[] | null
+          machine_id?: number
+          process_id?: number
+          ref_id?: number
+          sam?: number
         }
         Relationships: [
           {
-            foreignKeyName: "schedule_ref_fkey"
-            columns: ["ref"]
+            foreignKeyName: "ref_maquina_machine_id_fkey"
+            columns: ["machine_id"]
             isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["reference"]
-          },
-        ]
-      }
-      service_order_items: {
-        Row: {
-          id: number
-          quantity: number | null
-          recieve_quantity: number | null
-          reference: string
-          service_order_id: number
-          total_price: number | null
-          unit_price: number | null
-          verified_quantity: number | null
-        }
-        Insert: {
-          id?: never
-          quantity?: number | null
-          recieve_quantity?: number | null
-          reference: string
-          service_order_id: number
-          total_price?: number | null
-          unit_price?: number | null
-          verified_quantity?: number | null
-        }
-        Update: {
-          id?: never
-          quantity?: number | null
-          recieve_quantity?: number | null
-          reference?: string
-          service_order_id?: number
-          total_price?: number | null
-          unit_price?: number | null
-          verified_quantity?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "service_order_items_reference_fkey"
-            columns: ["reference"]
-            isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["reference"]
-          },
-          {
-            foreignKeyName: "service_order_items_service_order_id_fkey"
-            columns: ["service_order_id"]
-            isOneToOne: false
-            referencedRelation: "service_orders"
+            referencedRelation: "maquinaria"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ref_maquina_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "procesos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ref_maquina_ref_id_fkey"
+            columns: ["ref_id"]
+            isOneToOne: false
+            referencedRelation: "ref"
+            referencedColumns: ["ID"]
+          },
         ]
       }
-      service_orders: {
+      reportes: {
         Row: {
-          close_date: string | null
-          conditions: string | null
-          date: string
+          fecha: string
+          hora: string | null
           id: number
-          observations: string | null
-          provider_id: number
-          status: Database["public"]["Enums"]["orders_status"] | null
+          motivo: string
+          odp_id: number | null
+          personal_id: number | null
+          tiempo: number
         }
         Insert: {
-          close_date?: string | null
-          conditions?: string | null
-          date: string
-          id?: never
-          observations?: string | null
-          provider_id: number
-          status?: Database["public"]["Enums"]["orders_status"] | null
+          fecha: string
+          hora?: string | null
+          id?: number
+          motivo: string
+          odp_id?: number | null
+          personal_id?: number | null
+          tiempo: number
         }
         Update: {
-          close_date?: string | null
-          conditions?: string | null
-          date?: string
-          id?: never
-          observations?: string | null
-          provider_id?: number
-          status?: Database["public"]["Enums"]["orders_status"] | null
+          fecha?: string
+          hora?: string | null
+          id?: number
+          motivo?: string
+          odp_id?: number | null
+          personal_id?: number | null
+          tiempo?: number
         }
         Relationships: [
           {
-            foreignKeyName: "service_orders_provider_id_fkey"
-            columns: ["provider_id"]
+            foreignKeyName: "reportes_odp_id_fkey"
+            columns: ["odp_id"]
             isOneToOne: false
-            referencedRelation: "providers"
+            referencedRelation: "odp"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reportes_odp_id_fkey"
+            columns: ["odp_id"]
+            isOneToOne: false
+            referencedRelation: "vista_calidad"
+            referencedColumns: ["odp_id"]
+          },
+          {
+            foreignKeyName: "reportes_odp_id_fkey"
+            columns: ["odp_id"]
+            isOneToOne: false
+            referencedRelation: "vista_minutos_trabajados"
+            referencedColumns: ["odp_id"]
+          },
+          {
+            foreignKeyName: "reportes_odp_id_fkey"
+            columns: ["odp_id"]
+            isOneToOne: false
+            referencedRelation: "vista_oee"
+            referencedColumns: ["odp_id"]
+          },
+          {
+            foreignKeyName: "reportes_odp_id_fkey"
+            columns: ["odp_id"]
+            isOneToOne: false
+            referencedRelation: "vista_rendimiento"
+            referencedColumns: ["odp_id"]
+          },
+          {
+            foreignKeyName: "reportes_personal_id_fkey"
+            columns: ["personal_id"]
+            isOneToOne: false
+            referencedRelation: "personal"
             referencedColumns: ["id"]
           },
         ]
@@ -651,20 +693,28 @@ export type Database = {
       t_combo: {
         Row: {
           condicion_inicial: number | null
-          ref: string | null
+          ref: string
           sam: number | null
         }
         Insert: {
           condicion_inicial?: number | null
-          ref?: string | null
+          ref: string
           sam?: number | null
         }
         Update: {
           condicion_inicial?: number | null
-          ref?: string | null
+          ref?: string
           sam?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "t_combo_ref_fkey"
+            columns: ["ref"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["reference"]
+          },
+        ]
       }
       warehouse: {
         Row: {
@@ -676,26 +726,19 @@ export type Database = {
         }
         Insert: {
           amount?: number | null
-          id?: never
+          id?: number
           provider_id?: number | null
           ref?: string | null
           warehouse_type: Database["public"]["Enums"]["tercol_warehouse"]
         }
         Update: {
           amount?: number | null
-          id?: never
+          id?: number
           provider_id?: number | null
           ref?: string | null
           warehouse_type?: Database["public"]["Enums"]["tercol_warehouse"]
         }
         Relationships: [
-          {
-            foreignKeyName: "warehouse_provider_id_fkey"
-            columns: ["provider_id"]
-            isOneToOne: false
-            referencedRelation: "providers"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "warehouse_ref_fkey"
             columns: ["ref"]
@@ -707,10 +750,410 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      vista_calidad: {
+        Row: {
+          calidad: number | null
+          fecha: string | null
+          odp_id: number | null
+          personal_idodp: number | null
+          piezas_buenas: number | null
+          piezas_malas: number | null
+          piezas_totales: number | null
+          referencia: string | null
+          zona: string | null
+        }
+        Insert: {
+          calidad?: never
+          fecha?: string | null
+          odp_id?: number | null
+          personal_idodp?: number | null
+          piezas_buenas?: never
+          piezas_malas?: never
+          piezas_totales?: number | null
+          referencia?: string | null
+          zona?: string | null
+        }
+        Update: {
+          calidad?: never
+          fecha?: string | null
+          odp_id?: number | null
+          personal_idodp?: number | null
+          piezas_buenas?: never
+          piezas_malas?: never
+          piezas_totales?: number | null
+          referencia?: string | null
+          zona?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "odp_personal_idodp_fkey"
+            columns: ["personal_idodp"]
+            isOneToOne: false
+            referencedRelation: "personal"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vista_disponibilidad: {
+        Row: {
+          disponibilidad: number | null
+          fecha: string | null
+          minutos_disponibles: number | null
+          minutos_paro: number | null
+          personal_id: number | null
+          personal_idodp: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hora_personal_id_fkey"
+            columns: ["personal_id"]
+            isOneToOne: false
+            referencedRelation: "personal"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vista_minutos_trabajados: {
+        Row: {
+          duracion_bruta_min: number | null
+          estado_odp: boolean | null
+          fecha_fin_odp: string | null
+          fecha_inicio_odp: string | null
+          hora_fin_odp: string | null
+          hora_inicio_odp: string | null
+          maquina: string | null
+          minutos_trabajados: number | null
+          odp_id: number | null
+          operador_cedula: number | null
+          operador_nombre: string | null
+          paros_min: number | null
+          personal_idodp: number | null
+          referencia: string | null
+          supervisor: string | null
+          turno: number | null
+          zona: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "odp_personal_idodp_fkey"
+            columns: ["personal_idodp"]
+            isOneToOne: false
+            referencedRelation: "personal"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vista_oee: {
+        Row: {
+          calidad: number | null
+          disponibilidad: number | null
+          fecha: string | null
+          minutos_disponibles: number | null
+          minutos_paro: number | null
+          minutos_trabajados: number | null
+          odp_id: number | null
+          oee: number | null
+          operador_cedula: number | null
+          operador_nombre: string | null
+          personal_idodp: number | null
+          piezas_buenas: number | null
+          piezas_malas: number | null
+          piezas_planificadas: number | null
+          piezas_producidas: number | null
+          piezas_totales: number | null
+          referencia: string | null
+          rendimiento: number | null
+          zona: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "odp_personal_idodp_fkey"
+            columns: ["personal_idodp"]
+            isOneToOne: false
+            referencedRelation: "personal"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vista_rendimiento: {
+        Row: {
+          fecha: string | null
+          minutos_trabajados: number | null
+          odp_id: number | null
+          personal_idodp: number | null
+          piezas_planificadas: number | null
+          piezas_producidas: number | null
+          referencia: string | null
+          rendimiento: number | null
+          sam: number | null
+          tiempo_neto_odp: number | null
+          tiempo_real_odp: number | null
+          zona: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "odp_personal_idodp_fkey"
+            columns: ["personal_idodp"]
+            isOneToOne: false
+            referencedRelation: "personal"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      [_ in never]: never
+      asignar_fecha_efectiva: {
+        Args: { fecha_real: string; hora_inicio: string }
+        Returns: string
+      }
+      calcular_duracion_minutos: {
+        Args: {
+          fecha_fin: string
+          fecha_inicio: string
+          hora_fin: string
+          hora_inicio: string
+        }
+        Returns: number
+      }
+      calcular_minutos_trabajados_odp: {
+        Args: {
+          p_fecha_fin: string
+          p_fecha_inicio: string
+          p_hora_fin: string
+          p_hora_inicio: string
+          p_odp_id: number
+        }
+        Returns: number
+      }
+      calcular_tiempo_odp: {
+        Args: {
+          fecha_fin: string
+          fecha_inicio: string
+          hora_fin: string
+          hora_inicio: string
+        }
+        Returns: number
+      }
+      detectar_odps_anomalos: {
+        Args: { fecha_fin?: string; fecha_inicio?: string }
+        Returns: {
+          duracion_horas: number
+          duracion_minutos: number
+          fecha_fin_odp: string
+          fecha_inicio_odp: string
+          hora_fin_odp: string
+          hora_inicio_odp: string
+          odp_id: number
+          orden_produccion: number
+          referencia: string
+          tipo_anomalia: string
+          zona: string
+        }[]
+      }
+      get_next_available_id: {
+        Args: { id_column?: string; table_name: string }
+        Returns: number
+      }
+      get_oee_consolidado_maquina: {
+        Args: {
+          fecha_fin?: string
+          fecha_inicio?: string
+          maquina_filtro?: string
+          referencia_filtro?: string
+          supervisor_filtro?: string
+          zona_filtro?: string
+        }
+        Returns: {
+          calidad: number
+          disponibilidad: number
+          maquina: string
+          minutos_disponibles: number
+          minutos_paro: number
+          minutos_trabajados: number
+          num_odps: number
+          num_operadores: number
+          oee: number
+          piezas_buenas: number
+          piezas_planificadas: number
+          piezas_producidas: number
+          piezas_totales: number
+          rendimiento: number
+          zona: string
+        }[]
+      }
+      get_oee_consolidado_operador: {
+        Args: {
+          cedula_filtro?: number
+          fecha_fin?: string
+          fecha_inicio?: string
+          maquina_filtro?: string
+          referencia_filtro?: string
+          supervisor_filtro?: string
+          zona_filtro?: string
+        }
+        Returns: {
+          calidad: number
+          disponibilidad: number
+          fecha: string
+          minutos_disponibles: number
+          minutos_paro: number
+          minutos_trabajados: number
+          num_odps: number
+          oee: number
+          operador_cedula: number
+          operador_nombre: string
+          piezas_buenas: number
+          piezas_planificadas: number
+          piezas_producidas: number
+          piezas_totales: number
+          rendimiento: number
+          zona: string
+        }[]
+      }
+      get_oee_data: {
+        Args: {
+          cedula_filtro?: number
+          fecha_fin?: string
+          fecha_inicio?: string
+          referencia_filtro?: string
+          zona_filtro?: string
+        }
+        Returns: {
+          calidad: number
+          disponibilidad: number
+          fecha: string
+          minutos_disponibles: number
+          minutos_paro: number
+          odp_id: number
+          oee: number
+          operador_cedula: number
+          operador_nombre: string
+          personal_idodp: number
+          piezas_buenas: number
+          piezas_malas: number
+          piezas_planificadas: number
+          piezas_producidas: number
+          piezas_totales: number
+          referencia: string
+          rendimiento: number
+          zona: string
+        }[]
+      }
+      get_oee_data_en_progreso: {
+        Args: {
+          cedula_filtro?: number
+          fecha_fin?: string
+          fecha_inicio?: string
+          referencia_filtro?: string
+          zona_filtro?: string
+        }
+        Returns: {
+          calidad: number
+          disponibilidad: number
+          fecha: string
+          maquina: string
+          minutos_disponibles: number
+          minutos_paro: number
+          odp_id: number
+          oee: number
+          operador_cedula: number
+          operador_nombre: string
+          orden_produccion: number
+          personal_idodp: number
+          piezas_buenas: number
+          piezas_malas: number
+          piezas_planificadas: number
+          piezas_producidas: number
+          piezas_totales: number
+          referencia: string
+          rendimiento: number
+          supervisor: string
+          zona: string
+        }[]
+      }
+      get_oee_data_finalizadas: {
+        Args: {
+          cedula_filtro?: number
+          fecha_fin?: string
+          fecha_inicio?: string
+          referencia_filtro?: string
+          zona_filtro?: string
+        }
+        Returns: {
+          calidad: number
+          disponibilidad: number
+          fecha: string
+          minutos_disponibles: number
+          minutos_paro: number
+          odp_id: number
+          oee: number
+          operador_cedula: number
+          operador_nombre: string
+          personal_idodp: number
+          piezas_buenas: number
+          piezas_malas: number
+          piezas_planificadas: number
+          piezas_producidas: number
+          piezas_totales: number
+          referencia: string
+          rendimiento: number
+          zona: string
+        }[]
+      }
+      get_oee_data_optimized: {
+        Args: {
+          cedula_filtro?: number
+          fecha_fin?: string
+          fecha_inicio?: string
+          maquina_filtro?: string
+          referencia_filtro?: string
+          supervisor_filtro?: string
+          zona_filtro?: string
+        }
+        Returns: {
+          calidad: number
+          disponibilidad: number
+          fecha: string
+          fecha_fin_odp: string
+          fecha_inicio_odp: string
+          hora_fin_odp: string
+          hora_inicio_odp: string
+          maquina: string
+          minutos_disponibles: number
+          minutos_paro: number
+          minutos_trabajados: number
+          odp_id: number
+          oee: number
+          operador_cedula: number
+          operador_nombre: string
+          personal_idodp: number
+          piezas_buenas: number
+          piezas_malas: number
+          piezas_planificadas: number
+          piezas_producidas: number
+          piezas_totales: number
+          referencia: string
+          rendimiento: number
+          supervisor: string
+          zona: string
+        }[]
+      }
+      get_programmed_times_batch: {
+        Args: {
+          fecha_fin: string
+          fecha_inicio: string
+          operador_cedulas: number[]
+        }
+        Returns: {
+          cedula: number
+          fecha: string
+          minutos_programados: number
+        }[]
+      }
+      obtener_tiempo_programado: {
+        Args: { fecha_efectiva: string; operario_id: number }
+        Returns: number
+      }
     }
     Enums: {
       movement_made_by:
@@ -723,17 +1166,23 @@ export type Database = {
         | "RECEPCION PV"
         | "ENTREGA PL"
         | "RECEPCION PL"
-      movement_measure_unit: "KG" | "UN" | "PORCENTAJE"
-      movement_type: "ENTRADA" | "SALIDA"
+      movement_type: "ENTRADA" | "SALIDA" | "AJUSTE" | "TRANSFERENCIA"
       orders_status:
         | "RECIBIDO"
         | "CANCELADA"
         | "PENDIENTE"
         | "PAGADA"
         | "CERRADA"
-      product_feature: "GALVANIZADO" | "PINTADO"
-      product_type: "MP" | "PP" | "PT" | "INSUMO" | "HERRAMIENTA" | "COMBO"
-      sam_unit_type: "min_per_unit" | "units_per_min"
+      product_feature: "GALVANIZADO" | "NEGRO" | "INOXIDABLE" | "ALUMINIO"
+      product_type:
+        | "PT"
+        | "PP"
+        | "MP"
+        | "COMBO"
+        | "NULL"
+        | "INSUMO"
+        | "HERRAMIENTA"
+      sam_unit_type: "min_per_unit" | "units_per_min" | "units_per_hour"
       status_machine:
         | "PARO"
         | "CAMBIO"
@@ -741,7 +1190,6 @@ export type Database = {
         | "ENCENDIDO"
         | "APAGADO"
         | "MANTENIMIENTO"
-      tercol_unit_measure: "UN" | "KG"
       tercol_warehouse:
         | "ALMACEN_MP"
         | "ALMACEN_PP"
@@ -888,8 +1336,7 @@ export const Constants = {
         "ENTREGA PL",
         "RECEPCION PL",
       ],
-      movement_measure_unit: ["KG", "UN", "PORCENTAJE"],
-      movement_type: ["ENTRADA", "SALIDA"],
+      movement_type: ["ENTRADA", "SALIDA", "AJUSTE", "TRANSFERENCIA"],
       orders_status: [
         "RECIBIDO",
         "CANCELADA",
@@ -897,9 +1344,17 @@ export const Constants = {
         "PAGADA",
         "CERRADA",
       ],
-      product_feature: ["GALVANIZADO", "PINTADO"],
-      product_type: ["MP", "PP", "PT", "INSUMO", "HERRAMIENTA", "COMBO"],
-      sam_unit_type: ["min_per_unit", "units_per_min"],
+      product_feature: ["GALVANIZADO", "NEGRO", "INOXIDABLE", "ALUMINIO"],
+      product_type: [
+        "PT",
+        "PP",
+        "MP",
+        "COMBO",
+        "NULL",
+        "INSUMO",
+        "HERRAMIENTA",
+      ],
+      sam_unit_type: ["min_per_unit", "units_per_min", "units_per_hour"],
       status_machine: [
         "PARO",
         "CAMBIO",
@@ -908,7 +1363,6 @@ export const Constants = {
         "APAGADO",
         "MANTENIMIENTO",
       ],
-      tercol_unit_measure: ["UN", "KG"],
       tercol_warehouse: [
         "ALMACEN_MP",
         "ALMACEN_PP",
