@@ -476,20 +476,56 @@ export type Database = {
         }
         Relationships: []
       }
+      process_dependencies: {
+        Row: {
+          depends_on_process_id: number
+          id: number
+          process_id: number
+        }
+        Insert: {
+          depends_on_process_id: number
+          id?: number
+          process_id: number
+        }
+        Update: {
+          depends_on_process_id?: number
+          id?: number
+          process_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_dependencies_depends_on_process_id_fkey"
+            columns: ["depends_on_process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "process_dependencies_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       processes: {
         Row: {
           id: number
           inventario: boolean | null
+          is_schedulable: boolean
           name: string
         }
         Insert: {
           id?: number
           inventario?: boolean | null
+          is_schedulable?: boolean
           name: string
         }
         Update: {
           id?: number
           inventario?: boolean | null
+          is_schedulable?: boolean
           name?: string
         }
         Relationships: []
