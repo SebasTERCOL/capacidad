@@ -970,6 +970,25 @@ export type Database = {
         }
         Returns: number
       }
+      calculate_schedule: {
+        Args: { p_quantities: number[]; p_references: string[] }
+        Returns: {
+          cantidad: number
+          duracion_min: number
+          ef: number
+          es: number
+          is_critical: boolean
+          lf: number
+          ls: number
+          makespan: number
+          mejor_maquina: string
+          proceso_id: number
+          proceso_nombre: string
+          referencia: string
+          sam: number
+          slack: number
+        }[]
+      }
       detectar_odps_anomalos: {
         Args: { fecha_fin?: string; fecha_inicio?: string }
         Returns: {
