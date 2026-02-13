@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, AlertTriangle, CheckCircle, Calendar, Users, Layers } from "lucide-react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { Clock, AlertTriangle, CheckCircle, Calendar, Layers } from "lucide-react";
 import { ScheduleNode } from "./ScheduleEngine";
 
 interface MakespanSummaryProps {
@@ -9,6 +10,17 @@ interface MakespanSummaryProps {
 }
 
 const MakespanSummary: React.FC<MakespanSummaryProps> = ({ nodes }) => {
+  // Bottleneck detection
+  const bottleneck = useMemo(() => {
+    if (nodes.length === 0) return null;
+    const makespan = nodes[0]?.makespan ?? 0;
+    if (makespan <= 0) return null;
+    const maxNode = nodes.reduce((max, n) => n.duracion_min > max.duracion_min ? n : max, nodes[0]);
+    const pct = (maxNode.duracion_min / makespan) * 100;
+    if (pct > 50) return { ref: maxNode.referencia, process: maxNode.proceso_nombre, durMin: maxNode.duracion_min, pct };
+    return null;
+  }, [nodes]);
+
   if (nodes.length === 0) return null;
 
   const makespan = nodes[0]?.makespan ?? 0;
@@ -60,21 +72,35 @@ const MakespanSummary: React.FC<MakespanSummaryProps> = ({ nodes }) => {
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-      {stats.map((stat, i) => (
-        <Card key={i} className="border">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <stat.icon className={`h-5 w-5 mt-0.5 ${stat.color}`} />
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground truncate">{stat.label}</p>
-                <p className="text-xl font-bold">{stat.value}</p>
-                <p className="text-xs text-muted-foreground truncate">{stat.sublabel}</p>
+    <div className="space-y-3">
+      {bottleneck && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Cuello de botella detectado</AlertTitle>
+          <AlertDescription>
+            <strong>{bottleneck.ref}</strong> en <strong>{bottleneck.process}</strong> representa el{' '}
+            <Badge variant="destructive" className="text-xs">{bottleneck.pct.toFixed(0)}%</Badge> del makespan total
+            ({(bottleneck.durMin / 60).toFixed(0)}h / {(bottleneck.durMin / (7.83 * 60)).toFixed(0)} días).
+            Verifica el SAM de esta referencia en machines_processes.
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {stats.map((stat, i) => (
+          <Card key={i} className="border">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <stat.icon className={`h-5 w-5 mt-0.5 ${stat.color}`} />
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground truncate">{stat.label}</p>
+                  <p className="text-xl font-bold">{stat.value}</p>
+                  <p className="text-xs text-muted-foreground truncate">{stat.sublabel}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 };
