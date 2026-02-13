@@ -10,8 +10,9 @@ import { ComboConfiguration, ComboSuggestion } from "@/components/ProductionCapa
 import { OperatorConfiguration, OperatorConfig } from "@/components/ProductionCapacity/OperatorConfiguration";
 import { ProductionProjectionV2 } from "@/components/ProductionCapacity/ProductionProjectionV2";
 import { OvertimeConfiguration, DeficitInfo, OvertimeConfig } from "@/components/ProductionCapacity/OvertimeConfiguration";
+import ScheduleResults from "@/components/ProductionCapacity/ScheduleResults";
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
+type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState<Step>(1);
@@ -30,7 +31,8 @@ const Index = () => {
     { id: 3, title: 'Configurar Combos', description: 'Optimizar punzonado' },
     { id: 4, title: 'Configurar Operarios', description: 'Definir personal disponible' },
     { id: 5, title: 'Capacidad por Proceso', description: 'Análisis detallado' },
-    { id: 6, title: 'Optimizar con Extras', description: 'Configurar horas extras' }
+    { id: 6, title: 'Optimizar con Extras', description: 'Configurar horas extras' },
+    { id: 7, title: 'Scheduling', description: 'CPM + RCPSP' }
   ];
 
   const handleDataProcessed = (data: FileUploadData) => {
@@ -123,7 +125,7 @@ const Index = () => {
             operatorConfig={operatorConfig}
             overtimeConfig={overtimeConfig}
             comboData={comboConfig}
-            onNext={() => {}}
+            onNext={() => setCurrentStep(7)}
             onBack={() => setCurrentStep(4)}
             onProjectionComplete={handleProjectionComplete}
             onDeficitsIdentified={handleDeficitsIdentified}
@@ -140,6 +142,14 @@ const Index = () => {
             onApply={handleOvertimeApplied}
           />
         );
+      case 7:
+        return operatorConfig ? (
+          <ScheduleResults
+            data={adjustedData.length > 0 ? adjustedData : productionData}
+            operatorConfig={operatorConfig}
+            onBack={() => setCurrentStep(5)}
+          />
+        ) : null;
       default:
         return null;
     }
