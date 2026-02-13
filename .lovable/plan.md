@@ -1,69 +1,73 @@
 
 
-## Diagnosis: Two Root Problems Found
+## Diagnóstico: Origen de los 2,382.9 Días
 
-### Problem 1: Inflated Makespan (2398.1 days / 3.4M minutes)
+### Hallazgo Confirmado
 
-The reference **TSCE125** (Punzonado, process 20) has a SAM of **21 min/unit**. Through BOM expansion, the total aggregated quantity for TSCE125 reaches **163,400 units**, producing a single-node duration of **3,431,400 minutes** (~2,382 days). This one node dominates the entire schedule and inflates the makespan for all other nodes.
+Se verificó directamente contra la base de datos: el valor de **2,382.9 días** proviene de la referencia **TSCE125** en el proceso **Punzonado** (ID 20).
 
-This is likely a **data issue** in `machines_processes`: SAM=21 min_per_unit for TSCE125 in Punzonado seems abnormally high. For comparison, most other processes have SAMs under 1 min/unit. However, the system should also handle this gracefully.
+Cadena de cálculo:
+1. Las referencias del CSV se expanden recursivamente por la tabla BOM
+2. Múltiples referencias padre contienen a TSCE125 como componente
+3. Después de la expansión BOM, la cantidad agregada de TSCE125 llega a **~53,293 unidades**
+4. El SAM registrado es **21 min/unidad** (`min_per_unit`)
+5. Duración = 53,293 x 21 = **1,119,153 minutos = 2,382 días laborales**
 
-### Problem 2: Critical Path Shows 0 Nodes
+### Comparación con otros procesos
 
-The backward pass in the RPC only propagates through `process_dependencies` (same reference). It does **not** account for machine serialization delays introduced by RCPSP. As a result:
+| Referencia | Proceso | SAM | Unidad |
+|---|---|---|---|
+| TSCE125 | Punzonado | **21.0** | min_per_unit |
+| TSCE125GV | Punzonado | **21.0** | min_per_unit |
+| CMB.T-CT2020.V1 | Punzonado | 20.067 | min_per_unit |
+| CMB.TAPA4P.V1 | Punzonado | 17.75 | min_per_unit |
+| CNCE125 | Corte | 0.25 | min_per_unit |
+| CUE12D | Troquelado | 0.12 | min_per_unit |
 
-- The RCPSP forward pass correctly shifts nodes forward when machines are busy
-- But the backward pass calculates Latest Start/Finish ignoring machine constraints
-- This creates artificially large slack values, so `l_start - e_start < 1.0` catches nothing
+Los SAMs de Punzonado (17-21 min) son **100x mayores** que los de otros procesos (~0.1-0.3 min). Esto sugiere que el SAM de Punzonado representa el **tiempo por golpe de combo** (que produce varias piezas a la vez), no el tiempo por unidad individual.
 
-Example: TSCE125 has `es=0, ef=3,431,400` but `ls=21,840` giving `slack=21,840` -- far above the 1.0 threshold.
+### Problema adicional: Registros duplicados
 
----
-
-## Proposed Fix
-
-### 1. Fix Critical Path Calculation in the RPC
-
-Replace the simple threshold-based critical path detection with a proper approach:
-
-- After the RCPSP forward pass completes, recalculate the backward pass **including machine serialization order** (not just process dependencies)
-- Alternative simpler approach: identify critical nodes as those where `slack / makespan < 0.01` (relative threshold) or simply mark the chain of nodes that determines the makespan by tracing backward from the node with the highest `e_finish`
-
-The recommended approach: **trace the actual critical chain** by finding the node(s) with `e_finish = makespan` and walking backward through both process dependencies AND machine predecessors.
-
-### 2. Validate Punzonado Data
-
-Query and flag to the user that TSCE125 in Punzonado has SAM=21 min/unit with aggregated quantity 163,400 producing 3.4M minutes. This may need correction in the `machines_processes` table.
-
-### 3. Improve MakespanSummary Display
-
-The current display converts minutes to days using `makespan / (7.83 * 60)`. When the makespan is absurdly large due to data issues, add a warning indicator showing which node/process is the bottleneck driving the inflated value.
+Existen **2 filas duplicadas** para TSCE125 en Punzonado (y para varias otras referencias). El RPC usa `DISTINCT ON` para seleccionar una, pero los duplicados podrían causar problemas en otros flujos.
 
 ---
 
-## Technical Changes
+## Plan de Corrección
 
-### Migration: Update `calculate_schedule_with_capacity` RPC
+### Opcion A: Corregir el SAM en la base de datos (Recomendado si el SAM está incorrecto)
 
-Modify the critical path detection (line 175 of current RPC) from:
+Si 21 min/unidad es incorrecto y debería ser algo como 0.21 min/unidad (o si el SAM realmente es "min por golpe de combo" y cada golpe produce N piezas):
 
-```sql
-UPDATE _sched_nodes SET n_slack = l_start - e_start, 
-  is_crit = (l_start - e_start < 1.0) WHERE true;
-```
+- Actualizar el registro en `machines_processes` con el valor correcto
+- Eliminar los registros duplicados
 
-To a machine-aware backward pass:
+### Opcion B: Cambiar la unidad del SAM a nivel de combo
 
-1. Build a machine predecessor chain from the RCPSP ordering
-2. During backward pass, propagate `l_finish` constraints through both process dependencies AND machine successor relationships
-3. Recalculate slack and critical flag after the complete backward pass
+Si el SAM=21 es correcto pero representa "minutos por combo" (no por unidad individual), hay que:
 
-### Frontend: MakespanSummary bottleneck warning
+- Agregar lógica en el RPC para dividir el SAM por la cantidad de piezas que produce cada golpe de combo
+- O cambiar el `sam_unit` a un valor que refleje la realidad
 
-Add a visual warning in `MakespanSummary.tsx` when a single node accounts for more than 50% of the makespan, identifying the bottleneck reference and process.
+### Opcion C: Excluir Punzonado del scheduling para referencias combo
 
-### Files to modify:
-- **New migration SQL**: Updated `calculate_schedule_with_capacity` RPC with machine-aware backward pass
-- **`src/components/ProductionCapacity/MakespanSummary.tsx`**: Add bottleneck detection and warning
-- **`src/integrations/supabase/types.ts`**: Update if RPC signature changes
+Siguiendo la memoria existente (`capacity/punzonado-combo-exclusive-time-source`), el tiempo de Punzonado ya se maneja exclusivamente desde la etapa de "Combo Configuration". Por lo tanto:
+
+- Excluir del scheduling los nodos de Punzonado para referencias que ya se calculan como combos
+- Esto es consistente con la lógica actual de "Capacidad por Proceso"
+
+---
+
+## Implementacion Tecnica (Opcion C - Más segura)
+
+### Cambio 1: Migración SQL - Filtrar Punzonado de referencias combo en el RPC
+
+Modificar la query de `_sched_nodes` en `calculate_schedule_with_capacity` para excluir el proceso de Punzonado (id=20) cuando la referencia NO termina en `-CMB` pero tiene un SAM mayor a un umbral razonable (por ejemplo, mayor a 5 min/unit). Alternativamente, excluir Punzonado completamente del scheduling y usar el tiempo de combo ya calculado.
+
+### Cambio 2: Limpiar duplicados en `machines_processes`
+
+Eliminar las filas duplicadas para evitar inconsistencias futuras.
+
+### Archivos a modificar:
+- **Nueva migración SQL**: Actualizar el RPC para manejar correctamente Punzonado/combos
+- **Limpieza de datos**: Eliminar registros duplicados en `machines_processes`
 
