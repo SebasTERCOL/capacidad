@@ -989,6 +989,38 @@ export type Database = {
           slack: number
         }[]
       }
+      calculate_schedule_with_capacity: {
+        Args: {
+          p_hours_per_shift?: number
+          p_month: number
+          p_operators?: Json
+          p_quantities: number[]
+          p_references: string[]
+          p_year: number
+        }
+        Returns: {
+          cantidad: number
+          desborda: boolean
+          dias_habiles: number
+          dias_overflow: number
+          duracion_min: number
+          ef: number
+          es: number
+          is_critical: boolean
+          lf: number
+          ls: number
+          makespan: number
+          mejor_maquina: string
+          minutos_disponibles: number
+          operarios_proceso: number
+          porcentaje_capacidad: number
+          proceso_id: number
+          proceso_nombre: string
+          referencia: string
+          sam: number
+          slack: number
+        }[]
+      }
       detectar_odps_anomalos: {
         Args: { fecha_fin?: string; fecha_inicio?: string }
         Returns: {
@@ -1003,6 +1035,14 @@ export type Database = {
           referencia: string
           tipo_anomalia: string
           zona: string
+        }[]
+      }
+      easter_sunday: { Args: { p_year: number }; Returns: string }
+      get_colombian_holidays: {
+        Args: { p_year: number }
+        Returns: {
+          holiday_date: string
+          holiday_name: string
         }[]
       }
       get_next_available_id: {
@@ -1205,6 +1245,7 @@ export type Database = {
           minutos_programados: number
         }[]
       }
+      next_monday: { Args: { p_date: string }; Returns: string }
       obtener_tiempo_programado: {
         Args: { fecha_efectiva: string; operario_id: number }
         Returns: number
