@@ -989,71 +989,38 @@ export type Database = {
           slack: number
         }[]
       }
-      calculate_schedule_with_capacity:
-        | {
-            Args: {
-              p_hours_per_shift?: number
-              p_month: number
-              p_operators?: Json
-              p_quantities: number[]
-              p_references: string[]
-              p_year: number
-            }
-            Returns: {
-              cantidad: number
-              desborda: boolean
-              dias_habiles: number
-              dias_overflow: number
-              duracion_min: number
-              ef: number
-              es: number
-              is_critical: boolean
-              lf: number
-              ls: number
-              makespan: number
-              mejor_maquina: string
-              minutos_disponibles: number
-              operarios_proceso: number
-              porcentaje_capacidad: number
-              proceso_id: number
-              proceso_nombre: string
-              referencia: string
-              sam: number
-              slack: number
-            }[]
-          }
-        | {
-            Args: {
-              p_hours_per_shift?: number
-              p_month: number
-              p_operators?: Json
-              p_quantities: number[]
-              p_references: string[]
-              p_year: number
-            }
-            Returns: {
-              cantidad: number
-              desborda: boolean
-              dias_habiles: number
-              dias_overflow: number
-              duracion_min: number
-              ef: number
-              es: number
-              is_critical: boolean
-              lf: number
-              ls: number
-              makespan: number
-              mejor_maquina: string
-              minutos_disponibles: number
-              operarios_proceso: number
-              porcentaje_capacidad: number
-              proceso_id: number
-              proceso_nombre: string
-              referencia: string
-              sam: number
-              slack: number
-            }[]
-          }
+      calculate_schedule_with_capacity: {
+        Args: {
+          p_hours_per_shift?: number
+          p_month: number
+          p_operators?: Json
+          p_quantities: number[]
+          p_references: string[]
+          p_year: number
+        }
+        Returns: {
+          cantidad: number
+          desborda: boolean
+          dias_habiles: number
+          dias_overflow: number
+          duracion_min: number
+          ef: number
+          es: number
+          is_critical: boolean
+          lf: number
+          ls: number
+          makespan: number
+          mejor_maquina: string
+          minutos_disponibles: number
+          operarios_proceso: number
+          porcentaje_capacidad: number
+          proceso_id: number
+          proceso_nombre: string
+          referencia: string
+          sam: number
+          slack: number
+        }[]
+      }
       detectar_odps_anomalos: {
         Args: { fecha_fin?: string; fecha_inicio?: string }
         Returns: {
