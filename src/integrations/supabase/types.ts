@@ -992,11 +992,11 @@ export type Database = {
       calculate_schedule_with_capacity: {
         Args: {
           p_hours_per_shift?: number
-          p_month: number
+          p_month?: number
           p_operators?: Json
-          p_quantities: number[]
-          p_references: string[]
-          p_year: number
+          p_quantities?: number[]
+          p_references?: string[]
+          p_year?: number
         }
         Returns: {
           cantidad: number
