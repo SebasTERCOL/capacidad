@@ -2708,6 +2708,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         processGroups={processGroups}
         onBack={onBack}
         onStartOver={onStartOver}
+        onNext={onNext}
         hasDeficits={shouldShowOvertimeButton}
         onOptimizeWithOvertime={handleOptimizeWithOvertime}
         onExportCSV={exportToCSV}
