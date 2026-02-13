@@ -45,6 +45,7 @@ interface HierarchicalCapacityViewProps {
   processGroups: ProcessGroup[];
   onBack: () => void;
   onStartOver: () => void;
+  onNext?: () => void;
   hasDeficits?: boolean;
   onOptimizeWithOvertime?: () => void;
   onExportCSV?: () => void;
@@ -53,6 +54,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
   processGroups,
   onBack,
   onStartOver,
+  onNext,
   hasDeficits = false,
   onOptimizeWithOvertime,
   onExportCSV
@@ -417,8 +419,11 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
             <Clock className="h-4 w-4 mr-2" />
             Optimizar con Horas Extras
           </Button>}
-        {!hasDeficits && <Button onClick={onStartOver} className="flex-1">
-            Nuevo Análisis
+        <Button variant="secondary" onClick={onStartOver}>
+          Nuevo Análisis
+        </Button>
+        {onNext && <Button onClick={onNext} className="flex-1">
+            Scheduling (CPM + RCPSP) →
           </Button>}
       </div>
     </div>;
