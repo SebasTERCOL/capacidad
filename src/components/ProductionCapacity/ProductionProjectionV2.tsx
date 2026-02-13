@@ -2931,8 +2931,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         <Button variant="outline" onClick={onBack}>
           Volver
         </Button>
-        <Button onClick={onStartOver} className="flex-1">
+        <Button variant="secondary" onClick={onStartOver}>
           Nuevo Análisis
+        </Button>
+        <Button onClick={onNext} className="flex-1">
+          Scheduling (CPM + RCPSP) →
         </Button>
       </div>
     </div>
