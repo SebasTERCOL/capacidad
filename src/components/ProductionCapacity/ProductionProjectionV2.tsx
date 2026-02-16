@@ -2649,8 +2649,35 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       despunte.totalOccupancy = combinedOccupancy;
     }
 
+    // CORRECCIÓN CRÍTICA: Asegurar que TODOS los procesos configurados aparezcan
+    // incluso si no tuvieron componentes o máquinas asignadas
+    const existingProcessNames = new Set(processGroupsArray.map(p => p.processName));
+    
+    for (const procConfig of operatorConfig.processes) {
+      const pName = procConfig.processName;
+      if (pName.toLowerCase() === 'reclasificacion') continue;
+      if (!existingProcessNames.has(pName)) {
+        console.log(`   ⚠️ Proceso configurado ${pName} NO estaba en processMap - agregando vacío`);
+        const baseHours = procConfig.availableHours || operatorConfig.availableHours;
+        const effFactor = (procConfig.efficiency ?? 100) / 100;
+        const processAvailableHours = baseHours * effFactor;
+        const totalAvailMinutes = procConfig.operatorCount * processAvailableHours * 60;
+        
+        processGroupsArray.push({
+          processName: pName,
+          totalOccupancy: 0,
+          totalTime: 0,
+          availableHours: processAvailableHours,
+          totalAvailableMinutes: totalAvailMinutes,
+          machines: [],
+          effectiveStations: procConfig.operatorCount,
+          operators: procConfig.operatorCount,
+          sharedOperatorsWith: undefined
+        });
+      }
+    }
+    
     return processGroupsArray
-    .filter(p => p.machines.length > 0 || p.totalTime > 0) // Solo procesos con trabajo asignado
     .sort((a, b) => getProcessOrder(a.processName) - getProcessOrder(b.processName));
   };
 
