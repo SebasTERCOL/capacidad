@@ -514,15 +514,16 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const refUpper = item.referencia.trim().toUpperCase();
         console.log(`🔍 Procesando referencia de entrada: ${refUpper} (cantidad: ${item.cantidad})`);
         
+        // TODAS las referencias van a consolidatedComponents para matching de procesos (Doblez, Horno, etc.)
+        const currentQty = consolidatedComponents.get(refUpper) || 0;
+        consolidatedComponents.set(refUpper, currentQty + item.cantidad);
+        
+        // Las referencias raíz del CSV TAMBIÉN van a mainReferences (para Ensamble, Empaque, etc.)
         if (csvRootRefs.has(refUpper) || csvRootRefs.has(normalizeRefId(refUpper))) {
-          // Es una referencia raíz del CSV → mainReferences (Ensamble, Empaque, etc.)
           const currentMainQty = mainReferences.get(refUpper) || 0;
           mainReferences.set(refUpper, currentMainQty + item.cantidad);
-          console.log(`   ✅ Agregada a mainReferences (raíz CSV): ${refUpper} = ${currentMainQty + item.cantidad}`);
+          console.log(`   ✅ Agregada a mainReferences + consolidatedComponents (raíz CSV): ${refUpper}`);
         } else {
-          // Es un componente expandido por InventoryAdjustment → consolidatedComponents
-          const currentQty = consolidatedComponents.get(refUpper) || 0;
-          consolidatedComponents.set(refUpper, currentQty + item.cantidad);
           console.log(`   ✅ Agregada a consolidatedComponents: ${refUpper} = ${currentQty + item.cantidad}`);
         }
       }
@@ -946,6 +947,14 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       // para evitar duplicación de cantidades
       const processedMainRefNorms = new Set([...mainReferences.keys()].map(r => normalizeRefId(r)));
       
+      console.log(`\n🔎 === DEBUG: consolidatedByNorm tiene ${consolidatedByNorm.size} entradas ===`);
+      for (const [nId, e] of consolidatedByNorm.entries()) {
+        if (nId.includes('CA30') || nId.includes('DFCA') || nId.includes('TCA') || nId.includes('PTCA') || nId.includes('TCHCA') || nId.includes('TSCA')) {
+          console.log(`   📋 consolidatedByNorm[${nId}] = {qty: ${e.quantity}, display: ${e.display}}`);
+        }
+      }
+      console.log(`   processedMainRefNorms: ${[...processedMainRefNorms].join(', ')}`);
+      
       for (const [normId, entry] of consolidatedByNorm.entries()) {
         // SKIP: Si esta referencia ya fue procesada como referencia principal
         if (processedMainRefNorms.has(normId)) {
@@ -980,6 +989,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           
           return false;
         });
+        
+        // DEBUG: Log para refs CA30-family
+        if (normId.includes('CA30') || normId.includes('DFCA') || normId.includes('TCA') || normId.includes('PTCA') || normId.includes('TCHCA') || normId.includes('TSCA')) {
+          console.log(`   🔎 COMP ${display} (norm: ${normId}): ${machinesProcesses.length} matches en machinesData`);
+          machinesProcesses.forEach((mp: any) => console.log(`      → ${mp.processes.name} (ID: ${mp.id_process}), máq: ${mp.machines.name}`));
+        }
         
         for (const mp of machinesProcesses) {
           const processName = resolveProcessName(mp);
