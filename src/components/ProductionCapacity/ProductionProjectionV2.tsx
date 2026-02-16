@@ -86,6 +86,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       const { data: page, error } = await supabase
         .from('bom')
         .select('product_id, component_id, amount')
+        .order('id')
         .range(from, to);
 
       if (error) {
@@ -123,6 +124,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           machines!inner(id, name, status),
           processes!inner(id, name)
         `)
+        .order('id')
         .range(from, to);
 
       if (error) {
@@ -141,6 +143,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
     setAllMachinesProcesses(all);
     console.log(`✅ Cargados ${all.length} registros machines_processes (total acumulado)`);
+    
+    // Verification logging for critical references
+    const testRefs = ['DFCA30', 'T-CA30', 'TCHCA30', 'TSCA30', 'CCA30'];
+    for (const ref of testRefs) {
+      const count = all.filter((mp: any) => mp.ref === ref).length;
+      if (count > 0) console.log(`  ✅ Verified: ${ref} has ${count} entries`);
+      else console.warn(`  ⚠️ Missing: ${ref} not found in loaded data`);
+    }
+    
     return all;
   };
 

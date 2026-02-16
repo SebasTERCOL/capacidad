@@ -253,6 +253,7 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
         const { data: mpPage } = await supabase
           .from('machines_processes')
           .select('ref, id_process')
+          .order('id')
           .range(mpFrom, mpFrom + mpPageSize - 1);
         const mpChunk = mpPage || [];
         allMachinesProcesses = allMachinesProcesses.concat(mpChunk);
