@@ -943,24 +943,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       // Incluir componentes consolidados (normalizados)
-      // CORRECCIÓN CRÍTICA: Excluir referencias que ya fueron procesadas como mainReferences
-      // para evitar duplicación de cantidades
-      const processedMainRefNorms = new Set([...mainReferences.keys()].map(r => normalizeRefId(r)));
+      // Los componentes se procesan para procesos de fabricación (Doblez, Horno, Lavado, etc.)
+      // No se saltan aunque ya estén en mainReferences, porque mainRef cubre procesos terminales
+      // y el component loop cubre procesos de fabricación. Si hay overlap, la cantidad se ACTUALIZA (no suma).
       
-      console.log(`\n🔎 === DEBUG: consolidatedByNorm tiene ${consolidatedByNorm.size} entradas ===`);
-      for (const [nId, e] of consolidatedByNorm.entries()) {
-        if (nId.includes('CA30') || nId.includes('DFCA') || nId.includes('TCA') || nId.includes('PTCA') || nId.includes('TCHCA') || nId.includes('TSCA')) {
-          console.log(`   📋 consolidatedByNorm[${nId}] = {qty: ${e.quantity}, display: ${e.display}}`);
-        }
-      }
-      console.log(`   processedMainRefNorms: ${[...processedMainRefNorms].join(', ')}`);
+      console.log(`\n🔎 === PROCESANDO ${consolidatedByNorm.size} componentes consolidados ===`);
       
       for (const [normId, entry] of consolidatedByNorm.entries()) {
-        // SKIP: Si esta referencia ya fue procesada como referencia principal
-        if (processedMainRefNorms.has(normId)) {
-          console.log(`   ⏭️ Saltando componente ${entry.display} (ya procesado como referencia principal)`);
-          continue;
-        }
         
         const { quantity, display } = entry;
         const displayUpper = String(display).trim().toUpperCase();
@@ -990,10 +979,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           return false;
         });
         
-        // DEBUG: Log para refs CA30-family
-        if (normId.includes('CA30') || normId.includes('DFCA') || normId.includes('TCA') || normId.includes('PTCA') || normId.includes('TCHCA') || normId.includes('TSCA')) {
-          console.log(`   🔎 COMP ${display} (norm: ${normId}): ${machinesProcesses.length} matches en machinesData`);
-          machinesProcesses.forEach((mp: any) => console.log(`      → ${mp.processes.name} (ID: ${mp.id_process}), máq: ${mp.machines.name}`));
+        if (machinesProcesses.length > 0) {
+          console.log(`   🔎 COMP ${display} (norm: ${normId}): ${machinesProcesses.length} matches`);
         }
         
         for (const mp of machinesProcesses) {
