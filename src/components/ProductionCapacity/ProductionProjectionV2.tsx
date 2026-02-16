@@ -76,18 +76,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
   // Función optimizada para cargar todos los datos BOM con paginación
   const loadAllBomData = async () => {
-    console.log('🚀 Cargando todos los datos BOM (con paginación)...');
+    console.log('🚀 Cargando todos los datos BOM (CURSOR-BASED pagination)...');
     const pageSize = 1000;
-    let from = 0;
-    let to = pageSize - 1;
+    let lastId = 0;
     let all: any[] = [];
+    let pageNum = 0;
 
     while (true) {
+      pageNum++;
       const { data: page, error } = await supabase
         .from('bom')
-        .select('product_id, component_id, amount')
+        .select('id, product_id, component_id, amount')
+        .gt('id', lastId)
         .order('id')
-        .range(from, to);
+        .limit(pageSize);
 
       if (error) {
         console.error('❌ Error cargando BOM:', error);
@@ -95,37 +97,40 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       const chunk = page || [];
+      if (chunk.length === 0) break;
+      
       all = all.concat(chunk);
-      console.log(`   · Página ${from / pageSize + 1}: ${chunk.length} filas`);
+      lastId = chunk[chunk.length - 1].id;
+      console.log(`   · Página ${pageNum}: ${chunk.length} filas (lastId=${lastId})`);
 
-      if (chunk.length < pageSize) break; // última página
-      from += pageSize;
-      to += pageSize;
+      if (chunk.length < pageSize) break;
     }
 
     setAllBomData(all);
-    console.log(`✅ Cargados ${all.length} registros BOM (total acumulado)`);
+    console.log(`✅ Cargados ${all.length} registros BOM (cursor-based)`);
     return all;
   };
 
   // Función optimizada para cargar todos los datos de machines_processes con paginación
   const loadAllMachinesProcesses = async () => {
-    console.log('🚀 Cargando todos los datos machines_processes (con paginación)...');
+    console.log('🚀 Cargando todos los datos machines_processes (CURSOR-BASED pagination)...');
     const pageSize = 1000;
-    let from = 0;
-    let to = pageSize - 1;
+    let lastId = 0;
     let all: any[] = [];
+    let pageNum = 0;
 
     while (true) {
+      pageNum++;
       const { data: page, error } = await supabase
         .from('machines_processes')
         .select(`
-          sam, sam_unit, frequency, ref, id_machine, id_process,
+          id, sam, sam_unit, frequency, ref, id_machine, id_process,
           machines!inner(id, name, status),
           processes!inner(id, name)
         `)
+        .gt('id', lastId)
         .order('id')
-        .range(from, to);
+        .limit(pageSize);
 
       if (error) {
         console.error('❌ Error cargando machines_processes:', error);
@@ -133,23 +138,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       const chunk = page || [];
+      if (chunk.length === 0) break;
+      
       all = all.concat(chunk);
-      console.log(`   · Página ${from / pageSize + 1}: ${chunk.length} filas`);
+      lastId = chunk[chunk.length - 1].id;
+      console.log(`   · Página ${pageNum}: ${chunk.length} filas (lastId=${lastId})`);
 
-      if (chunk.length < pageSize) break; // última página
-      from += pageSize;
-      to += pageSize;
+      if (chunk.length < pageSize) break;
     }
 
     setAllMachinesProcesses(all);
-    console.log(`✅ Cargados ${all.length} registros machines_processes (total acumulado)`);
+    console.log(`✅ Cargados ${all.length} registros machines_processes (cursor-based)`);
     
     // Verification logging for critical references
-    const testRefs = ['DFCA30', 'T-CA30', 'TCHCA30', 'TSCA30', 'CCA30'];
+    const testRefs = ['DFCA30', 'T-CA30', 'TCHCA30', 'TSCA30', 'CCA30', 'CNCA30', 'PTCA-30'];
     for (const ref of testRefs) {
       const count = all.filter((mp: any) => mp.ref === ref).length;
-      if (count > 0) console.log(`  ✅ Verified: ${ref} has ${count} entries`);
-      else console.warn(`  ⚠️ Missing: ${ref} not found in loaded data`);
+      if (count > 0) console.log(`  ✅ Verified: ${ref} has ${count} entries, processes: ${[...new Set(all.filter((mp: any) => mp.ref === ref).map((mp: any) => mp.processes.name))].join(', ')}`);
+      else console.warn(`  ⚠️ MISSING: ${ref} not found in ${all.length} loaded rows!`);
     }
     
     return all;
