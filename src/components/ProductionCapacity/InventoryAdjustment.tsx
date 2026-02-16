@@ -394,10 +394,12 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             // (es decir, consume capacidad en algún proceso: corte, punzonado, roscado, etc.)
             const componentHasProcesses = componentProcesses && componentProcesses.size > 0;
 
-            // Solo agregar componentes que tengan procesos asociados
-            // Esto incluye referencias MP que tienen procesos (como RoscadoConectores)
-            // y excluye materias primas sin procesos que no consumen capacidad
-            if (componentHasProcesses) {
+            // Incluir referencias -CMB aunque no tengan procesos propios,
+            // porque son necesarias para el cálculo de combos en ComboConfiguration
+            const isCMBReference = componentId.endsWith('-CMB');
+
+            // Agregar componentes que tengan procesos asociados O sean referencias -CMB
+            if (componentHasProcesses || isCMBReference) {
               itemAdjusted.push({
                 referencia: componentId,
                 cantidad: cantidadRequerida, // Valor original sin ajustar
