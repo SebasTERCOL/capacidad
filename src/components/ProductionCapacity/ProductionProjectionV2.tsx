@@ -500,33 +500,30 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       
       console.log(`🎛️ useInventory = ${useInventory} (el inventario se carga siempre para tooltip, solo la resta es condicional)`);
 
-      // Procesar cada referencia de entrada - SIEMPRE usar cantidad original
-      // El descuento de inventario se aplicará a nivel de PROCESO según processes.inventario
-      // 
-      // ⚠️ CORRECCIÓN CRÍTICA: Las referencias del CSV deben procesarse SIEMPRE en mainReferences
-      // INCLUSO si tienen el mismo nombre que componentes del BOM (ej. CA-30 es válida tanto
-      // como referencia principal para Ensamble/Empaque como componente en otras estructuras)
+      // ⚠️ CORRECCIÓN CRÍTICA: Los datos de entrada (data) ya vienen expandidos
+      // desde InventoryAdjustment, que realizó la expansión BOM completa.
+      // NO debemos re-expandir BOM aquí para evitar duplicación de cantidades.
+      //
+      // Identificar referencias raíz del CSV (originalData) para mainReferences
+      // y componentes expandidos para consolidatedComponents.
+      const csvRootRefs = new Set(
+        originalData.map(d => d.referencia.trim().toUpperCase())
+      );
+      
       for (const item of data) {
-        console.log(`🔍 Procesando referencia de entrada: ${item.referencia} (cantidad: ${item.cantidad})`);
+        const refUpper = item.referencia.trim().toUpperCase();
+        console.log(`🔍 Procesando referencia de entrada: ${refUpper} (cantidad: ${item.cantidad})`);
         
-        // SIEMPRE agregar a referencias principales (para procesos como Ensamble, Empaque, RoscadoConectores)
-        const currentMainQty = mainReferences.get(item.referencia) || 0;
-        mainReferences.set(item.referencia, currentMainQty + item.cantidad);
-        console.log(`   ✅ Agregada a mainReferences: ${item.referencia} = ${currentMainQty + item.cantidad}`);
-        
-        // Usar cantidad original SIN restar inventario aquí
-        // El inventario se restará a nivel de proceso si processes.inventario = true
-        const allComponents = getRecursiveBOMOptimized(item.referencia, item.cantidad, 0, new Set(), bomData);
-        
-        if (allComponents.size > 0) {
-          // Agregar los componentes del BOM (no incluye la referencia principal para evitar duplicación)
-          for (const [componentId, quantity] of allComponents.entries()) {
-            const currentQty = consolidatedComponents.get(componentId) || 0;
-            consolidatedComponents.set(componentId, currentQty + quantity);
-          }
-          console.log(`   ✅ BOM expandido: ${allComponents.size} componentes`);
+        if (csvRootRefs.has(refUpper) || csvRootRefs.has(normalizeRefId(refUpper))) {
+          // Es una referencia raíz del CSV → mainReferences (Ensamble, Empaque, etc.)
+          const currentMainQty = mainReferences.get(refUpper) || 0;
+          mainReferences.set(refUpper, currentMainQty + item.cantidad);
+          console.log(`   ✅ Agregada a mainReferences (raíz CSV): ${refUpper} = ${currentMainQty + item.cantidad}`);
         } else {
-          console.log(`   ⚠️ Sin BOM para ${item.referencia}`);
+          // Es un componente expandido por InventoryAdjustment → consolidatedComponents
+          const currentQty = consolidatedComponents.get(refUpper) || 0;
+          consolidatedComponents.set(refUpper, currentQty + item.cantidad);
+          console.log(`   ✅ Agregada a consolidatedComponents: ${refUpper} = ${currentQty + item.cantidad}`);
         }
       }
 
