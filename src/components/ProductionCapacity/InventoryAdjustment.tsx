@@ -246,28 +246,32 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
       }
 
       // Obtener procesos asociados a cada componente para aplicar excepciones
-      // Cargar TODOS los machines_processes con paginación (hay 9000+ registros)
+      // Cargar TODOS los machines_processes con CURSOR-BASED pagination (hay 9000+ registros)
       let allMachinesProcesses: any[] = [];
-      let mpFrom = 0;
+      let mpLastId = 0;
       const mpPageSize = 1000;
+      let mpPageNum = 0;
       while (true) {
+        mpPageNum++;
         const { data: mpPage } = await supabase
           .from('machines_processes')
-          .select('ref, id_process')
+          .select('id, ref, id_process')
+          .gt('id', mpLastId)
           .order('id')
-          .range(mpFrom, mpFrom + mpPageSize - 1);
+          .limit(mpPageSize);
         const mpChunk = mpPage || [];
+        if (mpChunk.length === 0) break;
         allMachinesProcesses = allMachinesProcesses.concat(mpChunk);
+        mpLastId = mpChunk[mpChunk.length - 1].id;
         if (mpChunk.length < mpPageSize) break;
-        mpFrom += mpPageSize;
       }
-      console.log(`✅ Cargados ${allMachinesProcesses.length} registros machines_processes (paginado)`);
+      console.log(`✅ Cargados ${allMachinesProcesses.length} registros machines_processes (cursor-based, ${mpPageNum} páginas)`);
       
       // 🔍 DIAGNÓSTICO: Verificar refs críticas en datos cargados
       const criticalRefs = ['DFCA30', 'T-CA30', 'TCHCA30', 'TSCA30', 'CCA30', 'CNCA30', 'PTCA-30'];
       for (const cr of criticalRefs) {
         const matches = allMachinesProcesses.filter(mp => mp.ref === cr);
-        console.log(`   🔍 ${cr} en allMachinesProcesses: ${matches.length} registros${matches.length > 0 ? `, procesos: ${[...new Set(matches.map(m => m.id_process))].join(',')}` : ''}`);
+        console.log(`   🔍 ${cr} en allMachinesProcesses: ${matches.length} registros${matches.length > 0 ? `, procesos: ${[...new Set(matches.map(m => m.id_process))].join(',')}` : ' ⚠️ NO ENCONTRADO'}`);
       }
       
       const componentProcessesMap = new Map<string, Set<number>>();
@@ -284,14 +288,6 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
         }
         componentProcessesMap.get(refNorm)!.add(mp.id_process);
       });
-      
-      // 🔍 DIAGNÓSTICO: Verificar componentProcessesMap
-      for (const cr of criticalRefs) {
-        const processes = componentProcessesMap.get(cr);
-        const normProcesses = componentProcessesMap.get(normalizeRefId(cr));
-        console.log(`   🔍 componentProcessesMap['${cr}']: ${processes ? `${processes.size} procesos (${[...processes].join(',')})` : 'NO EXISTE'}`);
-        console.log(`   🔍 componentProcessesMap['${normalizeRefId(cr)}']: ${normProcesses ? `${normProcesses.size} procesos` : 'NO EXISTE'}`);
-      }
 
       // Mapas globales para controlar el uso de inventario por componente
       const inventoryTotals = new Map<string, number>();
