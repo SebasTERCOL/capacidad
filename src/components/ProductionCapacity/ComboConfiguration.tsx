@@ -1615,8 +1615,7 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                       c => c.comboName === ref.selectedCombo
                     );
                     
-                    const previouslyProduced = getProducedByPreviousReferences(ref.referenceId);
-                    const adjustedRequired = Math.max(0, ref.totalRequired - previouslyProduced);
+                    const requiredBase = ref.totalRequired; // Inmutable: siempre refleja la demanda del BOM
                     const inventory = inventoryMap.get(ref.referenceId) || 0;
                     
                     // Calcular qué combos producen esta referencia (sin duplicados)
@@ -1654,10 +1653,13 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                     }));
                     
                     const totalProduced = producingCombos.reduce((sum, pc) => sum + pc.quantity, 0);
-                    // Fórmula de diferencia depende de si se usa inventario
+                    // Fórmula de diferencia: siempre contra requiredBase (BOM inmutable)
                     const difference = useInventory 
-                      ? inventory + totalProduced - adjustedRequired
-                      : totalProduced - adjustedRequired;
+                      ? inventory + totalProduced - requiredBase
+                      : totalProduced - requiredBase;
+                    const pendingReal = Math.max(0, useInventory 
+                      ? requiredBase - inventory - totalProduced
+                      : requiredBase - totalProduced);
                     const isSufficient = difference >= 0;
                     const timeConsumed = selectedComboOption && ref.quantityToProduce > 0
                       ? selectedComboOption.cycleTime * ref.quantityToProduce
@@ -1679,12 +1681,13 @@ export const ComboConfiguration: React.FC<ComboConfigurationProps> = ({
                                  <div>
                                   <div className="font-semibold text-lg">{ref.referenceId}</div>
                                   <div className="text-xs text-muted-foreground">
-                                    Requerido: <span className="font-medium">{adjustedRequired}</span> | 
-                                    Inventario: <span className="font-medium">{inventoryMap.get(ref.referenceId) || 0}</span> | 
+                                    Requerido: <span className="font-medium">{requiredBase}</span> | 
+                                    Inventario: <span className="font-medium">{inventory}</span> | 
                                     Producido: <span className="font-medium">{totalProduced}</span> | 
                                     Diferencia: <span className={difference > 0 ? 'text-green-600 font-medium' : difference < 0 ? 'text-red-600 font-medium' : 'font-medium'}>
                                       {difference > 0 ? '+' : ''}{difference}
                                     </span>
+                                    {pendingReal > 0 && <> | Pendiente: <span className="text-red-600 font-medium">{pendingReal}</span></>}
                                   </div>
                                 </div>
                               </div>
