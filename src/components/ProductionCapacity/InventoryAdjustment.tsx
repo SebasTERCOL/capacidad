@@ -174,6 +174,7 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
         const { data: productsPage, error: invError } = await supabase
           .from('products')
           .select('reference, quantity, type, minimum_unit, maximum_unit')
+          .order('reference')
           .range(inventoryFrom, inventoryFrom + pageSize - 1);
         
         if (invError) {

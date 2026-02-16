@@ -456,6 +456,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const { data: productsPage, error: invError } = await supabase
           .from('products')
           .select('reference, quantity')
+          .order('reference')
           .range(inventoryFrom, inventoryFrom + pageSize - 1);
         
         if (invError) {
