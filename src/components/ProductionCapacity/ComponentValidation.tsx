@@ -46,7 +46,7 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
     }
   }, [data]);
 
-  // Calcular horas disponibles del mes actual
+  // Calcular horas disponibles del mes actual (constantes netas, 3 turnos)
   const calculateMonthlyHours = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -55,22 +55,21 @@ export const ComponentValidation: React.FC<ComponentValidationProps> = ({
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     
-    let weekdays = 0;
-    let saturdays = 0;
+    const HOURS_WEEKDAY_3T = 22.75;
+    const HOURS_SATURDAY = 11.1666;
+    
+    let totalHours = 0;
     
     for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay();
       if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-        weekdays++;
+        totalHours += HOURS_WEEKDAY_3T;
       } else if (dayOfWeek === 6) {
-        saturdays++;
+        totalHours += HOURS_SATURDAY;
       }
     }
     
-    const weekdayHours = weekdays * ((7.584 - 0.4167) + (7.617 - 0.4167) + (8.8 - 0.4167));
-    const saturdayHours = saturdays * ((6.0834 - 0.4167) + (5.917 - 0.4167));
-    
-    return weekdayHours + saturdayHours;
+    return totalHours;
   };
 
   const monthlyHours = calculateMonthlyHours();

@@ -68,127 +68,20 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [excludeHolidays, setExcludeHolidays] = useState(true);
 
-  // Calcular horas disponibles para el mes seleccionado (3 turnos - estándar)
-  const calculateAvailableHours = (month: number, year: number): number => {
-    const date = new Date(year, month - 1, 1);
-    const lastDay = new Date(year, month, 0).getDate();
-    
-    // Obtener todos los festivos del año
-    const holidays = getColombianHolidays(year);
-    
-    let weekdays = 0;
-    let saturdays = 0;
-    
-    for (let day = 1; day <= lastDay; day++) {
-      const currentDate = new Date(year, month - 1, day);
-      const dayOfWeek = currentDate.getDay();
-      
-      // Verificar si es festivo
-      const isFestivo = isColombianHoliday(currentDate, holidays);
-      
-      // Si es festivo, no contarlo como día laboral
-      if (isFestivo) {
-        console.log(`🎉 Día festivo detectado: ${currentDate.toLocaleDateString('es-CO')}`);
-        continue;
-      }
-      
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Lunes a Viernes
-        weekdays++;
-      } else if (dayOfWeek === 6) { // Sábado
-        saturdays++;
-      }
-    }
-    
-    console.log(`📅 ${month}/${year} - Días laborales: ${weekdays} entre semana, ${saturdays} sábados (festivos excluidos)`);
-    
-    // Horas brutas por turno (sin descanso)
-    const weekdayHours = 8 + 8 + 8; // Mañana + Tarde + Noche (8h cada uno)
-    const saturdayHours = 6.5 + 6; // Mañana + Tarde
-    
-    const totalBruteHours = (weekdays * weekdayHours) + (saturdays * saturdayHours);
-    
-    // Calcular turnos totales en el mes
-    const weekdayShifts = weekdays * 3; // 3 turnos por día de semana
-    const saturdayShifts = saturdays * 2; // 2 turnos por sábado
-    const totalShifts = weekdayShifts + saturdayShifts;
-    
-    // Restar 25 minutos (0.4167 horas) de descanso por cada turno
-    const totalBreakTime = totalShifts * (25/60); // 25 minutos en horas
-    const netHours = totalBruteHours - totalBreakTime;
-    
-    return Math.round(netHours * 10) / 10; // Redondear a 1 decimal
-  };
+  // Constantes netas (ya con 25min de descanso restados por turno)
+  const HOURS_WEEKDAY_3T = 22.75;   // 7.1666 + 7.2000 + 8.3833
+  const HOURS_WEEKDAY_2T = 14.3666; // 7.1666 + 7.2000
+  const HOURS_SATURDAY = 11.1666;   // 5.6666 + 5.5000
 
-  // Calcular horas disponibles para procesos de 2 turnos (Inyección y RoscadoConectores)
-  const calculateAvailableHours2Shifts = (month: number, year: number): number => {
-    const date = new Date(year, month - 1, 1);
-    const lastDay = new Date(year, month, 0).getDate();
-    
-    // Obtener todos los festivos del año
-    const holidays = getColombianHolidays(year);
-    
-    let weekdays = 0;
-    let saturdays = 0;
-    
-    for (let day = 1; day <= lastDay; day++) {
-      const currentDate = new Date(year, month - 1, day);
-      const dayOfWeek = currentDate.getDay();
-      
-      // Verificar si es festivo
-      const isFestivo = isColombianHoliday(currentDate, holidays);
-      
-      // Si es festivo, no contarlo como día laboral
-      if (isFestivo) {
-        continue;
-      }
-      
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Lunes a Viernes
-        weekdays++;
-      } else if (dayOfWeek === 6) { // Sábado
-        saturdays++;
-      }
-    }
-    
-    // Horas brutas por turno para días de semana (sin descanso)
-    const weekdayMorningHours = 7.584; // 5:25am - 1:00pm
-    const weekdayAfternoonHours = 7.617; // 1:00pm - 8:37pm
-    const weekdayTotalBrute = weekdayMorningHours + weekdayAfternoonHours; // 15.201 horas
-    
-    // Horas brutas por turno para sábado (sin descanso)
-    const saturdayMorningHours = 6.0834; // 5:25am - 11:30am
-    const saturdayAfternoonHours = 5.917; // 11:30am - 5:25pm
-    const saturdayTotalBrute = saturdayMorningHours + saturdayAfternoonHours; // 12.0004 horas
-    
-    // Calcular horas brutas totales
-    const totalBruteHours = (weekdays * weekdayTotalBrute) + (saturdays * saturdayTotalBrute);
-    
-    // Calcular turnos totales en el mes
-    const weekdayShifts = weekdays * 2; // 2 turnos por día de semana
-    const saturdayShifts = saturdays * 2; // 2 turnos por sábado
-    const totalShifts = weekdayShifts + saturdayShifts;
-    
-    // Restar 25 minutos (0.4167 horas) de descanso por cada turno
-    const totalBreakTime = totalShifts * (25/60); // 25 minutos en horas
-    const netHours = totalBruteHours - totalBreakTime;
-    
-    return Math.round(netHours * 10) / 10; // Redondear a 1 decimal
-  };
-
-  const availableHours = calculateAvailableHours(workMonth, workYear);
-  const availableHours2Shifts = calculateAvailableHours2Shifts(workMonth, workYear);
-
-  type ShiftType = '3-shifts' | '2-shifts';
-
-  const calculateAvailableHoursInRange = (
-    start: Date,
-    end: Date,
-    shiftType: ShiftType,
-    excludeHolidaysFlag: boolean
-  ) => {
-    if (!start || !end) return { hours: 0, sundays: 0, holidays: 0 };
-
-    const from = start <= end ? start : end;
-    const to = start <= end ? end : start;
+  // Función unificada de cálculo de horas disponibles
+  const calcHours = (
+    startDate: Date,
+    endDate: Date,
+    processType: 2 | 3,
+    excludeHolidaysFlag: boolean = true
+  ): { hours: number; sundays: number; holidays: number } => {
+    const from = startDate <= endDate ? startDate : endDate;
+    const to = startDate <= endDate ? endDate : startDate;
 
     const years: number[] = [];
     for (let y = from.getFullYear(); y <= to.getFullYear(); y++) {
@@ -198,53 +91,61 @@ export const OperatorConfiguration: React.FC<OperatorConfigurationProps> = ({
 
     let totalHours = 0;
     let sundays = 0;
-    let holidays = 0;
+    let holidayCount = 0;
 
-    const oneDayMs = 24 * 60 * 60 * 1000;
-    for (let time = from.getTime(); time <= to.getTime(); time += oneDayMs) {
-      const current = new Date(time);
+    const current = new Date(from);
+    while (current <= to) {
       const dayOfWeek = current.getDay();
-      const isHoliday = isColombianHoliday(current, holidaysCache);
 
       if (dayOfWeek === 0) {
         sundays++;
-        continue;
-      }
-      if (excludeHolidaysFlag && isHoliday) {
-        holidays++;
+        current.setDate(current.getDate() + 1);
         continue;
       }
 
-      const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
-      const isSaturday = dayOfWeek === 6;
-
-      if (!isWeekday && !isSaturday) continue;
-
-      if (shiftType === '3-shifts') {
-        const weekdayBrute = 8 + 8 + 8; // 3 turnos de 8h
-        const saturdayBrute = 6.5 + 6;  // turnos sábado
-        const shiftsPerWeekday = 3;
-        const shiftsPerSaturday = 2;
-        const brute = isWeekday ? weekdayBrute : saturdayBrute;
-        const shifts = isWeekday ? shiftsPerWeekday : shiftsPerSaturday;
-        const net = brute - shifts * (25 / 60);
-        totalHours += net;
-      } else {
-        const weekdayMorningHours = 7.584;
-        const weekdayAfternoonHours = 7.617;
-        const weekdayTotalBrute = weekdayMorningHours + weekdayAfternoonHours;
-        const saturdayMorningHours = 6.0834;
-        const saturdayAfternoonHours = 5.917;
-        const saturdayTotalBrute = saturdayMorningHours + saturdayAfternoonHours;
-        const brute = isWeekday ? weekdayTotalBrute : saturdayTotalBrute;
-        const shifts = 2;
-        const net = brute - shifts * (25 / 60);
-        totalHours += net;
+      if (excludeHolidaysFlag && isColombianHoliday(current, holidaysCache)) {
+        holidayCount++;
+        current.setDate(current.getDate() + 1);
+        continue;
       }
+
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        totalHours += processType === 3 ? HOURS_WEEKDAY_3T : HOURS_WEEKDAY_2T;
+      } else if (dayOfWeek === 6) {
+        totalHours += HOURS_SATURDAY;
+      }
+
+      current.setDate(current.getDate() + 1);
     }
 
-    return { hours: Math.round(totalHours * 10000) / 10000, sundays, holidays };
+    return { hours: Math.round(totalHours * 10000) / 10000, sundays, holidays: holidayCount };
   };
+
+  // Helpers para mes completo
+  const calculateAvailableHours = (month: number, year: number): number => {
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0);
+    return calcHours(start, end, 3).hours;
+  };
+
+  const calculateAvailableHours2Shifts = (month: number, year: number): number => {
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0);
+    return calcHours(start, end, 2).hours;
+  };
+
+  // Helper para rango personalizado
+  const calculateAvailableHoursInRange = (
+    start: Date,
+    end: Date,
+    shiftType: '3-shifts' | '2-shifts',
+    excludeHolidaysFlag: boolean
+  ) => {
+    return calcHours(start, end, shiftType === '3-shifts' ? 3 : 2, excludeHolidaysFlag);
+  };
+
+  const availableHours = calculateAvailableHours(workMonth, workYear);
+  const availableHours2Shifts = calculateAvailableHours2Shifts(workMonth, workYear);
 
   // Obtener máquinas y procesos de la base de datos
   useEffect(() => {
