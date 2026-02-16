@@ -245,9 +245,21 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
       }
 
       // Obtener procesos asociados a cada componente para aplicar excepciones
-      const { data: allMachinesProcesses } = await supabase
-        .from('machines_processes')
-        .select('ref, id_process');
+      // Cargar TODOS los machines_processes con paginación (hay 9000+ registros)
+      let allMachinesProcesses: any[] = [];
+      let mpFrom = 0;
+      const mpPageSize = 1000;
+      while (true) {
+        const { data: mpPage } = await supabase
+          .from('machines_processes')
+          .select('ref, id_process')
+          .range(mpFrom, mpFrom + mpPageSize - 1);
+        const mpChunk = mpPage || [];
+        allMachinesProcesses = allMachinesProcesses.concat(mpChunk);
+        if (mpChunk.length < mpPageSize) break;
+        mpFrom += mpPageSize;
+      }
+      console.log(`✅ Cargados ${allMachinesProcesses.length} registros machines_processes (paginado)`);
       
       const componentProcessesMap = new Map<string, Set<number>>();
       allMachinesProcesses?.forEach(mp => {
