@@ -521,9 +521,20 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         originalData.map(d => d.referencia.trim().toUpperCase())
       );
       
+      // 🔍 DIAGNÓSTICO: Verificar si las referencias críticas llegan en data
+      const criticalRefs = ['DFCA30', 'T-CA30', 'TCHCA30', 'TSCA30', 'CCA30', 'CNCA30', 'PTCA-30'];
+      console.log(`\n🔍 === DIAGNÓSTICO: Verificando referencias críticas en data (${data.length} items) ===`);
+      for (const cr of criticalRefs) {
+        const found = data.filter(d => d.referencia.trim().toUpperCase() === cr);
+        if (found.length > 0) {
+          console.log(`   ✅ ${cr}: encontrada ${found.length} veces, cantidad total: ${found.reduce((s, f) => s + f.cantidad, 0)}`);
+        } else {
+          console.warn(`   ❌ ${cr}: NO está en data`);
+        }
+      }
+      
       for (const item of data) {
         const refUpper = item.referencia.trim().toUpperCase();
-        console.log(`🔍 Procesando referencia de entrada: ${refUpper} (cantidad: ${item.cantidad})`);
         
         // TODAS las referencias van a consolidatedComponents para matching de procesos (Doblez, Horno, etc.)
         const currentQty = consolidatedComponents.get(refUpper) || 0;
@@ -533,9 +544,6 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         if (csvRootRefs.has(refUpper) || csvRootRefs.has(normalizeRefId(refUpper))) {
           const currentMainQty = mainReferences.get(refUpper) || 0;
           mainReferences.set(refUpper, currentMainQty + item.cantidad);
-          console.log(`   ✅ Agregada a mainReferences + consolidatedComponents (raíz CSV): ${refUpper}`);
-        } else {
-          console.log(`   ✅ Agregada a consolidatedComponents: ${refUpper} = ${currentQty + item.cantidad}`);
         }
       }
 
@@ -960,6 +968,28 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       
       console.log(`\n🔎 === PROCESANDO ${consolidatedByNorm.size} componentes consolidados ===`);
       
+      // 🔍 DIAGNÓSTICO: Verificar que las refs críticas están en consolidatedByNorm
+      for (const cr of criticalRefs) {
+        const normCr = normalizeRefId(cr);
+        const found = consolidatedByNorm.get(normCr);
+        if (found) {
+          console.log(`   ✅ consolidatedByNorm tiene ${cr} (norm: ${normCr}): qty=${found.quantity}, display=${found.display}`);
+        } else {
+          console.warn(`   ❌ consolidatedByNorm NO tiene ${cr} (norm: ${normCr})`);
+        }
+      }
+      
+      // 🔍 DIAGNÓSTICO: Verificar que machinesData tiene las refs críticas
+      for (const cr of criticalRefs) {
+        const matches = machinesData.filter((mp: any) => mp.ref === cr);
+        if (matches.length > 0) {
+          const processes = [...new Set(matches.map((mp: any) => mp.processes.name))];
+          console.log(`   ✅ machinesData tiene ${cr}: ${matches.length} entries, procesos: ${processes.join(', ')}`);
+        } else {
+          console.warn(`   ❌ machinesData NO tiene ${cr}`);
+        }
+      }
+      
       for (const [normId, entry] of consolidatedByNorm.entries()) {
         
         const { quantity, display } = entry;
@@ -967,31 +997,30 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const componentVariants = generateRefVariants(display);
         
         // Búsqueda ESTRICTA usando variantes de la referencia
-        // CORRECCIÓN: Eliminar "match inverso" que causaba falsos positivos
         const machinesProcesses = machinesData.filter((mp: any) => {
           const mpRef = String(mp.ref || '').trim();
           const mpRefNorm = normalizeRefId(mpRef);
           const mpRefUpper = mpRef.toUpperCase();
           
-          // Match directo (más confiable)
           if (mpRefNorm === normId || mpRefUpper === displayUpper || mpRef === display) {
             return true;
           }
           
-          // Match por variantes del componente: verificar si alguna variante del componente coincide con la ref de machines_processes
           if (componentVariants.includes(mpRefNorm) || componentVariants.includes(mpRefUpper)) {
             return true;
           }
           
-          // REMOVIDO: Match inverso que causaba falsos positivos
-          // El match inverso generaba variantes para CADA registro de machines_processes
-          // y podía causar que referencias como "CMB.BN12.V1" matchearan incorrectamente
-          
           return false;
         });
         
-        if (machinesProcesses.length > 0) {
-          console.log(`   🔎 COMP ${display} (norm: ${normId}): ${machinesProcesses.length} matches`);
+        // Log para refs críticas
+        const isCritical = criticalRefs.some(cr => normalizeRefId(cr) === normId);
+        if (isCritical) {
+          console.log(`   🔎 CRITICAL REF ${display} (norm: ${normId}): ${machinesProcesses.length} matches in machinesData`);
+          if (machinesProcesses.length > 0) {
+            const procs = [...new Set(machinesProcesses.map((mp: any) => `${mp.processes.name}(${mp.id_process})`))];
+            console.log(`      Procesos: ${procs.join(', ')}`);
+          }
         }
         
         for (const mp of machinesProcesses) {
