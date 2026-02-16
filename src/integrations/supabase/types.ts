@@ -239,6 +239,33 @@ export type Database = {
           },
         ]
       }
+      informe_autorizaciones: {
+        Row: {
+          autorizado_por: string | null
+          created_at: string
+          fecha_desde: string
+          fecha_hasta: string
+          id: number
+          operador_cedula: number
+        }
+        Insert: {
+          autorizado_por?: string | null
+          created_at?: string
+          fecha_desde: string
+          fecha_hasta: string
+          id?: number
+          operador_cedula: number
+        }
+        Update: {
+          autorizado_por?: string | null
+          created_at?: string
+          fecha_desde?: string
+          fecha_hasta?: string
+          id?: number
+          operador_cedula?: number
+        }
+        Relationships: []
+      }
       machines: {
         Row: {
           id: number
@@ -949,6 +976,10 @@ export type Database = {
           hora_fin: string
           hora_inicio: string
         }
+        Returns: number
+      }
+      calcular_minutos_por_turno: {
+        Args: { p_fecha: string; p_turno: number }
         Returns: number
       }
       calcular_minutos_trabajados_odp: {
