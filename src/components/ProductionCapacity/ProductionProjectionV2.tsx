@@ -1297,22 +1297,99 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       // =====================================================
-      // CORRECCIÓN: Asegurar que TODOS los procesos configurados aparezcan
-      // Incluso si no tienen componentes asignados (mostrarán 0% ocupación)
+      // CORRECCIÓN CRÍTICA: Asegurar que TODOS los procesos configurados aparezcan
+      // Y que tengan sus componentes correctamente asignados.
+      // Si un proceso configurado no recibió componentes en el loop anterior,
+      // buscar explícitamente en machinesData qué componentes de consolidatedByNorm
+      // pertenecen a ese proceso.
       // =====================================================
       console.log('\n🔄 === VERIFICANDO PROCESOS CONFIGURADOS ===');
       for (const processConfig of operatorConfig.processes) {
         const processName = processConfig.processName;
         if (!processGroups.has(processName)) {
-          console.log(`   ⚠️ Proceso ${processName} configurado pero sin componentes - agregando al análisis`);
-          processGroups.set(processName, {
-            processName,
-            components: new Map(),
-            availableOperators: processConfig.operatorCount || 0,
-            availableHours: processConfig.availableHours || operatorConfig.availableHours
+          console.log(`   ⚠️ Proceso ${processName} configurado pero sin componentes - buscando en machinesData...`);
+          
+          // Buscar el id_process correspondiente a este nombre
+          const matchingMps = machinesData.filter((mp: any) => {
+            const resolved = resolveProcessName(mp);
+            return resolved !== null && resolved.toLowerCase() === processName.toLowerCase();
           });
+          
+          if (matchingMps.length > 0) {
+            const processId = matchingMps[0].id_process;
+            console.log(`   🔍 Encontrados ${matchingMps.length} registros en machinesData para proceso ${processName} (id=${processId})`);
+            
+            // Crear el grupo de proceso
+            const pConfig = findProcessConfig(processName, operatorConfig);
+            processGroups.set(processName, {
+              processName,
+              components: new Map(),
+              availableOperators: pConfig?.operatorCount || 0,
+              availableHours: pConfig?.availableHours || operatorConfig.availableHours
+            });
+            
+            const processGroup = processGroups.get(processName)!;
+            
+            // Buscar qué componentes de consolidatedByNorm tienen entries para este proceso
+            for (const [normId, entry] of consolidatedByNorm.entries()) {
+              const { quantity, display } = entry;
+              const displayUpper = String(display).trim().toUpperCase();
+              
+              // Buscar en machinesData si este componente tiene entries para este proceso
+              const componentMps = matchingMps.filter((mp: any) => {
+                const mpRef = String(mp.ref || '').trim();
+                const mpRefNorm = normalizeRefId(mpRef);
+                const mpRefUpper = mpRef.toUpperCase();
+                return mpRefNorm === normId || mpRefUpper === displayUpper || mpRef === display;
+              });
+              
+              if (componentMps.length > 0) {
+                // CORRECCIÓN: Calcular cantidad efectiva
+                const preCalculatedEffective = effectiveQuantityByRef.get(normId) ?? quantity;
+                const isExcludedProcess = excludedIds.includes(processId);
+                const effectiveQuantity = isExcludedProcess ? quantity : preCalculatedEffective;
+                
+                // Filtrar máquinas operacionales
+                const availableMachines = componentMps.filter((machine: any) => {
+                  if (!pConfig) return true;
+                  const machineConfig = pConfig.machines.find(m => m.id === machine.id_machine);
+                  if (!machineConfig) return true;
+                  return machineConfig.isOperational || false;
+                });
+                
+                const samForProcess = availableMachines.find((m: any) => m.sam && m.sam > 0)?.sam ?? componentMps[0].sam ?? 0;
+                
+                // Obtener inventario
+                let inventoryForComp = getInventoryForRef(display);
+                if (inventoryForComp === 0) inventoryForComp = getInventoryForRef(normId);
+                
+                const rawQty = rawConsolidatedByNorm.get(normId)?.quantity ?? quantity;
+                
+                processGroup.components.set(display, {
+                  quantity: effectiveQuantity,
+                  quantityOriginal: rawQty,
+                  inventoryAvailable: inventoryForComp,
+                  sam: samForProcess,
+                  machineOptions: availableMachines
+                });
+                
+                console.log(`      ✅ Componente ${display} agregado a ${processName}: qty=${effectiveQuantity}, sam=${samForProcess}, máquinas=${availableMachines.map((m: any) => m.machines.name).join(',')}`);
+              }
+            }
+            
+            console.log(`   📊 Proceso ${processName}: ${processGroup.components.size} componentes encontrados`);
+          } else {
+            console.log(`   ℹ️ No hay registros en machinesData para proceso ${processName} - agregando vacío`);
+            processGroups.set(processName, {
+              processName,
+              components: new Map(),
+              availableOperators: processConfig.operatorCount || 0,
+              availableHours: processConfig.availableHours || operatorConfig.availableHours
+            });
+          }
         } else {
-          console.log(`   ✅ Proceso ${processName} ya tiene componentes asignados`);
+          const pg = processGroups.get(processName)!;
+          console.log(`   ✅ Proceso ${processName} ya tiene ${pg.components.size} componentes asignados`);
         }
       }
 
