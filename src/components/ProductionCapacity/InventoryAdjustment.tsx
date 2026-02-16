@@ -262,6 +262,13 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
       }
       console.log(`✅ Cargados ${allMachinesProcesses.length} registros machines_processes (paginado)`);
       
+      // 🔍 DIAGNÓSTICO: Verificar refs críticas en datos cargados
+      const criticalRefs = ['DFCA30', 'T-CA30', 'TCHCA30', 'TSCA30', 'CCA30', 'CNCA30', 'PTCA-30'];
+      for (const cr of criticalRefs) {
+        const matches = allMachinesProcesses.filter(mp => mp.ref === cr);
+        console.log(`   🔍 ${cr} en allMachinesProcesses: ${matches.length} registros${matches.length > 0 ? `, procesos: ${[...new Set(matches.map(m => m.id_process))].join(',')}` : ''}`);
+      }
+      
       const componentProcessesMap = new Map<string, Set<number>>();
       allMachinesProcesses?.forEach(mp => {
         const ref = mp.ref.trim().toUpperCase();
@@ -276,6 +283,14 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
         }
         componentProcessesMap.get(refNorm)!.add(mp.id_process);
       });
+      
+      // 🔍 DIAGNÓSTICO: Verificar componentProcessesMap
+      for (const cr of criticalRefs) {
+        const processes = componentProcessesMap.get(cr);
+        const normProcesses = componentProcessesMap.get(normalizeRefId(cr));
+        console.log(`   🔍 componentProcessesMap['${cr}']: ${processes ? `${processes.size} procesos (${[...processes].join(',')})` : 'NO EXISTE'}`);
+        console.log(`   🔍 componentProcessesMap['${normalizeRefId(cr)}']: ${normProcesses ? `${normProcesses.size} procesos` : 'NO EXISTE'}`);
+      }
 
       // Mapas globales para controlar el uso de inventario por componente
       const inventoryTotals = new Map<string, number>();
@@ -404,19 +419,24 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             });
             
             // Determinar si el componente tiene procesos definidos en machines_processes
-            // (es decir, consume capacidad en algún proceso: corte, punzonado, roscado, etc.)
             const componentHasProcesses = componentProcesses && componentProcesses.size > 0;
 
-            // Incluir referencias -CMB aunque no tengan procesos propios,
-            // porque son necesarias para el cálculo de combos en ComboConfiguration
+            // Incluir referencias -CMB aunque no tengan procesos propios
             const isCMBReference = componentId.endsWith('-CMB');
+
+            // 🔍 DIAGNÓSTICO para refs críticas
+            const isCriticalComp = ['DFCA30', 'T-CA30', 'TCHCA30', 'TSCA30', 'CCA30', 'CNCA30', 'PTCA-30'].includes(componentId);
+            if (isCriticalComp) {
+              console.log(`   🔍 DECISIÓN ${componentId}: componentHasProcesses=${componentHasProcesses}, isCMB=${isCMBReference}, será incluido=${componentHasProcesses || isCMBReference}`);
+              console.log(`      componentProcesses lookup: direct=${componentProcessesMap.get(componentId)?.size ?? 'NONE'}, norm=${componentProcessesMap.get(componentNorm)?.size ?? 'NONE'}`);
+            }
 
             // Agregar componentes que tengan procesos asociados O sean referencias -CMB
             if (componentHasProcesses || isCMBReference) {
               itemAdjusted.push({
                 referencia: componentId,
-                cantidad: cantidadRequerida, // Valor original sin ajustar
-                inventario: usadoEnEsteProducto // Inventario usado
+                cantidad: cantidadRequerida,
+                inventario: usadoEnEsteProducto
               });
             }
           }
