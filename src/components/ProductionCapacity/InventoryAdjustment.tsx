@@ -361,8 +361,10 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
 
             // Verificar si el componente tiene procesos excluidos (usar versión normalizada también)
             const componentProcesses = componentProcessesMap.get(componentId) || componentProcessesMap.get(componentNorm);
-            const hasExcludedProcess = componentProcesses ? 
-              Array.from(componentProcesses).some(processId => excludedIds.includes(processId)) : 
+            // Solo bloquear inventario si TODOS los procesos del componente están excluidos
+            // (antes usaba .some(), lo que bloqueaba si ANY proceso era excluido — bug para T-CA30 que tiene Doblez + Lavado/Horno/Pintura)
+            const allProcessesExcluded = componentProcesses && componentProcesses.size > 0 ? 
+              Array.from(componentProcesses).every(processId => excludedIds.includes(processId)) : 
               false;
 
             // Cantidad requerida redondeada
@@ -376,22 +378,22 @@ export const InventoryAdjustment: React.FC<InventoryAdjustmentProps> = ({
             const totalDisponible = inventoryTotals.get(componentNorm)!;
             
             // Para el cálculo de "a producir", solo aplicamos inventario si NO tiene procesos excluidos
-            const inventarioParaCalculo = hasExcludedProcess ? 0 : totalDisponible;
+            const inventarioParaCalculo = allProcessesExcluded ? 0 : totalDisponible;
 
             // Usar clave normalizada para consistencia
             const usadoHastaAhora = inventoryUsed.get(componentNorm) || 0;
-            // Solo calcular inventario restante si NO tiene procesos excluidos
-            const restante = hasExcludedProcess ? 0 : Math.max(0, inventarioParaCalculo - usadoHastaAhora);
+            // Solo calcular inventario restante si NO todos los procesos están excluidos
+            const restante = allProcessesExcluded ? 0 : Math.max(0, inventarioParaCalculo - usadoHastaAhora);
             const usadoEnEsteProducto = Math.min(restante, cantidadRequerida);
 
             const cantidadAProducir = Math.max(0, cantidadRequerida - usadoEnEsteProducto);
             // Para "quedará disponible", siempre usar el inventario real
-            const quedaraDisponible = hasExcludedProcess 
-              ? totalDisponible  // Si proceso excluido, el inventario queda intacto
+            const quedaraDisponible = allProcessesExcluded 
+              ? totalDisponible  // Si todos los procesos excluidos, el inventario queda intacto
               : totalDisponible - (usadoHastaAhora + usadoEnEsteProducto);
 
-            // Actualizar uso global de inventario solo si no es proceso excluido
-            if (!hasExcludedProcess && usadoEnEsteProducto > 0) {
+            // Actualizar uso global de inventario solo si no todos los procesos están excluidos
+            if (!allProcessesExcluded && usadoEnEsteProducto > 0) {
               inventoryUsed.set(componentNorm, usadoHastaAhora + usadoEnEsteProducto);
             }
             
