@@ -2876,8 +2876,9 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             entry.components.set(item.referencia, compCurrent + item.tiempoTotal);
           }
         } else {
-          // Orphan component or root itself without BOM
+          // Only include if this reference is itself a CSV root PT
           const key = item.referencia.trim().toUpperCase();
+          if (!csvRoots.has(key)) return;
           if (!ptMap.has(key)) {
             ptMap.set(key, { total: 0, components: new Map() });
           }
@@ -2889,6 +2890,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       });
 
       return Array.from(ptMap.entries())
+        .filter(([pt]) => csvRoots.has(pt))
         .map(([pt, data]) => ({
           pt,
           leadTimeMinutes: data.total,
