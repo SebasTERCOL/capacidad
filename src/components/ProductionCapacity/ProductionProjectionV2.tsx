@@ -1877,7 +1877,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
       // PASO 3: Distribuir tiempo usando SOLO capacidad base
       for (const machineInfo of machineCapacities) {
-        if (tiempoRestante <= 0.01) break;
+        if (tiempoRestante <= 0.000001) break;
         
         if (machineInfo.availableCapacity > 0) {
           const tiempoAsignado = Math.min(tiempoRestante, machineInfo.availableCapacity);
@@ -1913,7 +1913,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       // PASO 4: Si queda tiempo sin asignar, intentar usar horas extras si están disponibles
-      if (tiempoRestante > 0.01 && overtimeConfig) {
+      if (tiempoRestante > 0.000001 && overtimeConfig) {
         console.log(`     🔄 [OVERTIME] Intentando reasignar ${tiempoRestante.toFixed(2)}h usando horas extras...`);
         
         const processOvertimeConfig = overtimeConfig.processes.find(
@@ -1962,7 +1962,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           
           // Distribuir el tiempo restante en las horas extras
           for (const machineInfo of machinesWithExtra) {
-            if (tiempoRestante <= 0.01) break;
+            if (tiempoRestante <= 0.000001) break;
             
             const tiempoAsignado = Math.min(tiempoRestante, machineInfo.availableExtra);
             const proporcion = tiempoAsignado / tiempoTotalHoras;
@@ -1999,7 +1999,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
 
       // PASO 5: Si AÚN queda tiempo sin asignar después de intentar extras, crear "Capacidad insuficiente"
-      if (tiempoRestante > 0.01) {
+      if (tiempoRestante > 0.000001) {
         console.log(`     🔴 Déficit final: ${tiempoRestante.toFixed(2)}h (no se pudo cubrir ni con extras)`);
         results.push({
           referencia: componentId,
