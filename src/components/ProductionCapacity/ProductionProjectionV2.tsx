@@ -1744,83 +1744,107 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
     // Procesar cada componente (ya ordenados por prioridad si es Pintura)
     for (const [componentId, componentData] of componentsToProcess) {
-      console.log(`   📦 Distribuyendo ${componentId} (cantidad: ${componentData.quantity})`);
+      console.log(`   📦 Distribuyendo ${componentId} (cantidad: ${componentData.quantity}, SAM: ${componentData.sam}, machineOptions: ${componentData.machineOptions.length})`);
+      console.log(`     🔧 machineOptions disponibles:`, componentData.machineOptions.map((m: any) => m.machines?.name || 'unknown'));
       
       // Encontrar máquinas compatibles entre las seleccionadas
-      const compatibleMachines = selectedMachines.filter(machine =>
+      let compatibleMachines = selectedMachines.filter(machine =>
         componentData.machineOptions.some(opt => opt.machines.name === machine.machines.name)
       );
 
       if (compatibleMachines.length === 0) {
         console.log(`     ⚠️ Sin máquinas compatibles entre las seleccionadas para ${componentId}`);
         
-        // Verificar si hay máquinas compatibles en TODAS las opciones disponibles
-        const allCompatibleMachines = componentData.machineOptions;
-        
-        if (allCompatibleMachines.length > 0) {
-          console.log(`     ℹ️ Hay ${allCompatibleMachines.length} máquinas compatibles disponibles, buscando capacidad sobrante...`);
+        // FALLBACK: Si machineOptions tiene máquinas, intentar usarlas directamente
+        if (componentData.machineOptions.length > 0) {
+          console.log(`     ℹ️ Hay ${componentData.machineOptions.length} máquinas en machineOptions, intentando asignar directamente...`);
           
-          // Encontrar la máquina seleccionada con menor ocupación
-          let machineWithLowestLoad = selectedMachines[0];
-          let lowestLoad = machineWorkloads.get(machineWithLowestLoad.machines.name) || 0;
+          // Intentar encontrar la primera máquina de machineOptions que esté operacional
+          const fallbackMachine = componentData.machineOptions[0];
           
-          for (const machine of selectedMachines) {
-            const currentLoad = machineWorkloads.get(machine.machines.name) || 0;
-            if (currentLoad < lowestLoad) {
-              lowestLoad = currentLoad;
-              machineWithLowestLoad = machine;
-            }
-          }
-          
-          const ocupacionActual = (lowestLoad / horasDisponiblesPorOperario) * 100;
-          const capacidadDisponible = horasDisponiblesPorOperario - lowestLoad;
-          
-          console.log(`     ✅ Máquina con menor carga: ${machineWithLowestLoad.machines.name} (${ocupacionActual.toFixed(1)}% ocupada, ${capacidadDisponible.toFixed(2)}h disponibles)`);
-          
-          // Usar los datos de SAM de la máquina compatible original
-          const compatibleMachineData = allCompatibleMachines[0];
-          const isMinutesPerUnit = compatibleMachineData.sam_unit === 'min_per_unit';
+          // Calcular tiempo
+          const isMinutesPerUnit = fallbackMachine.sam_unit === 'min_per_unit';
           const tiempoTotalMinutos = isMinutesPerUnit
             ? (componentData.sam > 0 ? componentData.quantity * componentData.sam : 0)
             : (componentData.sam > 0 ? componentData.quantity / componentData.sam : 0);
           const tiempoTotalHoras = tiempoTotalMinutos / 60;
           
-          // Verificar si hay suficiente capacidad disponible
-          if (capacidadDisponible >= tiempoTotalHoras) {
-            // Actualizar carga de la máquina compatible (no la que presta el operario)
-            const cargaActualCompatible = machineWorkloads.get(compatibleMachineData.machines.name) || 0;
-            machineWorkloads.set(compatibleMachineData.machines.name, cargaActualCompatible + tiempoTotalHoras);
-            
-            const ocupacionMaquinaNueva = ((lowestLoad + tiempoTotalHoras) / horasDisponiblesPorOperario) * 100;
-            const ocupacionProceso = (tiempoTotalHoras / totalHorasDisponibles) * 100;
-            
-            results.push({
-              referencia: componentId,
-              cantidadRequerida: componentData.quantity,
-              cantidadOriginal: componentData.quantityOriginal,
-              inventarioDisponible: componentData.inventoryAvailable,
-              sam: componentData.sam,
-              tiempoTotal: tiempoTotalMinutos,
-              maquina: compatibleMachineData.machines.name,
-              estadoMaquina: compatibleMachineData.machines.estado,
-              proceso: processName,
-              operadoresRequeridos: 1,
-              operadoresDisponibles: processGroup.availableOperators,
-              capacidadPorcentaje: (tiempoTotalHoras / horasDisponiblesPorOperario) * 100,
-              ocupacionMaquina: (cargaActualCompatible + tiempoTotalHoras) / horasDisponiblesPorOperario * 100,
-              ocupacionProceso: ocupacionProceso,
-              alerta: `ℹ️ Usando capacidad sobrante de ${machineWithLowestLoad.machines.name} (${ocupacionActual.toFixed(1)}% ocupado)`
-            });
-            
-            console.log(`     ✅ Asignado a ${machineWithLowestLoad.machines.name} usando capacidad sobrante`);
-            continue;
-          } else {
-            console.log(`     ❌ Capacidad insuficiente. Requerido: ${tiempoTotalHoras.toFixed(2)}h, Disponible: ${capacidadDisponible.toFixed(2)}h`);
-          }
+          const cargaActual = machineWorkloads.get(fallbackMachine.machines.name) || 0;
+          machineWorkloads.set(fallbackMachine.machines.name, cargaActual + tiempoTotalHoras);
+          
+          const ocupacionProceso = totalHorasDisponibles > 0 ? (tiempoTotalHoras / totalHorasDisponibles) * 100 : 0;
+          
+          results.push({
+            referencia: componentId,
+            cantidadRequerida: componentData.quantity,
+            cantidadOriginal: componentData.quantityOriginal,
+            inventarioDisponible: componentData.inventoryAvailable,
+            sam: componentData.sam,
+            tiempoTotal: tiempoTotalMinutos,
+            maquina: fallbackMachine.machines.name,
+            estadoMaquina: fallbackMachine.machines.status || fallbackMachine.machines.estado || 'ENCENDIDO',
+            proceso: processName,
+            operadoresRequeridos: 1,
+            operadoresDisponibles: processGroup.availableOperators,
+            capacidadPorcentaje: horasDisponiblesPorOperario > 0 ? (tiempoTotalHoras / horasDisponiblesPorOperario) * 100 : 0,
+            ocupacionMaquina: horasDisponiblesPorOperario > 0 ? (cargaActual + tiempoTotalHoras) / horasDisponiblesPorOperario * 100 : 0,
+            ocupacionProceso: ocupacionProceso,
+            alerta: `ℹ️ Asignado a ${fallbackMachine.machines.name} (fallback desde machineOptions)`
+          });
+          
+          console.log(`     ✅ Fallback: asignado a ${fallbackMachine.machines.name}`);
+          continue;
         }
         
-        // Si no se pudo asignar, mostrar error
-        console.log(`     ❌ Sin máquinas compatibles para ${componentId}`);
+        // FALLBACK FINAL: Asignar a la primera máquina seleccionada del proceso
+        if (selectedMachines.length > 0 && componentData.sam > 0) {
+          console.log(`     ℹ️ machineOptions vacío, asignando a primera máquina del proceso por defecto`);
+          
+          // Encontrar máquina con menor carga
+          let bestMachine = selectedMachines[0];
+          let bestLoad = machineWorkloads.get(bestMachine.machines.name) || 0;
+          for (const machine of selectedMachines) {
+            const load = machineWorkloads.get(machine.machines.name) || 0;
+            if (load < bestLoad) {
+              bestLoad = load;
+              bestMachine = machine;
+            }
+          }
+          
+          const isMinutesPerUnit = bestMachine.sam_unit === 'min_per_unit';
+          const tiempoTotalMinutos = isMinutesPerUnit
+            ? componentData.quantity * componentData.sam
+            : (componentData.sam > 0 ? componentData.quantity / componentData.sam : 0);
+          const tiempoTotalHoras = tiempoTotalMinutos / 60;
+          
+          machineWorkloads.set(bestMachine.machines.name, bestLoad + tiempoTotalHoras);
+          
+          const ocupacionProceso = totalHorasDisponibles > 0 ? (tiempoTotalHoras / totalHorasDisponibles) * 100 : 0;
+          
+          results.push({
+            referencia: componentId,
+            cantidadRequerida: componentData.quantity,
+            cantidadOriginal: componentData.quantityOriginal,
+            inventarioDisponible: componentData.inventoryAvailable,
+            sam: componentData.sam,
+            tiempoTotal: tiempoTotalMinutos,
+            maquina: bestMachine.machines.name,
+            estadoMaquina: bestMachine.machines.status || bestMachine.machines.estado || 'ENCENDIDO',
+            proceso: processName,
+            operadoresRequeridos: 1,
+            operadoresDisponibles: processGroup.availableOperators,
+            capacidadPorcentaje: horasDisponiblesPorOperario > 0 ? (tiempoTotalHoras / horasDisponiblesPorOperario) * 100 : 0,
+            ocupacionMaquina: horasDisponiblesPorOperario > 0 ? (bestLoad + tiempoTotalHoras) / horasDisponiblesPorOperario * 100 : 0,
+            ocupacionProceso: ocupacionProceso,
+            alerta: `ℹ️ Asignado por defecto a ${bestMachine.machines.name} (sin machineOptions)`
+          });
+          
+          console.log(`     ✅ Default: asignado a ${bestMachine.machines.name}`);
+          continue;
+        }
+        
+        // Si realmente no hay nada, mostrar error pero NUNCA descartar
+        console.log(`     ❌ Sin máquinas compatibles para ${componentId} - manteniendo en resultados`);
         results.push({
           referencia: componentId,
           cantidadRequerida: componentData.quantity,
