@@ -2828,6 +2828,27 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       return validProcesses[0];
     };
     const bottleneckProcess = calculateBottleneck(processGroups);
+
+    // Calcular Lead Time acumulado por referencia
+    const calculateLeadTimes = (proj: ProjectionInfo[]) => {
+      const leadMap = new Map<string, number>();
+      proj.forEach(item => {
+        const isVirtualMachine =
+          item.maquina === 'Capacidad insuficiente' ||
+          item.maquina === 'Sin máquina compatible';
+        if (isVirtualMachine) return;
+        const current = leadMap.get(item.referencia) || 0;
+        leadMap.set(item.referencia, current + item.tiempoTotal);
+      });
+      return Array.from(leadMap.entries())
+        .map(([referencia, totalMin]) => ({
+          referencia,
+          leadTimeMinutes: totalMin,
+          leadTimeHours: totalMin / 60
+        }))
+        .sort((a, b) => b.leadTimeMinutes - a.leadTimeMinutes);
+    };
+    const leadTimes = calculateLeadTimes(projection);
     
     // Identificar TODAS las máquinas operacionales (incluyendo las que tienen y no tienen déficit)
     const identifiedDeficits: DeficitInfo[] = [];
@@ -2923,6 +2944,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       <HierarchicalCapacityView
         processGroups={processGroups}
         bottleneck={bottleneckProcess}
+        leadTimes={leadTimes}
         onBack={onBack}
         onStartOver={onStartOver}
         onNext={onNext}
