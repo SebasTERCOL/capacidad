@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
-import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock, Calendar, Download, Save } from "lucide-react";
+import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock, Calendar, Download, Save, Flame } from "lucide-react";
 import { OvertimeShift } from "./OvertimeConfiguration";
 import { useUserAuth } from "@/contexts/UserAuthContext";
 interface ReferenceItem {
@@ -42,8 +42,16 @@ interface ProcessGroup {
   operators: number;
   sharedOperatorsWith?: string; // Nota si comparte operarios con otro proceso
 }
+interface BottleneckInfo {
+  processName: string;
+  totalOccupancy: number;
+  totalTime: number;
+  totalAvailableMinutes: number;
+}
+
 interface HierarchicalCapacityViewProps {
   processGroups: ProcessGroup[];
+  bottleneck?: BottleneckInfo | null;
   onBack: () => void;
   onStartOver: () => void;
   onNext?: () => void;
@@ -54,6 +62,7 @@ interface HierarchicalCapacityViewProps {
 }
 const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
   processGroups,
+  bottleneck,
   onBack,
   onStartOver,
   onNext,
@@ -136,6 +145,64 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
           </p>
         </CardHeader>
       </Card>
+
+      {/* Cuello de Botella Dinámico */}
+      {bottleneck ? (
+        <Card className={`border-2 ${
+          bottleneck.totalOccupancy >= 100 ? 'border-red-500 bg-red-50 dark:bg-red-950/20' :
+          bottleneck.totalOccupancy >= 90 ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20' :
+          'border-green-500 bg-green-50 dark:bg-green-950/20'
+        }`}>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Flame className={`h-5 w-5 ${
+                bottleneck.totalOccupancy >= 100 ? 'text-red-500' :
+                bottleneck.totalOccupancy >= 90 ? 'text-yellow-500' :
+                'text-green-500'
+              }`} />
+              🔥 Cuello de Botella Actual
+              <Badge className={
+                bottleneck.totalOccupancy >= 100 ? 'bg-red-500 text-white' :
+                bottleneck.totalOccupancy >= 90 ? 'bg-yellow-500 text-black' :
+                'bg-green-500 text-white'
+              }>
+                {bottleneck.totalOccupancy >= 100 ? 'Crítico' :
+                 bottleneck.totalOccupancy >= 90 ? 'Riesgo' : 'Saludable'}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Proceso</p>
+                <p className="text-lg font-bold">{bottleneck.processName}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Ocupación</p>
+                <p className={`text-lg font-bold ${
+                  bottleneck.totalOccupancy >= 100 ? 'text-red-600' :
+                  bottleneck.totalOccupancy >= 90 ? 'text-yellow-600' :
+                  'text-green-600'
+                }`}>{bottleneck.totalOccupancy.toFixed(1)}%</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Tiempo Requerido</p>
+                <p className="text-lg font-bold">{(bottleneck.totalTime / 60).toFixed(1)}h</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Tiempo Disponible</p>
+                <p className="text-lg font-bold">{(bottleneck.totalAvailableMinutes / 60).toFixed(1)}h</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-2 border-muted">
+          <CardContent className="p-6 text-center text-muted-foreground">
+            Sin procesos activos en esta corrida
+          </CardContent>
+        </Card>
+      )}
 
       {/* Resumen General */}
       <Card>

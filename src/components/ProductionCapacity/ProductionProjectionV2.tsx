@@ -2816,6 +2816,18 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   // Renderizar vista jerárquica o tabla según el modo
   if (viewMode === 'hierarchical') {
     const processGroups = createHierarchicalData();
+
+    // Calcular cuello de botella dinámico
+    const calculateBottleneck = (groups: typeof processGroups) => {
+      const validProcesses = groups.filter(p => p.totalAvailableMinutes > 0 && p.totalTime > 0);
+      if (validProcesses.length === 0) return null;
+      validProcesses.sort((a, b) => {
+        if (b.totalOccupancy !== a.totalOccupancy) return b.totalOccupancy - a.totalOccupancy;
+        return b.totalTime - a.totalTime;
+      });
+      return validProcesses[0];
+    };
+    const bottleneckProcess = calculateBottleneck(processGroups);
     
     // Identificar TODAS las máquinas operacionales (incluyendo las que tienen y no tienen déficit)
     const identifiedDeficits: DeficitInfo[] = [];
@@ -2910,6 +2922,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     return (
       <HierarchicalCapacityView
         processGroups={processGroups}
+        bottleneck={bottleneckProcess}
         onBack={onBack}
         onStartOver={onStartOver}
         onNext={onNext}
