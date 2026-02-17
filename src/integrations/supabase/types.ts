@@ -123,6 +123,60 @@ export type Database = {
           },
         ]
       }
+      capacity_snapshots: {
+        Row: {
+          combo_data: Json | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          input_data: Json | null
+          month: number | null
+          operator_config: Json | null
+          overtime_config: Json | null
+          projection_result: Json | null
+          total_alerts: number | null
+          total_minutes: number | null
+          use_inventory: boolean | null
+          user_cedula: string | null
+          user_id: number | null
+          year: number | null
+        }
+        Insert: {
+          combo_data?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          input_data?: Json | null
+          month?: number | null
+          operator_config?: Json | null
+          overtime_config?: Json | null
+          projection_result?: Json | null
+          total_alerts?: number | null
+          total_minutes?: number | null
+          use_inventory?: boolean | null
+          user_cedula?: string | null
+          user_id?: number | null
+          year?: number | null
+        }
+        Update: {
+          combo_data?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          input_data?: Json | null
+          month?: number | null
+          operator_config?: Json | null
+          overtime_config?: Json | null
+          projection_result?: Json | null
+          total_alerts?: number | null
+          total_minutes?: number | null
+          use_inventory?: boolean | null
+          user_cedula?: string | null
+          user_id?: number | null
+          year?: number | null
+        }
+        Relationships: []
+      }
       combo: {
         Row: {
           cantidad: number | null

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Factory, ArrowRight, ArrowLeft } from "lucide-react";
+import { Factory, ArrowRight, ArrowLeft, History } from "lucide-react";
 import { FileUpload, ProductionRequest, FileUploadData } from "@/components/ProductionCapacity/FileUpload";
 import { InventoryAdjustment, AdjustedProductionData } from "@/components/ProductionCapacity/InventoryAdjustment";
 import { ComboConfiguration, ComboSuggestion } from "@/components/ProductionCapacity/ComboConfiguration";
@@ -11,6 +11,8 @@ import { OperatorConfiguration, OperatorConfig } from "@/components/ProductionCa
 import { ProductionProjectionV2 } from "@/components/ProductionCapacity/ProductionProjectionV2";
 import { OvertimeConfiguration, DeficitInfo, OvertimeConfig } from "@/components/ProductionCapacity/OvertimeConfiguration";
 import ScheduleResults from "@/components/ProductionCapacity/ScheduleResults";
+import { useUserAuth } from "@/contexts/UserAuthContext";
+import { UserBadge } from "@/components/ProductionCapacity/LoginModal";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
@@ -170,12 +172,21 @@ const Index = () => {
                 </p>
               </div>
             </div>
-            <Link to="/">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Volver
-              </Button>
-            </Link>
+            <div className="flex items-center gap-3">
+              <UserBadge />
+              <Link to="/historial">
+                <Button variant="outline" size="sm">
+                  <History className="h-4 w-4 mr-2" />
+                  Historial
+                </Button>
+              </Link>
+              <Link to="/">
+                <Button variant="outline" size="sm">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Volver
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {/* Progress Steps */}

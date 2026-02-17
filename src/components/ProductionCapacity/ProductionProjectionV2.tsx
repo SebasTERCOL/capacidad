@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Activity, Calendar, AlertCircle, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useUserAuth } from "@/contexts/UserAuthContext";
 import { OperatorConfig } from "./OperatorConfiguration";
 import HierarchicalCapacityView from './HierarchicalCapacityView';
 import { DeficitInfo, OvertimeConfig } from "./OvertimeConfiguration";
@@ -62,6 +63,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0, currentRef: '' });
   const [startTime, setStartTime] = useState<number>(0);
+  const { currentUser } = useUserAuth();
   
   // Cache para BOM y machines_processes para evitar consultas repetidas
   const [bomCache] = useState(new Map<string, Map<string, number>>());
@@ -2856,6 +2858,54 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     
     // Siempre mostrar botón de horas extras (permite configurar incluso sin déficit)
     const shouldShowOvertimeButton = identifiedDeficits.length > 0;
+
+    const saveSnapshot = async () => {
+      if (!currentUser) {
+        alert("Debe iniciar sesión para guardar escenarios");
+        return;
+      }
+      if (currentUser.tipo !== 'Administrativo') {
+        alert("No tiene permisos para guardar escenarios");
+        return;
+      }
+      try {
+        const totalMinutes = projection.reduce((sum, r) => sum + r.tiempoTotal, 0);
+        const totalAlerts = projection.filter(r => r.alerta).length;
+
+        const snapshot = {
+          created_by: currentUser.nombre_completo,
+          user_cedula: String(currentUser.cedula),
+          user_id: currentUser.id,
+          month: operatorConfig.workMonth,
+          year: operatorConfig.workYear,
+          use_inventory: useInventory,
+          input_data: JSON.parse(JSON.stringify({
+            originalData,
+            adjustedData: data
+          })),
+          combo_data: comboData ? JSON.parse(JSON.stringify(comboData)) : null,
+          operator_config: JSON.parse(JSON.stringify(operatorConfig)),
+          overtime_config: overtimeConfig ? JSON.parse(JSON.stringify(overtimeConfig)) : null,
+          projection_result: JSON.parse(JSON.stringify(projection)),
+          total_minutes: totalMinutes,
+          total_alerts: totalAlerts
+        };
+
+        const { error: dbError } = await supabase
+          .from("capacity_snapshots")
+          .insert([snapshot]);
+
+        if (dbError) {
+          console.error("Error guardando snapshot:", dbError);
+          alert("Error al guardar snapshot: " + dbError.message);
+        } else {
+          alert("📸 Escenario guardado correctamente");
+        }
+      } catch (err) {
+        console.error("Error inesperado snapshot:", err);
+        alert("Error inesperado al guardar");
+      }
+    };
     
     return (
       <HierarchicalCapacityView
@@ -2866,6 +2916,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         hasDeficits={shouldShowOvertimeButton}
         onOptimizeWithOvertime={handleOptimizeWithOvertime}
         onExportCSV={exportToCSV}
+        onSaveSnapshot={saveSnapshot}
       />
     );
   }
