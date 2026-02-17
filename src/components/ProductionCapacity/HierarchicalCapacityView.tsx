@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
-import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock, Calendar, Download } from "lucide-react";
+import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock, Calendar, Download, Save } from "lucide-react";
 import { OvertimeShift } from "./OvertimeConfiguration";
+import { useUserAuth } from "@/contexts/UserAuthContext";
 interface ReferenceItem {
   referencia: string;
   cantidadRequerida: number;
@@ -49,6 +50,7 @@ interface HierarchicalCapacityViewProps {
   hasDeficits?: boolean;
   onOptimizeWithOvertime?: () => void;
   onExportCSV?: () => void;
+  onSaveSnapshot?: () => Promise<void>;
 }
 const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
   processGroups,
@@ -57,10 +59,23 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
   onNext,
   hasDeficits = false,
   onOptimizeWithOvertime,
-  onExportCSV
+  onExportCSV,
+  onSaveSnapshot
 }) => {
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set());
   const [expandedMachines, setExpandedMachines] = useState<Set<string>>(new Set());
+  const [isSaving, setIsSaving] = useState(false);
+  const { currentUser, isAdministrativo } = useUserAuth();
+
+  const handleSave = async () => {
+    if (!onSaveSnapshot) return;
+    setIsSaving(true);
+    try {
+      await onSaveSnapshot();
+    } finally {
+      setIsSaving(false);
+    }
+  };
   const toggleProcess = (processName: string) => {
     const newExpanded = new Set(expandedProcesses);
     if (newExpanded.has(processName)) {
@@ -407,7 +422,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
       </div>
 
       {/* Botones de navegación */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <Button variant="outline" onClick={onBack}>
           Volver a Configuración
         </Button>
@@ -415,6 +430,12 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
             <Download className="h-4 w-4 mr-2" />
             Exportar CSV
           </Button>}
+        {onSaveSnapshot && isAdministrativo && (
+          <Button variant="outline" onClick={handleSave} disabled={isSaving}>
+            <Save className="h-4 w-4 mr-2" />
+            {isSaving ? 'Guardando...' : 'Guardar Escenario'}
+          </Button>
+        )}
         {hasDeficits && onOptimizeWithOvertime && <Button variant="secondary" onClick={onOptimizeWithOvertime} className="flex-1">
             <Clock className="h-4 w-4 mr-2" />
             Optimizar con Horas Extras
