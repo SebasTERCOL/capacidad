@@ -2404,6 +2404,15 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
     });
 
+    // DEBUG: Verificar referencias por proceso después del forEach
+    processMap.forEach((pg, pName) => {
+      const totalRefs = Array.from(pg.machines.values()).reduce((sum, m) => sum + m.references.length, 0);
+      console.log(`DEBUG ${pName} group: machines.size=${pg.machines.size}, totalRefs=${totalRefs}`);
+      pg.machines.forEach((m, mName) => {
+        console.log(`  DEBUG ${pName} -> ${mName}: references.length=${m.references.length}`, m.references.map(r => r.referencia));
+      });
+    });
+
     // Log resumen de máquinas compartidas
     machineToProcesses.forEach((processes, machine) => {
       if (processes.size > 1) {
@@ -2505,35 +2514,27 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       if (overtimePerMachine > 0 && operationalCount > 1 && !(processGroup as any).locked) {
         console.log(`[REBALANCING] Redistribuyendo referencias entre ${operationalCount} máquinas del proceso ${processGroup.processName}`);
         
-        // Recolectar todas las referencias del proceso
-        const allReferences = new Map<string, {
+        // Recolectar todas las referencias del proceso (sin merging - cada entrada es independiente)
+        const allReferences: {
           referencia: string;
           cantidadRequerida: number;
+          cantidadOriginal?: number;
+          inventarioDisponible?: number;
           sam: number;
           tiempoTotal: number;
-        }>();
+          ocupacionPorcentaje: number;
+          alerta?: string;
+        }[] = [];
         
         processGroup.machines.forEach(machine => {
           if (machine.machineName !== 'Capacidad insuficiente' && machine.machineName !== 'Sin máquina compatible') {
             machine.references.forEach(ref => {
-              const key = ref.referencia;
-              if (allReferences.has(key)) {
-                const existing = allReferences.get(key)!;
-                existing.cantidadRequerida += ref.cantidadRequerida;
-                existing.tiempoTotal += ref.tiempoTotal;
-              } else {
-                allReferences.set(key, {
-                  referencia: ref.referencia,
-                  cantidadRequerida: ref.cantidadRequerida,
-                  sam: ref.sam,
-                  tiempoTotal: ref.tiempoTotal
-                });
-              }
+              allReferences.push({ ...ref });
             });
           }
         });
         
-        console.log(`[REBALANCING] ${allReferences.size} referencias únicas a redistribuir`);
+        console.log(`[REBALANCING] ${allReferences.length} referencias a redistribuir (sin merging)`);
         
         // Calcular capacidad total de cada máquina (base + extras)
         const machineCapacities = operationalMachines.map(m => ({
@@ -2579,9 +2580,12 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               machineGroup.references.push({
                 referencia: refData.referencia,
                 cantidadRequerida: cantidadAsignar,
+                cantidadOriginal: refData.cantidadOriginal,
+                inventarioDisponible: refData.inventarioDisponible,
                 sam: refData.sam,
                 tiempoTotal: tiempoAsignar,
-                ocupacionPorcentaje: (tiempoAsignar / machineCapacity.totalCapacity) * 100
+                ocupacionPorcentaje: (tiempoAsignar / machineCapacity.totalCapacity) * 100,
+                alerta: refData.alerta
               });
               
               machineGroup.totalTime += tiempoAsignar;
