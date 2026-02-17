@@ -668,15 +668,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       }
       
       // Pre-calcular para componentes consolidados
-      // CORRECCIÓN: Crear set de referencias principales normalizadas para excluir
-      const mainRefNormsForEffective = new Set([...mainReferences.keys()].map(r => normalizeRefId(r)));
-      
       for (const [normId, entry] of consolidatedByNorm.entries()) {
-        // SKIP: Si ya fue pre-calculado como referencia principal, no sobrescribir
-        if (mainRefNormsForEffective.has(normId)) {
-          console.log(`   ⏭️ Saltando precálculo de ${entry.display} (ya calculado como ref principal)`);
-          continue;
-        }
         
         const { quantity, display } = entry;
         // Búsqueda exhaustiva de inventario
@@ -1000,24 +992,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
       for (const [normId, entry] of consolidatedByNorm.entries()) {
         
         const { quantity, display } = entry;
-        const displayUpper = String(display).trim().toUpperCase();
-        const componentVariants = generateRefVariants(display);
         
-        // Búsqueda ESTRICTA usando variantes de la referencia
+        // Matching simplificado: solo por normalización directa
         const machinesProcesses = machinesData.filter((mp: any) => {
-          const mpRef = String(mp.ref || '').trim();
-          const mpRefNorm = normalizeRefId(mpRef);
-          const mpRefUpper = mpRef.toUpperCase();
-          
-          if (mpRefNorm === normId || mpRefUpper === displayUpper || mpRef === display) {
-            return true;
-          }
-          
-          if (componentVariants.includes(mpRefNorm) || componentVariants.includes(mpRefUpper)) {
-            return true;
-          }
-          
-          return false;
+          const mpRefNorm = normalizeRefId(mp.ref);
+          return mpRefNorm === normId;
         });
         
         // Log para refs críticas
@@ -1333,14 +1312,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             // Buscar qué componentes de consolidatedByNorm tienen entries para este proceso
             for (const [normId, entry] of consolidatedByNorm.entries()) {
               const { quantity, display } = entry;
-              const displayUpper = String(display).trim().toUpperCase();
               
-              // Buscar en machinesData si este componente tiene entries para este proceso
+              // Matching simplificado: solo por normalización directa
               const componentMps = matchingMps.filter((mp: any) => {
-                const mpRef = String(mp.ref || '').trim();
-                const mpRefNorm = normalizeRefId(mpRef);
-                const mpRefUpper = mpRef.toUpperCase();
-                return mpRefNorm === normId || mpRefUpper === displayUpper || mpRef === display;
+                const mpRefNorm = normalizeRefId(mp.ref);
+                return mpRefNorm === normId;
               });
               
               if (componentMps.length > 0) {
