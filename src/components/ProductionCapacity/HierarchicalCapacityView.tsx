@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChevronDown, ChevronRight, Factory, Settings, AlertTriangle, Link2, Clock, Calendar, Download, Save, Flame } from "lucide-react";
 import { OvertimeShift } from "./OvertimeConfiguration";
 import { useUserAuth } from "@/contexts/UserAuthContext";
@@ -49,9 +50,16 @@ interface BottleneckInfo {
   totalAvailableMinutes: number;
 }
 
+interface LeadTimeEntry {
+  referencia: string;
+  leadTimeMinutes: number;
+  leadTimeHours: number;
+}
+
 interface HierarchicalCapacityViewProps {
   processGroups: ProcessGroup[];
   bottleneck?: BottleneckInfo | null;
+  leadTimes?: LeadTimeEntry[];
   onBack: () => void;
   onStartOver: () => void;
   onNext?: () => void;
@@ -63,6 +71,7 @@ interface HierarchicalCapacityViewProps {
 const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
   processGroups,
   bottleneck,
+  leadTimes,
   onBack,
   onStartOver,
   onNext,
@@ -200,6 +209,40 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
         <Card className="border-2 border-muted">
           <CardContent className="p-6 text-center text-muted-foreground">
             Sin procesos activos en esta corrida
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Lead Time por Referencia */}
+      {leadTimes && leadTimes.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Clock className="h-5 w-5" />
+              ⏳ Lead Time por Referencia
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border overflow-auto max-h-80">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Referencia</TableHead>
+                    <TableHead className="text-right">Lead Time (horas)</TableHead>
+                    <TableHead className="text-right">Lead Time (minutos)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {leadTimes.map((lt) => (
+                    <TableRow key={lt.referencia}>
+                      <TableCell className="font-medium">{lt.referencia}</TableCell>
+                      <TableCell className="text-right">{lt.leadTimeHours.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">{lt.leadTimeMinutes.toFixed(1)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
