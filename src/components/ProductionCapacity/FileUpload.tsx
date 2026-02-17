@@ -315,11 +315,23 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
       
       setComboData(parsed);
       
-      // 2. Crear conjunto de referencias del CSV
+      // 2. RESET GLOBAL: Poner condicion_inicial = 0 en TODOS los CMB
+      const { error: resetError } = await supabase
+        .from('machines_processes')
+        .update({ condicion_inicial: 0 })
+        .like('ref', '%CMB%');
+      
+      if (resetError) {
+        throw new Error(`Error al resetear condiciones iniciales: ${resetError.message}`);
+      }
+      
+      console.log('✅ Reset global de condiciones iniciales completado');
+      
+      // 3. Crear conjunto de referencias del CSV
       const csvRefs = new Set(parsed.map(p => p.ref.toUpperCase()));
       const csvRefsArray = Array.from(csvRefs);
       
-      // 3. Verificar cuáles existen en machines_processes (id_process = 20)
+      // 4. Verificar cuáles existen en machines_processes (id_process = 20)
       const { data: existingPunzonadoCombos, error: fetchError } = await supabase
         .from('machines_processes')
         .select('ref')
@@ -333,20 +345,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
       const foundInMP = new Set((existingPunzonadoCombos || []).map(c => c.ref.toUpperCase()));
       const missingInMP = csvRefsArray.filter(ref => !foundInMP.has(ref));
       
-      // 4. Verificar cuáles tienen definición en la tabla combo
-      const { data: comboDefs, error: comboError } = await supabase
-        .from('combo')
-        .select('combo')
-        .in('combo', csvRefsArray);
-      
-      if (comboError) {
-        console.warn('Error al verificar definiciones de combos:', comboError);
-      }
-      
-      const foundInComboTable = new Set((comboDefs || []).map(c => c.combo.toUpperCase()));
-      const missingInComboTable = csvRefsArray.filter(ref => !foundInComboTable.has(ref));
-      
-      // 5. Actualizar combos que SÍ existen en machines_processes con id_process = 20
+      // 5. Aplicar valores del CSV (bulk)
       let updatedCount = 0;
       for (const combo of parsed) {
         if (foundInMP.has(combo.ref.toUpperCase())) {
@@ -364,73 +363,16 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onDataProcessed, onNext,
         }
       }
       
-      // 6. Obtener TODOS los combos en Punzonado para resetear los no incluidos
-      const { data: allCombos, error: allCombosError } = await supabase
-        .from('machines_processes')
-        .select('ref')
-        .eq('id_process', 20);
-      
-      if (allCombosError) {
-        console.error('Error al obtener todos los combos:', allCombosError);
-      }
-      
-      const combosToReset = (allCombos || [])
-        .filter(c => !csvRefs.has(c.ref.toUpperCase()))
-        .map(c => c.ref);
-      
-      if (combosToReset.length > 0) {
-        for (const ref of combosToReset) {
-          const { error: resetError } = await supabase
-            .from('machines_processes')
-            .update({ condicion_inicial: 0 })
-            .eq('ref', ref)
-            .eq('id_process', 20);
-          
-          if (resetError) {
-            console.error(`Error reseteando ${ref}:`, resetError);
-          }
-        }
-      }
-      
-      // 7. Mostrar feedback detallado
-      const totalInCSV = parsed.length;
-      const appliedCount = updatedCount;
-      const ignoredCount = missingInMP.length;
-      const resetCount = combosToReset.length;
-      
+      // 6. Feedback
       toast.success("Archivo de combos procesado", {
-        description: `Total en CSV: ${totalInCSV} | Aplicados en Punzonado: ${appliedCount} | Ignorados (no existen en Punzonado): ${ignoredCount} | Reseteados a 0: ${resetCount}`,
+        description: `Reset global CMB → 0 ✓ | CSV: ${parsed.length} | Aplicados: ${updatedCount} | No encontrados: ${missingInMP.length}`,
       });
       
-      // Log detallado de combos ignorados
       if (missingInMP.length > 0) {
-        console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        console.warn(`⚠️ [COMBOS CSV] ${missingInMP.length} combos del CSV NO se encontraron en machines_processes (id_process=20):`);
-        console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        missingInMP.forEach((ref, idx) => {
-          console.warn(`   ${idx + 1}. ${ref} (del CSV: "${parsed.find(p => p.ref.toUpperCase() === ref)?.ref}")`);
-        });
-        console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+        console.warn(`⚠️ ${missingInMP.length} combos del CSV NO encontrados en Punzonado:`, missingInMP);
       }
       
-      if (missingInComboTable.length > 0) {
-        console.warn(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        console.warn(`⚠️ [COMBOS CSV] ${missingInComboTable.length} combos del CSV NO tienen definición en tabla 'combo':`);
-        console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-        missingInComboTable.forEach((ref, idx) => {
-          console.warn(`   ${idx + 1}. ${ref}`);
-        });
-        console.warn(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
-      }
-      
-      // Log de combos encontrados y aplicados
-      console.log(`\n✅ [COMBOS CSV] ${appliedCount} combos aplicados correctamente:`);
-      parsed.filter(p => foundInMP.has(p.ref.toUpperCase())).slice(0, 10).forEach((combo, idx) => {
-        console.log(`   ${idx + 1}. ${combo.ref} → condicion_inicial: ${combo.condicion_inicial}`);
-      });
-      if (appliedCount > 10) {
-        console.log(`   ... y ${appliedCount - 10} más\n`);
-      }
+      console.log(`✅ ${updatedCount} combos aplicados correctamente`)
       
     } catch (error) {
       toast.error("Error al procesar archivo de combos", {
