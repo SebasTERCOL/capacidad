@@ -2562,7 +2562,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           machineCapacities.sort((a, b) => a.currentLoad - b.currentLoad);
           
           machineCapacities.forEach((machineCapacity, index) => {
-            if (tiempoRestante <= 0) return;
+            if (tiempoRestante <= 0.0001) return;
             
             const machineGroup = processGroup.machines.get(machineCapacity.machineName);
             if (!machineGroup) return;
@@ -2573,7 +2573,7 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
               ? tiempoRestante // Última máquina toma todo lo restante
               : Math.min(tiempoRestante, capacidadDisponible * 0.8); // Otras máquinas toman hasta 80% de su disponible
             
-            if (tiempoAsignar > 0) {
+            if (tiempoAsignar > 0.0001) {
               const proporcion = tiempoAsignar / refData.tiempoTotal;
               const cantidadAsignar = Math.round(cantidadRestante * proporcion);
               

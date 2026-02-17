@@ -380,7 +380,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
                                         SAM: <span className="font-medium text-foreground">{ref.sam.toFixed(3)}</span>
                                       </span>
                                       <span className="text-muted-foreground">
-                                        Tiempo: <span className="font-medium text-foreground">{formatTime(ref.tiempoTotal)}</span>
+                                        Tiempo: <span className="font-medium text-foreground">{ref.tiempoTotal < 1 ? `${ref.tiempoTotal.toFixed(3)}m` : formatTime(ref.tiempoTotal)}</span>
                                       </span>
                                       <Badge className={getCapacityColorClass(ref.ocupacionPorcentaje) + " text-xs"}>
                                         {ref.ocupacionPorcentaje.toFixed(1)}%
