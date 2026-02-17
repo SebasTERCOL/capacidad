@@ -2829,26 +2829,77 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     };
     const bottleneckProcess = calculateBottleneck(processGroups);
 
-    // Calcular Lead Time acumulado por referencia
-    const calculateLeadTimes = (proj: ProjectionInfo[]) => {
-      const leadMap = new Map<string, number>();
+    // Calcular Lead Time agrupado por referencia padre (PT)
+    const calculatePTLeadTimes = (proj: ProjectionInfo[]) => {
+      // Build component → parent PT mapping from BOM + originalData
+      const csvRoots = new Set(originalData.map(d => d.referencia.trim().toUpperCase()));
+      const componentToParent = new Map<string, Set<string>>();
+
+      // Map each component to its parent PT(s) using allBomData
+      for (const root of csvRoots) {
+        const rootNorm = normalizeRefId(root);
+        // Recursively find all components of this PT
+        const components = getRecursiveBOMOptimized(root, 1, 0, new Set(), allBomData);
+        for (const [compId] of components) {
+          const compNorm = normalizeRefId(compId);
+          if (!componentToParent.has(compNorm)) {
+            componentToParent.set(compNorm, new Set());
+          }
+          componentToParent.get(compNorm)!.add(root);
+        }
+        // The root itself maps to itself
+        if (!componentToParent.has(rootNorm)) {
+          componentToParent.set(rootNorm, new Set());
+        }
+        componentToParent.get(rootNorm)!.add(root);
+      }
+
+      // Aggregate times per PT, tracking component breakdown
+      const ptMap = new Map<string, { total: number; components: Map<string, number> }>();
+
       proj.forEach(item => {
-        const isVirtualMachine =
-          item.maquina === 'Capacidad insuficiente' ||
-          item.maquina === 'Sin máquina compatible';
-        if (isVirtualMachine) return;
-        const current = leadMap.get(item.referencia) || 0;
-        leadMap.set(item.referencia, current + item.tiempoTotal);
+        const isVirtual = item.maquina === 'Capacidad insuficiente' || item.maquina === 'Sin máquina compatible';
+        if (isVirtual) return;
+
+        const refNorm = normalizeRefId(item.referencia);
+        const parents = componentToParent.get(refNorm);
+
+        if (parents && parents.size > 0) {
+          // Distribute time to each parent PT
+          for (const parent of parents) {
+            if (!ptMap.has(parent)) {
+              ptMap.set(parent, { total: 0, components: new Map() });
+            }
+            const entry = ptMap.get(parent)!;
+            entry.total += item.tiempoTotal;
+            const compCurrent = entry.components.get(item.referencia) || 0;
+            entry.components.set(item.referencia, compCurrent + item.tiempoTotal);
+          }
+        } else {
+          // Orphan component or root itself without BOM
+          const key = item.referencia.trim().toUpperCase();
+          if (!ptMap.has(key)) {
+            ptMap.set(key, { total: 0, components: new Map() });
+          }
+          const entry = ptMap.get(key)!;
+          entry.total += item.tiempoTotal;
+          const compCurrent = entry.components.get(item.referencia) || 0;
+          entry.components.set(item.referencia, compCurrent + item.tiempoTotal);
+        }
       });
-      return Array.from(leadMap.entries())
-        .map(([referencia, totalMin]) => ({
-          referencia,
-          leadTimeMinutes: totalMin,
-          leadTimeHours: totalMin / 60
+
+      return Array.from(ptMap.entries())
+        .map(([pt, data]) => ({
+          pt,
+          leadTimeMinutes: data.total,
+          leadTimeHours: data.total / 60,
+          components: Array.from(data.components.entries())
+            .map(([ref, min]) => ({ referencia: ref, minutes: min, hours: min / 60 }))
+            .sort((a, b) => b.minutes - a.minutes)
         }))
         .sort((a, b) => b.leadTimeMinutes - a.leadTimeMinutes);
     };
-    const leadTimes = calculateLeadTimes(projection);
+    const leadTimes = calculatePTLeadTimes(projection);
     
     // Identificar TODAS las máquinas operacionales (incluyendo las que tienen y no tienen déficit)
     const identifiedDeficits: DeficitInfo[] = [];

@@ -50,10 +50,17 @@ interface BottleneckInfo {
   totalAvailableMinutes: number;
 }
 
-interface LeadTimeEntry {
+interface LeadTimeComponent {
   referencia: string;
+  minutes: number;
+  hours: number;
+}
+
+interface LeadTimeEntry {
+  pt: string;
   leadTimeMinutes: number;
   leadTimeHours: number;
+  components: LeadTimeComponent[];
 }
 
 interface HierarchicalCapacityViewProps {
@@ -82,7 +89,17 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
 }) => {
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set());
   const [expandedMachines, setExpandedMachines] = useState<Set<string>>(new Set());
+  const [expandedPTs, setExpandedPTs] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
+
+  const togglePT = (pt: string) => {
+    setExpandedPTs(prev => {
+      const next = new Set(prev);
+      if (next.has(pt)) next.delete(pt);
+      else next.add(pt);
+      return next;
+    });
+  };
   const { currentUser, isAdministrativo } = useUserAuth();
 
   const handleSave = async () => {
@@ -213,32 +230,50 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
         </Card>
       )}
 
-      {/* Lead Time por Referencia */}
+      {/* Lead Time por Referencia Padre (PT) */}
       {leadTimes && leadTimes.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Clock className="h-5 w-5" />
-              ⏳ Lead Time por Referencia
+              ⏳ Lead Time por Referencia (PT)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border overflow-auto max-h-80">
+            <div className="rounded-md border overflow-auto max-h-96">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Referencia</TableHead>
+                    <TableHead className="w-8"></TableHead>
+                    <TableHead>PT</TableHead>
                     <TableHead className="text-right">Lead Time (horas)</TableHead>
                     <TableHead className="text-right">Lead Time (minutos)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {leadTimes.map((lt) => (
-                    <TableRow key={lt.referencia}>
-                      <TableCell className="font-medium">{lt.referencia}</TableCell>
-                      <TableCell className="text-right">{lt.leadTimeHours.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">{lt.leadTimeMinutes.toFixed(1)}</TableCell>
-                    </TableRow>
+                    <React.Fragment key={lt.pt}>
+                      <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => togglePT(lt.pt)}>
+                        <TableCell className="w-8 p-2">
+                          {expandedPTs.has(lt.pt) ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </TableCell>
+                        <TableCell className="font-bold">{lt.pt}</TableCell>
+                        <TableCell className="text-right font-semibold">{lt.leadTimeHours.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-semibold">{lt.leadTimeMinutes.toFixed(1)}</TableCell>
+                      </TableRow>
+                      {expandedPTs.has(lt.pt) && lt.components.map((comp) => (
+                        <TableRow key={`${lt.pt}-${comp.referencia}`} className="bg-muted/30">
+                          <TableCell></TableCell>
+                          <TableCell className="pl-8 text-sm text-muted-foreground">↳ {comp.referencia}</TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">{comp.hours.toFixed(2)}</TableCell>
+                          <TableCell className="text-right text-sm text-muted-foreground">{comp.minutes.toFixed(1)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
                   ))}
                 </TableBody>
               </Table>
