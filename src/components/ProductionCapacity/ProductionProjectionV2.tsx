@@ -2833,6 +2833,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     const calculatePTLeadTimes = () => {
       const csvRoots = new Set(originalData.map(d => d.referencia.trim().toUpperCase()));
       
+      console.log("🔬 LEAD TIME DIAG: allMachinesProcesses.length =", allMachinesProcesses.length);
+      console.log("🔬 LEAD TIME DIAG: allBomData.length =", allBomData.length);
+      console.log("🔬 LEAD TIME DIAG: csvRoots =", Array.from(csvRoots));
+
       // Index machines_processes by normalized ref for fast lookup
       const mpByRef = new Map<string, any[]>();
       for (const mp of allMachinesProcesses) {
@@ -2842,6 +2846,8 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         }
         mpByRef.get(refNorm)!.push(mp);
       }
+      
+      console.log("🔬 LEAD TIME DIAG: mpByRef unique refs =", mpByRef.size);
 
       const ptMap = new Map<string, { total: number; components: Map<string, number> }>();
 
@@ -2860,17 +2866,27 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
           allComponentsWithRoot.set(rootUpper, ptQty);
         }
 
+        console.log(`🔬 LEAD TIME DIAG: PT=${rootUpper}, qty=${ptQty}, BOM components=${allComponentsWithRoot.size}`);
+
         if (!ptMap.has(rootUpper)) {
           ptMap.set(rootUpper, { total: 0, components: new Map() });
         }
         const entry = ptMap.get(rootUpper)!;
 
         // For each component (including root), find all processes and calculate time
+        let matchedComponents = 0;
+        let unmatchedComponents: string[] = [];
+        
         for (const [compId, compQty] of allComponentsWithRoot.entries()) {
           const compNorm = normalizeRefId(compId);
           const machineProcesses = mpByRef.get(compNorm) || [];
           
-          if (machineProcesses.length === 0) continue;
+          if (machineProcesses.length === 0) {
+            unmatchedComponents.push(compId);
+            continue;
+          }
+          
+          matchedComponents++;
 
           // Group by process to pick best machine per process (lowest SAM)
           const processBestSam = new Map<number, { sam: number; samUnit: string; processName: string }>();
@@ -2898,9 +2914,13 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
 
           // Sum time across all processes for this component
           let compTotal = 0;
-          for (const [, info] of processBestSam) {
+          for (const [procId, info] of processBestSam) {
             const tiempo = compQty * info.sam;
             compTotal += tiempo;
+            // Log first PT's component details
+            if (rootUpper === Array.from(csvRoots)[0]) {
+              console.log(`   🔬 ${compId} → Proceso ${info.processName}(${procId}): ${compQty} × ${info.sam.toFixed(4)} = ${tiempo.toFixed(2)} min`);
+            }
           }
 
           if (compTotal > 0) {
@@ -2908,6 +2928,11 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             const current = entry.components.get(compId) || 0;
             entry.components.set(compId, current + compTotal);
           }
+        }
+        
+        console.log(`🔬 LEAD TIME DIAG: PT=${rootUpper}: matched=${matchedComponents}, unmatched=${unmatchedComponents.length}, total=${entry.total.toFixed(2)} min = ${(entry.total/60).toFixed(2)} hrs`);
+        if (unmatchedComponents.length > 0 && unmatchedComponents.length <= 20) {
+          console.log(`   ⚠️ Unmatched: ${unmatchedComponents.join(', ')}`);
         }
       }
 
