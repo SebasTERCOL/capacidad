@@ -2829,79 +2829,101 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     };
     const bottleneckProcess = calculateBottleneck(processGroups);
 
-    // Calcular Lead Time agrupado por referencia padre (PT)
-    const calculatePTLeadTimes = (proj: ProjectionInfo[]) => {
-      // Build component → parent PT mapping from BOM + originalData
+    // Calcular Lead Time técnico completo por PT usando adjustedData + machines_processes
+    const calculatePTLeadTimes = () => {
       const csvRoots = new Set(originalData.map(d => d.referencia.trim().toUpperCase()));
-      const componentToParent = new Map<string, Set<string>>();
-
-      // Map each component to its parent PT(s) using allBomData
-      for (const root of csvRoots) {
-        const rootNorm = normalizeRefId(root);
-        // Recursively find all components of this PT
-        const components = getRecursiveBOMOptimized(root, 1, 0, new Set(), allBomData);
-        for (const [compId] of components) {
-          const compNorm = normalizeRefId(compId);
-          if (!componentToParent.has(compNorm)) {
-            componentToParent.set(compNorm, new Set());
-          }
-          componentToParent.get(compNorm)!.add(root);
+      
+      // Index machines_processes by normalized ref for fast lookup
+      const mpByRef = new Map<string, any[]>();
+      for (const mp of allMachinesProcesses) {
+        const refNorm = normalizeRefId(mp.ref);
+        if (!mpByRef.has(refNorm)) {
+          mpByRef.set(refNorm, []);
         }
-        // The root itself maps to itself
-        if (!componentToParent.has(rootNorm)) {
-          componentToParent.set(rootNorm, new Set());
-        }
-        componentToParent.get(rootNorm)!.add(root);
+        mpByRef.get(refNorm)!.push(mp);
       }
 
-      // Aggregate times per PT, tracking component breakdown
       const ptMap = new Map<string, { total: number; components: Map<string, number> }>();
 
-      proj.forEach(item => {
-        const isVirtual = item.maquina === 'Capacidad insuficiente' || item.maquina === 'Sin máquina compatible';
-        if (isVirtual) return;
+      for (const root of csvRoots) {
+        const rootUpper = root.trim().toUpperCase();
+        // Get quantity from originalData
+        const ptItem = originalData.find(d => d.referencia.trim().toUpperCase() === rootUpper);
+        const ptQty = ptItem ? ptItem.cantidad : 1;
 
-        const refNorm = normalizeRefId(item.referencia);
-        const parents = componentToParent.get(refNorm);
-
-        if (parents && parents.size > 0) {
-          // Distribute time to each parent PT
-          for (const parent of parents) {
-            if (!ptMap.has(parent)) {
-              ptMap.set(parent, { total: 0, components: new Map() });
-            }
-            const entry = ptMap.get(parent)!;
-            entry.total += item.tiempoTotal;
-            const compCurrent = entry.components.get(item.referencia) || 0;
-            entry.components.set(item.referencia, compCurrent + item.tiempoTotal);
-          }
-        } else {
-          // Only include if this reference is itself a CSV root PT
-          const key = item.referencia.trim().toUpperCase();
-          if (!csvRoots.has(key)) return;
-          if (!ptMap.has(key)) {
-            ptMap.set(key, { total: 0, components: new Map() });
-          }
-          const entry = ptMap.get(key)!;
-          entry.total += item.tiempoTotal;
-          const compCurrent = entry.components.get(item.referencia) || 0;
-          entry.components.set(item.referencia, compCurrent + item.tiempoTotal);
+        // Get all BOM components recursively (component → cumulative quantity)
+        const allComponents = getRecursiveBOMOptimized(rootUpper, ptQty, 0, new Set(), allBomData);
+        
+        // Also include the PT root itself
+        const allComponentsWithRoot = new Map(allComponents);
+        if (!allComponentsWithRoot.has(rootUpper)) {
+          allComponentsWithRoot.set(rootUpper, ptQty);
         }
-      });
+
+        if (!ptMap.has(rootUpper)) {
+          ptMap.set(rootUpper, { total: 0, components: new Map() });
+        }
+        const entry = ptMap.get(rootUpper)!;
+
+        // For each component (including root), find all processes and calculate time
+        for (const [compId, compQty] of allComponentsWithRoot.entries()) {
+          const compNorm = normalizeRefId(compId);
+          const machineProcesses = mpByRef.get(compNorm) || [];
+          
+          if (machineProcesses.length === 0) continue;
+
+          // Group by process to pick best machine per process (lowest SAM)
+          const processBestSam = new Map<number, { sam: number; samUnit: string; processName: string }>();
+          for (const mp of machineProcesses) {
+            const processId = mp.id_process;
+            const samUnit = mp.sam_unit || 'min_per_unit';
+            let samMinPerUnit: number;
+            if (samUnit === 'units_per_min') {
+              samMinPerUnit = mp.sam > 0 ? 1 / mp.sam : 0;
+            } else if (samUnit === 'units_per_hour') {
+              samMinPerUnit = mp.sam > 0 ? 60 / mp.sam : 0;
+            } else {
+              samMinPerUnit = mp.sam;
+            }
+
+            const existing = processBestSam.get(processId);
+            if (!existing || samMinPerUnit < existing.sam) {
+              processBestSam.set(processId, {
+                sam: samMinPerUnit,
+                samUnit: 'min_per_unit',
+                processName: mp.processes?.name || `Proceso ${processId}`
+              });
+            }
+          }
+
+          // Sum time across all processes for this component
+          let compTotal = 0;
+          for (const [, info] of processBestSam) {
+            const tiempo = compQty * info.sam;
+            compTotal += tiempo;
+          }
+
+          if (compTotal > 0) {
+            entry.total += compTotal;
+            const current = entry.components.get(compId) || 0;
+            entry.components.set(compId, current + compTotal);
+          }
+        }
+      }
 
       return Array.from(ptMap.entries())
         .filter(([pt]) => csvRoots.has(pt))
-        .map(([pt, data]) => ({
+        .map(([pt, d]) => ({
           pt,
-          leadTimeMinutes: data.total,
-          leadTimeHours: data.total / 60,
-          components: Array.from(data.components.entries())
+          leadTimeMinutes: d.total,
+          leadTimeHours: d.total / 60,
+          components: Array.from(d.components.entries())
             .map(([ref, min]) => ({ referencia: ref, minutes: min, hours: min / 60 }))
             .sort((a, b) => b.minutes - a.minutes)
         }))
         .sort((a, b) => b.leadTimeMinutes - a.leadTimeMinutes);
     };
-    const leadTimes = calculatePTLeadTimes(projection);
+    const leadTimes = calculatePTLeadTimes();
     
     // Identificar TODAS las máquinas operacionales (incluyendo las que tienen y no tienen déficit)
     const identifiedDeficits: DeficitInfo[] = [];
