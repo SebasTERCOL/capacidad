@@ -2829,111 +2829,110 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
     };
     const bottleneckProcess = calculateBottleneck(processGroups);
 
-    // Calcular Lead Time técnico completo por PT usando adjustedData + machines_processes
+    // Calcular Lead Time técnico completo por PT - INDEPENDIENTE de inventario/projection
+    // Usa: originalData (PT roots), allBomData (BOM sin inventario), allMachinesProcesses
     const calculatePTLeadTimes = () => {
       const csvRoots = new Set(originalData.map(d => d.referencia.trim().toUpperCase()));
       
-      console.log("🔬 LEAD TIME DIAG: allMachinesProcesses.length =", allMachinesProcesses.length);
-      console.log("🔬 LEAD TIME DIAG: allBomData.length =", allBomData.length);
-      console.log("🔬 LEAD TIME DIAG: csvRoots =", Array.from(csvRoots));
+      if (allBomData.length === 0 || allMachinesProcesses.length === 0) {
+        console.warn("🔬 LEAD TIME: Datos no disponibles aún", { bom: allBomData.length, mp: allMachinesProcesses.length });
+        return [];
+      }
 
-      // Index machines_processes by normalized ref for fast lookup
+      console.log("🔬 LEAD TIME CALC: BOM records =", allBomData.length, "| MP records =", allMachinesProcesses.length, "| PTs =", csvRoots.size);
+
+      // Index machines_processes by normalized ref
       const mpByRef = new Map<string, any[]>();
       for (const mp of allMachinesProcesses) {
         const refNorm = normalizeRefId(mp.ref);
-        if (!mpByRef.has(refNorm)) {
-          mpByRef.set(refNorm, []);
-        }
+        if (!mpByRef.has(refNorm)) mpByRef.set(refNorm, []);
         mpByRef.get(refNorm)!.push(mp);
       }
-      
-      console.log("🔬 LEAD TIME DIAG: mpByRef unique refs =", mpByRef.size);
 
       const ptMap = new Map<string, { total: number; components: Map<string, number> }>();
 
       for (const root of csvRoots) {
         const rootUpper = root.trim().toUpperCase();
-        // Get quantity from originalData
+        // Cantidad ORIGINAL del archivo PT (sin ajuste de inventario)
         const ptItem = originalData.find(d => d.referencia.trim().toUpperCase() === rootUpper);
         const ptQty = ptItem ? ptItem.cantidad : 1;
 
-        // Get all BOM components recursively (component → cumulative quantity)
-        const allComponents = getRecursiveBOMOptimized(rootUpper, ptQty, 0, new Set(), allBomData);
-        
-        // Also include the PT root itself
-        const allComponentsWithRoot = new Map(allComponents);
-        if (!allComponentsWithRoot.has(rootUpper)) {
-          allComponentsWithRoot.set(rootUpper, ptQty);
+        // BOM explosion independiente - NO usar bomCache compartido
+        // Crear explosión limpia sin cache para evitar contaminación
+        const explodeBOM = (
+          productId: string, qty: number, level: number, visited: Set<string>
+        ): Map<string, number> => {
+          if (level > 10 || visited.has(productId)) return new Map();
+          visited.add(productId);
+          
+          const result = new Map<string, number>();
+          const pidNorm = normalizeRefId(productId);
+          const pidUpper = productId.trim().toUpperCase();
+          
+          const bomItems = allBomData.filter((item: any) => {
+            const itemPid = String(item.product_id || '').trim();
+            return normalizeRefId(itemPid) === pidNorm || itemPid.toUpperCase() === pidUpper;
+          });
+          
+          for (const bomItem of bomItems) {
+            const compId = String(bomItem.component_id).trim().toUpperCase();
+            const compQty = qty * Number(bomItem.amount);
+            result.set(compId, (result.get(compId) || 0) + compQty);
+            
+            // Recurse
+            const subs = explodeBOM(compId, compQty, level + 1, new Set(visited));
+            for (const [subId, subQty] of subs) {
+              result.set(subId, (result.get(subId) || 0) + subQty);
+            }
+          }
+          return result;
+        };
+
+        const allComponents = explodeBOM(rootUpper, ptQty, 0, new Set());
+        // Include root PT itself
+        if (!allComponents.has(rootUpper)) {
+          allComponents.set(rootUpper, ptQty);
         }
 
-        console.log(`🔬 LEAD TIME DIAG: PT=${rootUpper}, qty=${ptQty}, BOM components=${allComponentsWithRoot.size}`);
+        const entry = { total: 0, components: new Map<string, number>() };
+        let matchedCount = 0;
 
-        if (!ptMap.has(rootUpper)) {
-          ptMap.set(rootUpper, { total: 0, components: new Map() });
-        }
-        const entry = ptMap.get(rootUpper)!;
-
-        // For each component (including root), find all processes and calculate time
-        let matchedComponents = 0;
-        let unmatchedComponents: string[] = [];
-        
-        for (const [compId, compQty] of allComponentsWithRoot.entries()) {
+        for (const [compId, compQty] of allComponents.entries()) {
           const compNorm = normalizeRefId(compId);
-          const machineProcesses = mpByRef.get(compNorm) || [];
+          const processes = mpByRef.get(compNorm) || [];
+          if (processes.length === 0) continue;
           
-          if (machineProcesses.length === 0) {
-            unmatchedComponents.push(compId);
-            continue;
-          }
-          
-          matchedComponents++;
+          matchedCount++;
 
-          // Group by process to pick best machine per process (lowest SAM)
-          const processBestSam = new Map<number, { sam: number; samUnit: string; processName: string }>();
-          for (const mp of machineProcesses) {
-            const processId = mp.id_process;
-            const samUnit = mp.sam_unit || 'min_per_unit';
-            let samMinPerUnit: number;
-            if (samUnit === 'units_per_min') {
-              samMinPerUnit = mp.sam > 0 ? 1 / mp.sam : 0;
-            } else if (samUnit === 'units_per_hour') {
-              samMinPerUnit = mp.sam > 0 ? 60 / mp.sam : 0;
-            } else {
-              samMinPerUnit = mp.sam;
-            }
+          // Best machine per process (lowest SAM in min/unit)
+          const bestPerProcess = new Map<number, { sam: number; name: string }>();
+          for (const mp of processes) {
+            const pid = mp.id_process;
+            let samMpu: number;
+            const unit = mp.sam_unit || 'min_per_unit';
+            if (unit === 'units_per_min') samMpu = mp.sam > 0 ? 1 / mp.sam : 0;
+            else if (unit === 'units_per_hour') samMpu = mp.sam > 0 ? 60 / mp.sam : 0;
+            else samMpu = mp.sam;
 
-            const existing = processBestSam.get(processId);
-            if (!existing || samMinPerUnit < existing.sam) {
-              processBestSam.set(processId, {
-                sam: samMinPerUnit,
-                samUnit: 'min_per_unit',
-                processName: mp.processes?.name || `Proceso ${processId}`
-              });
+            const existing = bestPerProcess.get(pid);
+            if (!existing || samMpu < existing.sam) {
+              bestPerProcess.set(pid, { sam: samMpu, name: mp.processes?.name || `P${pid}` });
             }
           }
 
-          // Sum time across all processes for this component
           let compTotal = 0;
-          for (const [procId, info] of processBestSam) {
-            const tiempo = compQty * info.sam;
-            compTotal += tiempo;
-            // Log first PT's component details
-            if (rootUpper === Array.from(csvRoots)[0]) {
-              console.log(`   🔬 ${compId} → Proceso ${info.processName}(${procId}): ${compQty} × ${info.sam.toFixed(4)} = ${tiempo.toFixed(2)} min`);
-            }
+          for (const [, info] of bestPerProcess) {
+            compTotal += compQty * info.sam;
           }
 
           if (compTotal > 0) {
             entry.total += compTotal;
-            const current = entry.components.get(compId) || 0;
-            entry.components.set(compId, current + compTotal);
+            entry.components.set(compId, (entry.components.get(compId) || 0) + compTotal);
           }
         }
-        
-        console.log(`🔬 LEAD TIME DIAG: PT=${rootUpper}: matched=${matchedComponents}, unmatched=${unmatchedComponents.length}, total=${entry.total.toFixed(2)} min = ${(entry.total/60).toFixed(2)} hrs`);
-        if (unmatchedComponents.length > 0 && unmatchedComponents.length <= 20) {
-          console.log(`   ⚠️ Unmatched: ${unmatchedComponents.join(', ')}`);
-        }
+
+        console.log(`🔬 LT: ${rootUpper} → ${allComponents.size} comps, ${matchedCount} con procesos, total=${(entry.total/60).toFixed(2)}h`);
+        ptMap.set(rootUpper, entry);
       }
 
       return Array.from(ptMap.entries())
