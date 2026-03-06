@@ -105,11 +105,17 @@ const CapacityHistory = () => {
 
       <div className="container mx-auto px-4 py-6 max-w-6xl">
         {loading ? (
-          <p className="text-center text-muted-foreground py-12">Cargando historial...</p>
+          <div className="space-y-3 py-6">
+            {[1,2,3].map(i => (
+              <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
+            ))}
+          </div>
         ) : snapshots.length === 0 ? (
           <Card>
-            <CardContent className="text-center py-12">
-              <p className="text-muted-foreground">No hay escenarios guardados aún.</p>
+            <CardContent className="text-center py-16 space-y-4">
+              <History className="h-12 w-12 mx-auto text-muted-foreground/40" />
+              <p className="text-muted-foreground font-medium">No hay escenarios guardados aún.</p>
+              <p className="text-xs text-muted-foreground">Los escenarios aparecerán aquí cuando guardes una corrida de capacidad.</p>
             </CardContent>
           </Card>
         ) : (
@@ -129,7 +135,7 @@ const CapacityHistory = () => {
                 </TableHeader>
                 <TableBody>
                   {snapshots.map(s => (
-                    <TableRow key={s.id}>
+                    <TableRow key={s.id} className="hover:bg-muted/50 transition-colors">
                       <TableCell className="whitespace-nowrap">
                         {new Date(s.created_at).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
                       </TableCell>
