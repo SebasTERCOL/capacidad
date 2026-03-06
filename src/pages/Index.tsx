@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Factory, ArrowRight, ArrowLeft, History } from "lucide-react";
+import { Factory, ArrowLeft, History } from "lucide-react";
 import { FileUpload, ProductionRequest, FileUploadData } from "@/components/ProductionCapacity/FileUpload";
 import { InventoryAdjustment, AdjustedProductionData } from "@/components/ProductionCapacity/InventoryAdjustment";
 import { ComboConfiguration, ComboSuggestion } from "@/components/ProductionCapacity/ComboConfiguration";
@@ -13,8 +11,19 @@ import { OvertimeConfiguration, DeficitInfo, OvertimeConfig } from "@/components
 import ScheduleResults from "@/components/ProductionCapacity/ScheduleResults";
 import { useUserAuth } from "@/contexts/UserAuthContext";
 import { UserBadge } from "@/components/ProductionCapacity/LoginModal";
+import StepProgressBar from "@/components/ProductionCapacity/StepProgressBar";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+const steps = [
+  { id: 1, title: 'Carga de Archivo', description: 'Subir CSV con referencias' },
+  { id: 2, title: 'Ajuste de Inventario', description: 'Restar stock disponible' },
+  { id: 3, title: 'Configurar Combos', description: 'Optimizar punzonado' },
+  { id: 4, title: 'Configurar Operarios', description: 'Definir personal disponible' },
+  { id: 5, title: 'Capacidad por Proceso', description: 'Análisis detallado' },
+  { id: 6, title: 'Optimizar con Extras', description: 'Configurar horas extras' },
+  { id: 7, title: 'Scheduling', description: 'CPM + RCPSP' }
+];
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState<Step>(1);
@@ -26,16 +35,12 @@ const Index = () => {
   const [deficits, setDeficits] = useState<DeficitInfo[]>([]);
   const [overtimeConfig, setOvertimeConfig] = useState<OvertimeConfig | null>(null);
   const [useInventory, setUseInventory] = useState(true);
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  const steps = [
-    { id: 1, title: 'Carga de Archivo', description: 'Subir CSV con referencias' },
-    { id: 2, title: 'Ajuste de Inventario', description: 'Restar stock disponible' },
-    { id: 3, title: 'Configurar Combos', description: 'Optimizar punzonado' },
-    { id: 4, title: 'Configurar Operarios', description: 'Definir personal disponible' },
-    { id: 5, title: 'Capacidad por Proceso', description: 'Análisis detallado' },
-    { id: 6, title: 'Optimizar con Extras', description: 'Configurar horas extras' },
-    { id: 7, title: 'Scheduling', description: 'CPM + RCPSP' }
-  ];
+  // Scroll to top on step change
+  useEffect(() => {
+    contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [currentStep]);
 
   const handleDataProcessed = (data: FileUploadData) => {
     setProductionData(data.combinedData);
@@ -60,13 +65,13 @@ const Index = () => {
   const handleDeficitsIdentified = (identifiedDeficits: DeficitInfo[]) => {
     setDeficits(identifiedDeficits);
     if (identifiedDeficits.length > 0) {
-      setCurrentStep(6); // Ir a configuración de horas extras
+      setCurrentStep(6);
     }
   };
 
   const handleOvertimeApplied = (config: OvertimeConfig) => {
     setOvertimeConfig(config);
-    setCurrentStep(5); // Volver a vista de capacidad con extras aplicadas
+    setCurrentStep(5);
   };
 
   const handleStartOver = () => {
@@ -159,67 +164,44 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between gap-3 mb-6">
+      {/* Sticky Header */}
+      <div className="border-b bg-card/95 backdrop-blur-sm sticky top-0 z-20">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-3">
-              <Factory className="h-8 w-8 text-primary" />
+              <Factory className="h-7 w-7 text-primary" />
               <div>
-                <h1 className="text-2xl font-bold">Capacidad de Producción</h1>
-                <p className="text-muted-foreground">
+                <h1 className="text-xl font-bold">Capacidad de Producción</h1>
+                <p className="text-xs text-muted-foreground hidden sm:block">
                   Análisis de capacidad y disponibilidad de componentes
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <UserBadge />
               <Link to="/historial">
                 <Button variant="outline" size="sm">
-                  <History className="h-4 w-4 mr-2" />
-                  Historial
+                  <History className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Historial</span>
                 </Button>
               </Link>
               <Link to="/">
                 <Button variant="outline" size="sm">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Volver
+                  <ArrowLeft className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Volver</span>
                 </Button>
               </Link>
             </div>
           </div>
 
-          {/* Progress Steps */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2">
-            {steps.map((step, index) => (
-              <React.Fragment key={step.id}>
-                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg whitespace-nowrap ${
-                  currentStep === step.id 
-                    ? 'bg-primary text-primary-foreground' 
-                    : currentStep > step.id 
-                      ? 'bg-secondary text-secondary-foreground'
-                      : 'bg-muted text-muted-foreground'
-                }`}>
-                  <Badge variant={currentStep >= step.id ? "default" : "secondary"} className="rounded-full w-6 h-6 p-0 text-xs">
-                    {step.id}
-                  </Badge>
-                  <div className="text-sm">
-                    <div className="font-medium">{step.title}</div>
-                    <div className="text-xs opacity-80">{step.description}</div>
-                  </div>
-                </div>
-                {index < steps.length - 1 && (
-                  <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                )}
-              </React.Fragment>
-            ))}
-          </div>
+          {/* Connected Step Progress */}
+          <StepProgressBar steps={steps} currentStep={currentStep} />
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-6">
-        <div className="max-w-6xl mx-auto">
+      {/* Main Content with fade transition */}
+      <div ref={contentRef} className="container mx-auto px-4 py-6">
+        <div className="max-w-6xl mx-auto animate-fade-in" key={currentStep}>
           {renderStepContent()}
         </div>
       </div>
