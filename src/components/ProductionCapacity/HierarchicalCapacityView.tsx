@@ -288,7 +288,7 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
           <CardTitle className="text-lg">Resumen del Análisis</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="text-center p-3 bg-muted rounded-lg">
               <div className="text-2xl font-bold">{processGroups.length}</div>
               <div className="text-sm text-muted-foreground">Procesos Analizados</div>
@@ -376,11 +376,11 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
 
       {/* Vista Jerárquica por Procesos */}
       <div className="space-y-4">
-        {processGroups.map(process => <Card key={process.processName}>
+        {processGroups.map(process => <Card key={process.processName} className="overflow-hidden">
             <Collapsible open={expandedProcesses.has(process.processName)} onOpenChange={() => toggleProcess(process.processName)}>
               <CollapsibleTrigger asChild>
                 <CardHeader className="hover:bg-muted/50 cursor-pointer transition-colors">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-3">
                       {expandedProcesses.has(process.processName) ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
                       <CardTitle className="text-xl flex items-center gap-2">
@@ -407,12 +407,19 @@ const HierarchicalCapacityView: React.FC<HierarchicalCapacityViewProps> = ({
               </> : <>
                 {' '}({formatTime(process.totalTime)} / {formatTime(process.totalAvailableMinutes)})
               </>}
-          </Badge>
+           </Badge>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <span>{process.machines.length} máquinas</span>
                       <span>{process.operators} operarios</span>
                       <span>{formatTime(process.totalTime)} trabajo</span>
+                    </div>
+                    {/* Process-level capacity bar */}
+                    <div className="w-full mt-2">
+                      <Progress 
+                        value={Math.min(100, process.totalOccupancy)} 
+                        className="h-1.5"
+                      />
                     </div>
                   </div>
                 </CardHeader>
