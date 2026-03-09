@@ -270,11 +270,11 @@ const SnapshotDetail: React.FC<{ snapshot: Snapshot }> = ({ snapshot }) => {
         <CardContent>
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-4 bg-muted rounded-lg">
-              <div className="text-lg font-bold">{(totalRequired / 60).toFixed(0)}h</div>
+              <div className="text-lg font-bold">{Math.floor(totalRequired / 60)}h {Math.round(totalRequired % 60)}m</div>
               <div className="text-xs text-muted-foreground">Requerido Total</div>
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
-              <div className="text-lg font-bold text-green-600">{(totalAvailable / 60).toFixed(0)}h</div>
+              <div className="text-lg font-bold text-green-600">{Math.floor(totalAvailable / 60)}h {Math.round(totalAvailable % 60)}m</div>
               <div className="text-xs text-muted-foreground">Disponible Total</div>
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
