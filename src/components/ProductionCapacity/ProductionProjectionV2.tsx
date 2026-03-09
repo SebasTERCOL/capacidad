@@ -3004,6 +3004,24 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const totalMinutes = projection.reduce((sum, r) => sum + r.tiempoTotal, 0);
         const totalAlerts = projection.filter(r => r.alerta).length;
 
+        // Compute totalAvailableMinutes using the SAME dedup logic as Resumen del Análisis
+        const hasTroquelado = processGroups.some(p => p.processName === 'Troquelado');
+        let computedTotalAvailable = 0;
+        processGroups.forEach(p => {
+          if (p.processName === 'Despunte' && hasTroquelado) return;
+          computedTotalAvailable += p.totalAvailableMinutes;
+        });
+        const computedTotalRequired = processGroups.reduce((sum, p) => sum + p.totalTime, 0);
+
+        // Store computed summary inside operator_config for single source of truth
+        const operatorConfigWithSummary = {
+          ...JSON.parse(JSON.stringify(operatorConfig)),
+          _computed: {
+            totalRequiredMinutes: computedTotalRequired,
+            totalAvailableMinutes: computedTotalAvailable,
+          }
+        };
+
         const snapshot = {
           created_by: currentUser.nombre_completo,
           user_cedula: String(currentUser.cedula),
@@ -3016,10 +3034,10 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
             adjustedData: data
           })),
           combo_data: comboData ? JSON.parse(JSON.stringify(comboData)) : null,
-          operator_config: JSON.parse(JSON.stringify(operatorConfig)),
+          operator_config: operatorConfigWithSummary,
           overtime_config: overtimeConfig ? JSON.parse(JSON.stringify(overtimeConfig)) : null,
           projection_result: JSON.parse(JSON.stringify(projection)),
-          total_minutes: totalMinutes,
+          total_minutes: computedTotalRequired,
           total_alerts: totalAlerts
         };
 
