@@ -324,7 +324,7 @@ const SnapshotDetail: React.FC<{ snapshot: Snapshot }> = ({ snapshot }) => {
       {inputData?.originalData && <PTListCollapsible data={inputData.originalData} />}
 
       {/* Sección 4: Resultado de Proyección (jerárquico) */}
-      {projection && projection.length > 0 && <ProjectionHierarchical projection={projection} operatorConfig={opConfig} />}
+      {projection && projection.length > 0 && <ProjectionHierarchical projection={projection} operatorConfig={operatorConfig} />}
     </div>
   );
 };
