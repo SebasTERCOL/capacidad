@@ -535,11 +535,26 @@ const ProjectionHierarchical: React.FC<{ projection: any[]; operatorConfig?: any
         <div className="space-y-2 max-h-[500px] overflow-y-auto">
           {filteredProcesses.map(proc => {
             const machines = Array.from(proc.machines.values());
-            // Process occupation = totalRequiredTime / totalAvailableMinutes from operator config
-            // Uses the SAME formula as the live view: operators * availableHours * 60
+            // Process occupation: prefer pre-computed value from snapshot _computed
+            const storedProcessOcc = operatorConfig?._computed?.processOccupancies;
             let procOccupation: number | null = null;
-            if (operatorConfig?.processes) {
-              // Find matching process config — handle "Troquelado / Despunte" combined name
+
+            if (storedProcessOcc) {
+              // Direct lookup — exact match or shared process (Troquelado/Despunte)
+              const stored = storedProcessOcc[proc.name];
+              if (stored != null) {
+                procOccupation = stored.totalOccupancy;
+              } else {
+                // Check if this process is part of a shared group
+                for (const [key, val] of Object.entries(storedProcessOcc) as [string, any][]) {
+                  if (key.split(' / ').some((part: string) => part.trim() === proc.name)) {
+                    procOccupation = val.totalOccupancy;
+                    break;
+                  }
+                }
+              }
+            } else if (operatorConfig?.processes) {
+              // Legacy fallback for old snapshots without _computed.processOccupancies
               const procConfig = (operatorConfig.processes as any[]).find(
                 (p: any) => {
                   const configName = p.processName || p.name || '';
@@ -550,9 +565,6 @@ const ProjectionHierarchical: React.FC<{ projection: any[]; operatorConfig?: any
               if (procConfig) {
                 let availableMinutes = (procConfig.operatorCount || procConfig.operators || 0) 
                   * (procConfig.availableHours || 0) * 60;
-                
-                // For shared processes (Troquelado/Despunte), the available minutes cover both
-                // So we need total time from BOTH processes sharing the same config
                 const configName = procConfig.processName || procConfig.name || '';
                 if (configName.includes('/')) {
                   const sharedNames = configName.split('/').map((s: string) => s.trim());
@@ -596,7 +608,18 @@ const ProjectionHierarchical: React.FC<{ projection: any[]; operatorConfig?: any
                   <div className="border-t bg-muted/20">
                     {machines.map(mach => {
                       const machKey = `${proc.name}-${mach.name}`;
-                      const machOccupation = mach.refs[0]?.ocupacionMaquina;
+                      // Machine occupation: prefer stored value from _computed
+                      let machOccupation: number | null = null;
+                      if (storedProcessOcc) {
+                        const storedProc = storedProcessOcc[proc.name];
+                        if (storedProc?.machines?.[mach.name]) {
+                          machOccupation = storedProc.machines[mach.name].occupancy;
+                        }
+                      }
+                      // Fallback: use per-row ocupacionMaquina (same for all refs on a machine)
+                      if (machOccupation == null) {
+                        machOccupation = mach.refs[0]?.ocupacionMaquina ?? null;
+                      }
 
                       return (
                         <div key={mach.name}>

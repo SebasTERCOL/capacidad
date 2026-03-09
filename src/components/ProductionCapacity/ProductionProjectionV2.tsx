@@ -3014,11 +3014,31 @@ export const ProductionProjectionV2: React.FC<ProductionProjectionV2Props> = ({
         const computedTotalRequired = processGroups.reduce((sum, p) => sum + p.totalTime, 0);
 
         // Store computed summary inside operator_config for single source of truth
+        // Include per-process and per-machine occupancies so the history view never recalculates
+        const processOccupancies: Record<string, { totalOccupancy: number; totalTime: number; totalAvailableMinutes: number; machines: Record<string, { occupancy: number; totalTime: number; capacity: number }> }> = {};
+        for (const pg of processGroups) {
+          const machMap: Record<string, { occupancy: number; totalTime: number; capacity: number }> = {};
+          for (const m of pg.machines) {
+            machMap[m.machineName] = {
+              occupancy: m.occupancy,
+              totalTime: m.totalTime,
+              capacity: m.capacity,
+            };
+          }
+          processOccupancies[pg.processName] = {
+            totalOccupancy: pg.totalOccupancy,
+            totalTime: pg.totalTime,
+            totalAvailableMinutes: pg.totalAvailableMinutes,
+            machines: machMap,
+          };
+        }
+
         const operatorConfigWithSummary = {
           ...JSON.parse(JSON.stringify(operatorConfig)),
           _computed: {
             totalRequiredMinutes: computedTotalRequired,
             totalAvailableMinutes: computedTotalAvailable,
+            processOccupancies,
           }
         };
 
