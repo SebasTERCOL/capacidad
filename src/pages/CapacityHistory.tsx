@@ -31,22 +31,26 @@ interface Snapshot {
   total_alerts: number | null;
 }
 
-// Compute occupation from snapshot data
+// Compute occupation from snapshot data — uses stored _computed values (single source of truth)
+// Falls back to legacy calculation for old snapshots without _computed
 const computeOccupation = (snapshot: Snapshot): number | null => {
-  const projection = snapshot.projection_result as any[] | null;
   const opConfig = snapshot.operator_config as any;
-  if (!projection || !opConfig?.processes) return null;
 
-  const totalRequired = projection.reduce((sum: number, r: any) => sum + (r.tiempoTotal || 0), 0);
-
-  // Sum available minutes from process configs
-  let totalAvailable = 0;
-  const processes = opConfig.processes as any[];
-  for (const proc of processes) {
-    const hours = proc.availableHours || 0;
-    totalAvailable += hours * 60;
+  // Preferred: use pre-computed values saved at snapshot time
+  if (opConfig?._computed?.totalRequiredMinutes != null && opConfig?._computed?.totalAvailableMinutes != null) {
+    const { totalRequiredMinutes, totalAvailableMinutes } = opConfig._computed;
+    if (totalAvailableMinutes <= 0) return null;
+    return (totalRequiredMinutes / totalAvailableMinutes) * 100;
   }
 
+  // Legacy fallback for old snapshots
+  const projection = snapshot.projection_result as any[] | null;
+  if (!projection || !opConfig?.processes) return null;
+  const totalRequired = projection.reduce((sum: number, r: any) => sum + (r.tiempoTotal || 0), 0);
+  let totalAvailable = 0;
+  for (const proc of (opConfig.processes as any[])) {
+    totalAvailable += (proc.availableHours || 0) * 60;
+  }
   if (totalAvailable <= 0) return null;
   return (totalRequired / totalAvailable) * 100;
 };
@@ -231,14 +235,20 @@ const SnapshotDetail: React.FC<{ snapshot: Snapshot }> = ({ snapshot }) => {
   const operatorConfig = snapshot.operator_config as any;
   const inputData = snapshot.input_data as any;
 
-  // Compute capacity general
-  const totalRequired = projection?.reduce((sum: number, r: any) => sum + (r.tiempoTotal || 0), 0) || 0;
-  let totalAvailable = 0;
-  const processes = (operatorConfig?.processes as any[]) || [];
-  for (const proc of processes) {
-    totalAvailable += (proc.availableHours || 0) * 60;
+  // Single source of truth: use _computed values from snapshot (same as Resumen del Análisis)
+  const computed = operatorConfig?._computed;
+  const totalRequired = computed?.totalRequiredMinutes
+    ?? (projection?.reduce((sum: number, r: any) => sum + (r.tiempoTotal || 0), 0) || 0);
+  let totalAvailable = computed?.totalAvailableMinutes ?? 0;
+  if (!computed) {
+    // Legacy fallback
+    const processes = (operatorConfig?.processes as any[]) || [];
+    for (const proc of processes) {
+      totalAvailable += (proc.availableHours || 0) * 60;
+    }
   }
   const occupationPct = totalAvailable > 0 ? (totalRequired / totalAvailable) * 100 : 0;
+  const processes = (operatorConfig?.processes as any[]) || [];
 
   return (
     <div className="space-y-6">
@@ -260,11 +270,11 @@ const SnapshotDetail: React.FC<{ snapshot: Snapshot }> = ({ snapshot }) => {
         <CardContent>
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-4 bg-muted rounded-lg">
-              <div className="text-lg font-bold">{(totalRequired / 60).toFixed(0)}h</div>
+              <div className="text-lg font-bold">{Math.floor(totalRequired / 60)}h {Math.round(totalRequired % 60)}m</div>
               <div className="text-xs text-muted-foreground">Requerido Total</div>
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
-              <div className="text-lg font-bold text-green-600">{(totalAvailable / 60).toFixed(0)}h</div>
+              <div className="text-lg font-bold text-green-600">{Math.floor(totalAvailable / 60)}h {Math.round(totalAvailable % 60)}m</div>
               <div className="text-xs text-muted-foreground">Disponible Total</div>
             </div>
             <div className="text-center p-4 bg-muted rounded-lg">
