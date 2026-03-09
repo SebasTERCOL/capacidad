@@ -235,12 +235,17 @@ const SnapshotDetail: React.FC<{ snapshot: Snapshot }> = ({ snapshot }) => {
   const operatorConfig = snapshot.operator_config as any;
   const inputData = snapshot.input_data as any;
 
-  // Compute capacity general
-  const totalRequired = projection?.reduce((sum: number, r: any) => sum + (r.tiempoTotal || 0), 0) || 0;
-  let totalAvailable = 0;
-  const processes = (operatorConfig?.processes as any[]) || [];
-  for (const proc of processes) {
-    totalAvailable += (proc.availableHours || 0) * 60;
+  // Single source of truth: use _computed values from snapshot (same as Resumen del Análisis)
+  const computed = operatorConfig?._computed;
+  const totalRequired = computed?.totalRequiredMinutes
+    ?? (projection?.reduce((sum: number, r: any) => sum + (r.tiempoTotal || 0), 0) || 0);
+  let totalAvailable = computed?.totalAvailableMinutes ?? 0;
+  if (!computed) {
+    // Legacy fallback
+    const processes = (operatorConfig?.processes as any[]) || [];
+    for (const proc of processes) {
+      totalAvailable += (proc.availableHours || 0) * 60;
+    }
   }
   const occupationPct = totalAvailable > 0 ? (totalRequired / totalAvailable) * 100 : 0;
 
