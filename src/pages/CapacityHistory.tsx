@@ -536,15 +536,33 @@ const ProjectionHierarchical: React.FC<{ projection: any[]; operatorConfig?: any
           {filteredProcesses.map(proc => {
             const machines = Array.from(proc.machines.values());
             // Process occupation = totalRequiredTime / totalAvailableMinutes from operator config
+            // Uses the SAME formula as the live view: operators * availableHours * 60
             let procOccupation: number | null = null;
             if (operatorConfig?.processes) {
+              // Find matching process config — handle "Troquelado / Despunte" combined name
               const procConfig = (operatorConfig.processes as any[]).find(
-                (p: any) => p.processName === proc.name || p.name === proc.name
+                (p: any) => {
+                  const configName = p.processName || p.name || '';
+                  return configName === proc.name 
+                    || configName.split(' / ').some((part: string) => part.trim() === proc.name);
+                }
               );
               if (procConfig) {
-                const availableMinutes = (procConfig.operatorCount || procConfig.operators || 0) 
+                let availableMinutes = (procConfig.operatorCount || procConfig.operators || 0) 
                   * (procConfig.availableHours || 0) * 60;
-                if (availableMinutes > 0) {
+                
+                // For shared processes (Troquelado/Despunte), the available minutes cover both
+                // So we need total time from BOTH processes sharing the same config
+                const configName = procConfig.processName || procConfig.name || '';
+                if (configName.includes('/')) {
+                  const sharedNames = configName.split('/').map((s: string) => s.trim());
+                  const sharedTotalTime = Array.from(processMap.values())
+                    .filter(p => sharedNames.includes(p.name))
+                    .reduce((sum, p) => sum + p.totalTime, 0);
+                  if (availableMinutes > 0) {
+                    procOccupation = (sharedTotalTime / availableMinutes) * 100;
+                  }
+                } else if (availableMinutes > 0) {
                   procOccupation = (proc.totalTime / availableMinutes) * 100;
                 }
               }
