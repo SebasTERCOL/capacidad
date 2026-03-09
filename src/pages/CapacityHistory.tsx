@@ -393,7 +393,7 @@ interface MachineNode {
   refs: any[];
 }
 
-const ProjectionHierarchical: React.FC<{ projection: any[] }> = ({ projection }) => {
+const ProjectionHierarchical: React.FC<{ projection: any[]; operatorConfig?: any }> = ({ projection, operatorConfig }) => {
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set());
   const [expandedMachines, setExpandedMachines] = useState<Set<string>>(new Set());
   const [searchRef, setSearchRef] = useState('');
