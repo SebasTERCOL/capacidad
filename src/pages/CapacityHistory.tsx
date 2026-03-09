@@ -535,11 +535,20 @@ const ProjectionHierarchical: React.FC<{ projection: any[]; operatorConfig?: any
         <div className="space-y-2 max-h-[500px] overflow-y-auto">
           {filteredProcesses.map(proc => {
             const machines = Array.from(proc.machines.values());
-            // Aggregate process-level occupation: sum of per-row ocupacionProceso (same denominator)
-            const allProcessRows = projection.filter((r: any) => r.proceso === proc.name);
-            const procOccupation = allProcessRows.length > 0 && allProcessRows[0]?.ocupacionProceso != null
-              ? allProcessRows.reduce((sum: number, r: any) => sum + (r.ocupacionProceso || 0), 0)
-              : null;
+            // Process occupation = totalRequiredTime / totalAvailableMinutes from operator config
+            let procOccupation: number | null = null;
+            if (operatorConfig?.processes) {
+              const procConfig = (operatorConfig.processes as any[]).find(
+                (p: any) => p.processName === proc.name || p.name === proc.name
+              );
+              if (procConfig) {
+                const availableMinutes = (procConfig.operatorCount || procConfig.operators || 0) 
+                  * (procConfig.availableHours || 0) * 60;
+                if (availableMinutes > 0) {
+                  procOccupation = (proc.totalTime / availableMinutes) * 100;
+                }
+              }
+            }
 
             return (
               <div key={proc.name} className="border rounded-lg overflow-hidden">
