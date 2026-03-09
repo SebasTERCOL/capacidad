@@ -248,6 +248,7 @@ const SnapshotDetail: React.FC<{ snapshot: Snapshot }> = ({ snapshot }) => {
     }
   }
   const occupationPct = totalAvailable > 0 ? (totalRequired / totalAvailable) * 100 : 0;
+  const processes = (operatorConfig?.processes as any[]) || [];
 
   return (
     <div className="space-y-6">
