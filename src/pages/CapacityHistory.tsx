@@ -535,8 +535,11 @@ const ProjectionHierarchical: React.FC<{ projection: any[] }> = ({ projection })
         <div className="space-y-2 max-h-[500px] overflow-y-auto">
           {filteredProcesses.map(proc => {
             const machines = Array.from(proc.machines.values());
-            // Compute process-level occupation if available
-            const procOccupation = projection.find((r: any) => r.proceso === proc.name)?.ocupacionProceso;
+            // Aggregate process-level occupation: sum of per-row ocupacionProceso (same denominator)
+            const allProcessRows = projection.filter((r: any) => r.proceso === proc.name);
+            const procOccupation = allProcessRows.length > 0 && allProcessRows[0]?.ocupacionProceso != null
+              ? allProcessRows.reduce((sum: number, r: any) => sum + (r.ocupacionProceso || 0), 0)
+              : null;
 
             return (
               <div key={proc.name} className="border rounded-lg overflow-hidden">
