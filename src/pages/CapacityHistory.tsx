@@ -31,22 +31,26 @@ interface Snapshot {
   total_alerts: number | null;
 }
 
-// Compute occupation from snapshot data
+// Compute occupation from snapshot data — uses stored _computed values (single source of truth)
+// Falls back to legacy calculation for old snapshots without _computed
 const computeOccupation = (snapshot: Snapshot): number | null => {
-  const projection = snapshot.projection_result as any[] | null;
   const opConfig = snapshot.operator_config as any;
-  if (!projection || !opConfig?.processes) return null;
 
-  const totalRequired = projection.reduce((sum: number, r: any) => sum + (r.tiempoTotal || 0), 0);
-
-  // Sum available minutes from process configs
-  let totalAvailable = 0;
-  const processes = opConfig.processes as any[];
-  for (const proc of processes) {
-    const hours = proc.availableHours || 0;
-    totalAvailable += hours * 60;
+  // Preferred: use pre-computed values saved at snapshot time
+  if (opConfig?._computed?.totalRequiredMinutes != null && opConfig?._computed?.totalAvailableMinutes != null) {
+    const { totalRequiredMinutes, totalAvailableMinutes } = opConfig._computed;
+    if (totalAvailableMinutes <= 0) return null;
+    return (totalRequiredMinutes / totalAvailableMinutes) * 100;
   }
 
+  // Legacy fallback for old snapshots
+  const projection = snapshot.projection_result as any[] | null;
+  if (!projection || !opConfig?.processes) return null;
+  const totalRequired = projection.reduce((sum: number, r: any) => sum + (r.tiempoTotal || 0), 0);
+  let totalAvailable = 0;
+  for (const proc of (opConfig.processes as any[])) {
+    totalAvailable += (proc.availableHours || 0) * 60;
+  }
   if (totalAvailable <= 0) return null;
   return (totalRequired / totalAvailable) * 100;
 };
